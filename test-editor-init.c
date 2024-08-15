@@ -28,7 +28,7 @@ enum Key
     PAGE_DOWN
 };
 
-/*** data ***/
+/*** global configuration data ***/
 
 struct Configuration
 {
@@ -200,7 +200,7 @@ int getWindowSize(unsigned short int* rows, unsigned short int* columns)
     }
 }
 
-/*** append buffer ***/
+/*** string buffer to write from ***/
 
 struct SBuffer
 {
@@ -236,7 +236,7 @@ void drawRows(struct SBuffer* sbuf)
         if (i == config.screenRows / 3)
         {
             char welcome[80];
-            int welcomelen = snprintf(welcome, sizeof(welcome), "Neo Text Editor -- version %s", NEO_VERSION);
+            int welcomelen = snprintf(welcome, sizeof(welcome), "Neo Text Editor --- version %s", NEO_VERSION);
             if (welcomelen > config.screenColumns)
                 welcomelen = config.screenColumns;
             int padding = (config.screenColumns - welcomelen) / 2;
@@ -264,6 +264,8 @@ void refreshScreen()
 
     appendToSBuffer(&sbuf, "\x1b[?25l", 6);
     appendToSBuffer(&sbuf, "\x1b[H", 3);
+
+    getWindowSize(&config.screenRows, &config.screenColumns);
 
     drawRows(&sbuf);
 
@@ -324,11 +326,9 @@ void processKeypress()
 
         case PAGE_UP:
         case PAGE_DOWN:
-            {
-                int times = config.screenRows;
-                while (times--)
+            for(int i = config.screenRows; i > 0; i--)
                     moveCursor(input == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-            }
+
             break;
 
         case ARROW_UP:
