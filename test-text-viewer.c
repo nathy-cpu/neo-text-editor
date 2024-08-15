@@ -46,6 +46,7 @@ struct Configuration
     unsigned short int screenRows, screenColumns;
     size_t numberofRows;
     TextRow* textRow;
+    size_t rowOffset;
     struct termios originalTermios;
 };
 
@@ -278,11 +279,21 @@ void freeSBuffer(struct SBuffer* sbuf)
 
 /*** output ***/
 
+void scroll()
+{
+    if (config.cursorY < config.rowOffset)
+        config.rowOffset = config.cursorY;
+
+    if (config.cursorY >= config.rowOffset + config.screenRows)
+        config.rowOffset = config.cursorY - config.screenRows + 1;
+}
+
 void drawRows(struct SBuffer* sbuf)
 {
     for (int i = 0; i < config.screenRows; i++)
     {
-        if (i >= config.numberofRows)
+        size_t fileRow = i + config.rowOffset;
+        if (fileRow >= config.numberofRows)
         {
             if (config.numberofRows == 0 && i == config.screenRows / 3)
             {
@@ -305,10 +316,10 @@ void drawRows(struct SBuffer* sbuf)
         }
         else
         {
-            size_t len = config.textRow[i].length;
+            size_t len = config.textRow[fileRow].length;
             if (len > config.screenColumns)
                 len = config.screenColumns;
-            appendToSBuffer(sbuf, config.textRow[i].text, len);
+            appendToSBuffer(sbuf, config.textRow[fileRow].text, len);
         }
 
         appendToSBuffer(sbuf, "\x1b[K", 3);
@@ -319,6 +330,8 @@ void drawRows(struct SBuffer* sbuf)
 
 void refreshScreen()
 {
+    scroll();
+
     struct SBuffer sbuf = SBUFFER_INIT;
 
     appendToSBuffer(&sbuf, "\x1b[?25l", 6);
@@ -355,7 +368,7 @@ void moveCursor(short int key)
                 config.cursorY--;
             break;
         case ARROW_DOWN:
-            if (config.cursorY != config.screenRows - 1)
+            if (config.cursorY < config.numberofRows)
                 config.cursorY++;
             break;
     }
@@ -403,6 +416,7 @@ void initEditor()
     config.cursorX = 0;
     config.cursorY = 0;
     config.numberofRows = 0;
+    config.rowOffset = 0;
     config.textRow = NULL;
 
     if (getWindowSize(&config.screenRows, &config.screenColumns) == -1)
