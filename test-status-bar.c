@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -45,15 +46,17 @@ typedef struct TextRow
 
 struct Configuration
 {
-    size_t cursorX, cursorY;
+    struct termios originalTermios;
     unsigned short int screenRows, screenColumns;
-    size_t numberofRows;
+    size_t cursorX, cursorY;
     TextRow* textRow;
+    size_t numberofRows;
     size_t renderX;
     size_t rowOffset;
     size_t columnOffset;
-    struct termios originalTermios;
     char* filename;
+    char statusMessage[200];
+    time_t statusMessageTime;
 };
 
 struct Configuration config;
@@ -422,6 +425,17 @@ void drawStatusBar(struct SBuffer* sbuf)
     }
 
     appendToSBuffer(sbuf, "\x1b[m", 3);
+    appendToSBuffer(sbuf, "\r\n", 2);
+}
+
+void drawMessageBar(struct SBuffer* sbuf)
+{
+    appendToSBuffer(sbuf, "\x1b[k", 3);
+    int messageLength = strlen(config.statusMessage);
+    if (messageLength > config.screenColumns)
+        messageLength = config.screenColumns;
+    if (messageLength && time(NULL) - config.statusMessageTime < 5)
+        appendToSBuffer(sbuf, config.statusMessage, messageLength);
 }
 
 void refreshScreen()
@@ -435,6 +449,7 @@ void refreshScreen()
 
     drawRows(&sbuf);
     drawStatusBar(&sbuf);
+    drawMessageBar(&sbuf);
 
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "\x1b[%ld;%ldH", (config.cursorY - config.rowOffset) + 1, (config.renderX - config.columnOffset) + 1);
@@ -444,6 +459,15 @@ void refreshScreen()
 
     write(STDOUT_FILENO, sbuf.string, sbuf.length);
     freeSBuffer(&sbuf);
+}
+
+void setStatusMessage(const char* fstring, ...)
+{
+    va_list arg;
+    va_start(arg, fstring);
+    vsnprintf(config.statusMessage, sizeof(config.statusMessage), fstring, arg);
+    va_end(arg);
+    config.statusMessageTime = time(NULL);
 }
 
 /*** input ***/
@@ -546,11 +570,13 @@ void initEditor()
     config.columnOffset = 0;
     config.textRow = NULL;
     config.filename = NULL;
+    config.statusMessage[0] = '\0';
+    config.statusMessageTime = 0;
 
     if (getWindowSize(&config.screenRows, &config.screenColumns) == -1)
         die("getWindowSize");
 
-    config.screenRows -= 1;
+    config.screenRows -= 2;
 }
 
 int main(int argc, char** argv)
@@ -560,6 +586,8 @@ int main(int argc, char** argv)
 
     if (argc >= 2)
         openFile(argv[1]);
+
+    setStatusMessage("HELP: Ctrl-Q = quit");
 
     while (1)
     {
