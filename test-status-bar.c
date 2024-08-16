@@ -53,6 +53,7 @@ struct Configuration
     size_t rowOffset;
     size_t columnOffset;
     struct termios originalTermios;
+    char* filename;
 };
 
 struct Configuration config;
@@ -284,6 +285,9 @@ void appendTextRow(const char* str, size_t length)
 
 void openFile(const char* filename)
 {
+    free(config.filename);
+    config.filename = strdup(filename);
+
     FILE* file = fopen(filename, "r");
     if (file == NULL)
         die("fopen");
@@ -388,9 +392,36 @@ void drawRows(struct SBuffer* sbuf)
         }
 
         appendToSBuffer(sbuf, "\x1b[K", 3);
-        if (i < config.screenRows - 1)
-            appendToSBuffer(sbuf, "\r\n", 2);
+        appendToSBuffer(sbuf, "\r\n", 2);
     }
+}
+
+void drawStatusBar(struct SBuffer* sbuf)
+{
+    appendToSBuffer(sbuf, "\x1b[7m", 4);
+    char* filename = (config.filename == NULL) ? "[No File Opened]" : config.filename;
+
+    char status[100], cursor[50];
+
+    int statusSize = snprintf(status, sizeof(status), "%.30s ~ %ld lines", filename, config.numberofRows);
+    int cursorSize = snprintf(cursor, sizeof(cursor), "%ld:%ld", config.cursorY + 1, config.cursorX + 1);
+
+    if (statusSize > config.screenColumns)
+        statusSize = config.screenColumns;
+    appendToSBuffer(sbuf, status, statusSize);
+
+    for (int i = statusSize; i < config.screenColumns; i++)
+    {
+        if (config.screenColumns - i == cursorSize)
+        {
+            appendToSBuffer(sbuf, cursor, cursorSize);
+            break;
+        }
+        else
+            appendToSBuffer(sbuf, " ", 1);
+    }
+
+    appendToSBuffer(sbuf, "\x1b[m", 3);
 }
 
 void refreshScreen()
@@ -403,6 +434,7 @@ void refreshScreen()
     appendToSBuffer(&sbuf, "\x1b[H", 3);
 
     drawRows(&sbuf);
+    drawStatusBar(&sbuf);
 
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "\x1b[%ld;%ldH", (config.cursorY - config.rowOffset) + 1, (config.renderX - config.columnOffset) + 1);
@@ -513,9 +545,12 @@ void initEditor()
     config.rowOffset = 0;
     config.columnOffset = 0;
     config.textRow = NULL;
+    config.filename = NULL;
 
     if (getWindowSize(&config.screenRows, &config.screenColumns) == -1)
         die("getWindowSize");
+
+    config.screenRows -= 1;
 }
 
 int main(int argc, char** argv)
