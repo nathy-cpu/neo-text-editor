@@ -39,8 +39,8 @@ enum Key
 
 typedef struct TextRow
 {
-    size_t length;
-    size_t renderLength;
+    size_t size;
+    size_t renderSize;
     char* text;
     char* render;
 } TextRow;
@@ -99,11 +99,11 @@ void enableRawMode()
 
 short int readKeypress()
 {
-    int readLength;
+    int readSize;
     char input;
-    while ((readLength = read(STDIN_FILENO, &input, 1)) != 1)
+    while ((readSize = read(STDIN_FILENO, &input, 1)) != 1)
     {
-        if (readLength == -1 && errno != EAGAIN)
+        if (readSize == -1 && errno != EAGAIN)
             die("read");
     }
 
@@ -241,17 +241,17 @@ size_t getRenderX(TextRow* row, size_t cursorX)
 void updateTextRow(TextRow* row)
 {
     unsigned int tabs = 0;
-    for (size_t i = 0; i < row->length; i++)
+    for (size_t i = 0; i < row->size; i++)
     {
         if (row->text[i] == '\t')
             tabs++;
     }
 
     free(row->render);
-    row->render = malloc(row->length + tabs * (TAB_STOP - 1) + 1);
+    row->render = malloc(row->size + tabs * (TAB_STOP - 1) + 1);
 
     size_t index = 0;
-    for (size_t j = 0; j < row->length; j++)
+    for (size_t j = 0; j < row->size; j++)
     {
         if (row->text[j] == '\t')
         {
@@ -265,20 +265,20 @@ void updateTextRow(TextRow* row)
     }
 
     row->render[index] = '\0';
-    row->renderLength = index;
+    row->renderSize = index;
 }
 
-void appendTextRow(const char* str, size_t length)
+void appendTextRow(const char* str, size_t size)
 {
     config.textRow = realloc(config.textRow, sizeof(TextRow) * (config.numberofRows + 1));
 
     size_t at = config.numberofRows;
-    config.textRow[at].length = length;
-    config.textRow[at].text = malloc(length + 1);
-    memcpy(config.textRow[at].text, str, length);
-    config.textRow[at].text[length] = '\0';
+    config.textRow[at].size = size;
+    config.textRow[at].text = malloc(size + 1);
+    memcpy(config.textRow[at].text, str, size);
+    config.textRow[at].text[size] = '\0';
 
-    config.textRow[at].renderLength = 0;
+    config.textRow[at].renderSize = 0;
     config.textRow[at].render = NULL;
     updateTextRow(&config.textRow[at]);
 
@@ -316,26 +316,26 @@ void openFile(const char* filename)
 struct SBuffer
 {
     char* string;
-    unsigned int length;
+    unsigned int size;
 };
 
 #define SBUFFER_INIT {NULL, 0}
 
-void appendToSBuffer(struct SBuffer* sbuf, const char* string, unsigned int length)
+void appendToSBuffer(struct SBuffer* sbuf, const char* string, unsigned int size)
 {
-    char* temp = realloc(sbuf->string, sbuf->length + length);
+    char* temp = realloc(sbuf->string, sbuf->size + size);
 
     if (temp == NULL)
         return;
-    memcpy(&temp[sbuf->length], string, length);
+    memcpy(&temp[sbuf->size], string, size);
     sbuf->string = temp;
-    sbuf->length += length;
+    sbuf->size += size;
 }
 
 void freeSBuffer(struct SBuffer* sbuf)
 {
     free(sbuf->string);
-    sbuf->length = 0;
+    sbuf->size = 0;
 }
 
 /*** output ***/
@@ -387,7 +387,7 @@ void drawRows(struct SBuffer* sbuf)
         }
         else
         {
-            ssize_t len = config.textRow[fileRow].renderLength - config.columnOffset;
+            ssize_t len = config.textRow[fileRow].renderSize - config.columnOffset;
             if (len < 0)
                 len = 0;
             if (len > config.screenColumns)
@@ -432,11 +432,11 @@ void drawStatusBar(struct SBuffer* sbuf)
 void drawMessageBar(struct SBuffer* sbuf)
 {
     appendToSBuffer(sbuf, "\x1b[K", 3);
-    int messageLength = strlen(config.statusMessage);
-    if (messageLength > config.screenColumns)
-        messageLength = config.screenColumns;
-    if (messageLength && time(NULL) - config.statusMessageTime < 5)
-        appendToSBuffer(sbuf, config.statusMessage, messageLength);
+    int messageSize = strlen(config.statusMessage);
+    if (messageSize > config.screenColumns)
+        messageSize = config.screenColumns;
+    if (messageSize && time(NULL) - config.statusMessageTime < 5)
+        appendToSBuffer(sbuf, config.statusMessage, messageSize);
 }
 
 void refreshScreen()
@@ -458,7 +458,7 @@ void refreshScreen()
 
     appendToSBuffer(&sbuf, "\x1b[?25h", 6);
 
-    write(STDOUT_FILENO, sbuf.string, sbuf.length);
+    write(STDOUT_FILENO, sbuf.string, sbuf.size);
     freeSBuffer(&sbuf);
 }
 
@@ -491,13 +491,13 @@ void moveCursor(short int key)
             else if (config.cursorY > 0)
             {
                 config.cursorY--;
-                config.cursorX = config.textRow[config.cursorY].length;
+                config.cursorX = config.textRow[config.cursorY].size;
             }
             break;
         case ARROW_RIGHT:
-            if (row != NULL && config.cursorX < row->length)
+            if (row != NULL && config.cursorX < row->size)
                 config.cursorX++;
-            else if (row != NULL && config.cursorX == row->length)
+            else if (row != NULL && config.cursorX == row->size)
             {
                 config.cursorY++;
                 config.cursorX = 0;
@@ -514,9 +514,9 @@ void moveCursor(short int key)
     }
 
     row = (config.cursorY >= config.numberofRows) ? NULL : &config.textRow[config.cursorY];
-    size_t rowLength = (row != NULL) ? row->length : 0;
-    if (config.cursorX > rowLength)
-        config.cursorX = rowLength;
+    size_t rowSize = (row != NULL) ? row->size : 0;
+    if (config.cursorX > rowSize)
+        config.cursorX = rowSize;
 
 }
 
@@ -538,7 +538,7 @@ void processKeypress()
 
         case END_KEY:
             if (config.cursorY < config.numberofRows)
-                config.cursorX = config.textRow[config.cursorY].length;
+                config.cursorX = config.textRow[config.cursorY].size;
             break;
 
         case PAGE_UP:
