@@ -8,6 +8,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <signal.h>
 
 /*** defines ***/
 
@@ -47,6 +48,7 @@ void die(const char* source)
     write(STDOUT_FILENO, "\x1b[H", 3);
 
     perror(source);
+    write(STDOUT_FILENO, "\r\n", 2);
     exit(1);
 }
 
@@ -351,10 +353,17 @@ void initEditor()
         die("getWindowSize");
 }
 
+void handleScreenResize(int signal)
+{
+    getWindowSize(&config.screenRows, &config.screenColumns);
+    refreshScreen();
+}
+
 int main()
 {
     enableRawMode();
     initEditor();
+    signal(SIGWINCH, handleScreenResize);
 
     while (1)
     {

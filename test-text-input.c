@@ -17,11 +17,13 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <signal.h>
 
 /*** defines ***/
 
 #define NEO_VERSION "0.0.1"
 #define TAB_STOP 4
+#define STATUS_MESSAGE_DELAY 10
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 enum Key
@@ -60,7 +62,7 @@ struct Configuration
     unsigned short int screenRows, screenColumns;
     size_t cursorX, cursorY;
     TextRow* textRow;
-    size_t numberofRows;
+    size_t numberofTextRows;
     size_t renderX;
     size_t rowOffset;
     size_t columnOffset;
@@ -284,26 +286,46 @@ void updateTextRow(TextRow* row)
     row->renderLength = index;
 }
 
-void appendTextRow(const char* str, size_t length)
+void insertTextRow(size_t index, const char* str, size_t length)
 {
+    if (index > config.numberofTextRows)
+        return;
+
     config.textRow =
-        realloc(config.textRow, sizeof(TextRow) * (config.numberofRows + 1));
+        realloc(config.textRow, sizeof(TextRow) * (config.numberofTextRows + 1));
+    memmove(&config.textRow[index + 1], &config.textRow[index], sizeof(TextRow) * (config.numberofTextRows - index));
 
-    size_t at = config.numberofRows;
-    config.textRow[at].length = length;
-    config.textRow[at].text = malloc(length + 1);
-    memcpy(config.textRow[at].text, str, length);
-    config.textRow[at].text[length] = '\0';
+    config.textRow[index].length = length;
+    config.textRow[index].text = malloc(length + 1);
+    memcpy(config.textRow[index].text, str, length);
+    config.textRow[index].text[length] = '\0';
 
-    config.textRow[at].renderLength = 0;
-    config.textRow[at].render = NULL;
-    updateTextRow(&config.textRow[at]);
+    config.textRow[index].renderLength = 0;
+    config.textRow[index].render = NULL;
+    updateTextRow(&config.textRow[index]);
 
-    config.numberofRows++;
+    config.numberofTextRows++;
     config.isSaved = FALSE;
 }
 
-void insertCharIntoRow(TextRow* row, size_t index, short int input)
+void freeTextRow(TextRow* row)
+{
+    free(row->render);
+    free(row->text);
+}
+
+void deleteTextRow(size_t index)
+{
+    if (index >= config.numberofTextRows)
+        return;
+
+    freeTextRow(&config.textRow[index]);
+    memmove(&config.textRow[index], &config.textRow[index + 1], sizeof(TextRow) * (config.numberofTextRows - index - 1));
+    config.numberofTextRows--;
+    config.isSaved = FALSE;
+}
+
+void insertCharIntoTextRow(TextRow* row, size_t index, short int input)
 {
     if (index > row->length)
         index = row->length;
@@ -315,15 +337,78 @@ void insertCharIntoRow(TextRow* row, size_t index, short int input)
     config.isSaved = FALSE;
 }
 
+void appendStringToTextRow(TextRow* row, char* str, size_t size)
+{
+    row->text = realloc(row->text, row->length + size + 1);
+    memcpy(&row->text[row->length], str, size);
+    row->length += size;
+    row->text[row->length] = '\0';
+    updateTextRow(row);
+    config.isSaved = FALSE;
+}
+
+void deleteCharFromTextRow(TextRow* row, size_t index)
+{
+    if (index >= row->length)
+        return;
+
+    memmove(&row->text[index], &row->text[index + 1], row->length - 1);
+    row->length--;
+    updateTextRow(row);
+    config.isSaved = FALSE;
+}
+
 /*** editor operations ***/
 
 void insertChar(short int input)
 {
-    if (config.cursorY == config.numberofRows)
-        appendTextRow("", 0);
+    if (config.cursorY == config.numberofTextRows)
+        insertTextRow(config.numberofTextRows, "", 0);
 
-    insertCharIntoRow(&config.textRow[config.cursorY], config.cursorX, input);
+    insertCharIntoTextRow(&config.textRow[config.cursorY], config.cursorX, input);
     config.cursorX++;
+}
+
+void insertNewLine()
+{
+    if (config.cursorX == 0)
+        insertTextRow(config.cursorY, "", 0);
+    else
+    {
+        TextRow* row = &config.textRow[config.cursorY];
+        insertTextRow(config.cursorY + 1, &row->text[config.cursorX], row->length - config.cursorX);
+        row = &config.textRow[config.cursorY];
+        row->length = config.cursorX;
+        row->text[row->length] = '\0';
+        updateTextRow(row);
+    }
+    config.cursorY++;
+    config.cursorX = 0;
+    config.isSaved = FALSE;
+}
+
+void deleteChar()
+{
+    if (config.cursorX == 0 && config.cursorY == 0)
+        return;
+
+    if (config.cursorY == config.numberofTextRows)
+        return;
+
+    TextRow* row = &config.textRow[config.cursorY];
+    if (config.cursorX > 0)
+    {
+        deleteCharFromTextRow(row, config.cursorX - 1);
+        config.cursorX--;
+    }
+    else
+    {
+        config.cursorX = config.textRow[config.cursorY - 1].length;
+        appendStringToTextRow(&config.textRow[config.cursorY - 1], row->text, row->length);
+        deleteTextRow(config.cursorY);
+        config.cursorY--;
+    }
+
 }
 
 /*** file i/o  ***/
@@ -331,14 +416,14 @@ void insertChar(short int input)
 char* TextRowToString(size_t* bufferSize)
 {
     size_t totalSize = 0;
-    for (size_t i = 0; i < config.numberofRows; i++)
+    for (size_t i = 0; i < config.numberofTextRows; i++)
         totalSize += config.textRow[i].length + 1;
     *bufferSize = totalSize;
 
     char* buffer = malloc(totalSize);
     char* temp = buffer;
 
-    for (size_t i = 0; i < config.numberofRows; i++)
+    for (size_t i = 0; i < config.numberofTextRows; i++)
     {
         memcpy(temp, config.textRow[i].text, config.textRow[i].length);
         temp += config.textRow[i].length;
@@ -367,7 +452,7 @@ void openFile(const char* filename)
         while (linelen > 0 &&
                 (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
             linelen--;
-        appendTextRow(line, linelen);
+        insertTextRow(config.numberofTextRows, line, linelen);
     }
 
     free(line);
@@ -413,8 +498,7 @@ struct SBuffer
     unsigned int length;
 };
 
-#define SBUFFER_INIT                                                           \
-  { NULL, 0 }
+#define SBUFFER_INIT { NULL, 0 }
 
 void appendToSBuffer(struct SBuffer* sbuf, const char* string, size_t length)
 {
@@ -438,7 +522,7 @@ void freeSBuffer(struct SBuffer* sbuf)
 void scroll()
 {
     config.renderX = 0;
-    if (config.cursorY < config.numberofRows)
+    if (config.cursorY < config.numberofTextRows)
         config.renderX =
             getRenderX(&config.textRow[config.cursorY], config.cursorX);
 
@@ -475,9 +559,9 @@ void drawRows(struct SBuffer* sbuf)
     for (int i = 0; i < config.screenRows; i++)
     {
         size_t fileRow = i + config.rowOffset;
-        if (fileRow >= config.numberofRows)
+        if (fileRow >= config.numberofTextRows)
         {
-            if (config.numberofRows == 0 && i == config.screenRows / 3)
+            if (config.numberofTextRows == 0 && i == config.screenRows / 3)
             {
                 char welcome[50];
                 int welcomelen = snprintf(welcome, sizeof(welcome),
@@ -522,7 +606,7 @@ void drawStatusBar(struct SBuffer* sbuf)
     char status[100], cursor[50];
 
     int statusSize = snprintf(status, sizeof(status), "%.30s ~ %ld lines %s",
-                              filename, config.numberofRows, config.isSaved ? "" : "[UNSAVED]");
+                              filename, config.numberofTextRows, config.isSaved ? "" : "[UNSAVED]");
     int cursorSize = snprintf(cursor, sizeof(cursor), "%ld:%ld",
                               config.cursorY + 1, config.cursorX + 1);
 
@@ -553,7 +637,7 @@ void drawMessageBar(struct SBuffer* sbuf)
 
     if (messageLength > config.screenColumns)
         messageLength = config.screenColumns;
-    if (messageLength && time(NULL) - config.statusMessageTime < 5)
+    if (messageLength && time(NULL) - config.statusMessageTime < STATUS_MESSAGE_DELAY)
         appendToSBuffer(sbuf, config.statusMessage, messageLength);
 }
 
@@ -586,7 +670,7 @@ void refreshScreen()
 
 void moveCursor(short int key)
 {
-    TextRow* row = (config.cursorY >= config.numberofRows)
+    TextRow* row = (config.cursorY >= config.numberofTextRows)
                    ? NULL
                    : &config.textRow[config.cursorY];
 
@@ -615,12 +699,12 @@ void moveCursor(short int key)
                 config.cursorY--;
             break;
         case ARROW_DOWN:
-            if (config.cursorY < config.numberofRows)
+            if (config.cursorY < config.numberofTextRows)
                 config.cursorY++;
             break;
     }
 
-    row = (config.cursorY >= config.numberofRows)
+    row = (config.cursorY >= config.numberofTextRows)
           ? NULL
           : &config.textRow[config.cursorY];
     size_t rowLength = (row != NULL) ? row->length : 0;
@@ -637,6 +721,7 @@ void processKeypress()
     switch (input)
     {
         case '\r':
+            insertNewLine();
             break;
 
         case CTRL_KEY('s'):
@@ -661,13 +746,16 @@ void processKeypress()
             break;
 
         case END_KEY:
-            if (config.cursorY < config.numberofRows)
+            if (config.cursorY < config.numberofTextRows)
                 config.cursorX = config.textRow[config.cursorY].length;
             break;
 
         case BACKSPACE:
         case CTRL_KEY('h'):
         case DELETE_KEY:
+            if (input == DELETE_KEY)
+                moveCursor(ARROW_RIGHT);
+            deleteChar();
             break;
 
         case PAGE_UP:
@@ -677,8 +765,8 @@ void processKeypress()
             else if (input == PAGE_DOWN)
             {
                 config.cursorY = config.rowOffset + config.screenRows - 1;
-                if (config.cursorY > config.numberofRows)
-                    config.cursorY = config.numberofRows;
+                if (config.cursorY > config.numberofTextRows)
+                    config.cursorY = config.numberofTextRows;
             }
 
             for (int i = config.screenRows; i > 0; i--)
@@ -709,7 +797,7 @@ void processKeypress()
 void killEditor()
 {
     free(config.filename);
-    for (size_t i = 0; i < config.numberofRows; i++)
+    for (size_t i = 0; i < config.numberofTextRows; i++)
     {
         free(config.textRow[i].text);
         free(config.textRow[i].render);
@@ -722,7 +810,7 @@ void initEditor()
     config.cursorX = 0;
     config.cursorY = 0;
     config.renderX = 0;
-    config.numberofRows = 0;
+    config.numberofTextRows = 0;
     config.rowOffset = 0;
     config.columnOffset = 0;
     config.textRow = NULL;
@@ -739,13 +827,23 @@ void initEditor()
     atexit(killEditor);
 }
 
+void handleScreenResize(int signal)
+{
+    getWindowSize(&config.screenRows, &config.screenColumns);
+    config.screenRows -= 2;
+    refreshScreen();
+}
+
 int main(int argc, char** argv)
 {
     enableRawMode();
     initEditor();
+    signal(SIGWINCH, handleScreenResize);
 
     if (argc >= 2)
         openFile(argv[1]);
+    else
+        openFile("neo.c"); // just for testing
 
     setStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
 

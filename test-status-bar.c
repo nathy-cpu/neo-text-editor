@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
+#include <signal.h>
 
 /*** defines ***/
 
@@ -430,7 +431,7 @@ void drawStatusBar(struct SBuffer* sbuf)
 
 void drawMessageBar(struct SBuffer* sbuf)
 {
-    appendToSBuffer(sbuf, "\x1b[k", 3);
+    appendToSBuffer(sbuf, "\x1b[K", 3);
     int messageLength = strlen(config.statusMessage);
     if (messageLength > config.screenColumns)
         messageLength = config.screenColumns;
@@ -461,8 +462,14 @@ void refreshScreen()
     freeSBuffer(&sbuf);
 }
 
+void clearStatusMessage()
+{
+    memset(config.statusMessage, 0, sizeof(config.statusMessage));
+}
+
 void setStatusMessage(const char* fstring, ...)
 {
+    clearStatusMessage();
     va_list arg;
     va_start(arg, fstring);
     vsnprintf(config.statusMessage, sizeof(config.statusMessage), fstring, arg);
@@ -579,13 +586,23 @@ void initEditor()
     config.screenRows -= 2;
 }
 
+void handleScreenResize(int signal)
+{
+    getWindowSize(&config.screenRows, &config.screenColumns);
+    config.screenRows -= 2;
+    refreshScreen();
+}
+
 int main(int argc, char** argv)
 {
     enableRawMode();
     initEditor();
+    signal(SIGWINCH, handleScreenResize);
 
     if (argc >= 2)
         openFile(argv[1]);
+    else
+        openFile("neo.c"); // just for testing
 
     setStatusMessage("HELP: Ctrl-Q = quit");
 
