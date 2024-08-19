@@ -1,4 +1,4 @@
-/*** includes ***/
+/******* includes ********/
 
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
@@ -19,7 +19,7 @@
 #include <stdbool.h>
 #include <signal.h>
 
-/*** defines ***/
+/******* defines & enums ********/
 
 #define NEO_VERSION "0.0.1"
 #define TAB_STOP 4
@@ -46,7 +46,7 @@ enum Bool
     FALSE = 0
 };
 
-/*** global configuration data ***/
+/******* global configuration data ********/
 
 typedef struct TextRow
 {
@@ -74,11 +74,128 @@ struct Configuration
 
 struct Configuration config;
 
-/*** function prototypes ***/
+/******* screen buffer structure to write to terminal from ********/
+
+typedef struct SBuffer
+{
+    char* string;
+    unsigned int size;
+} SBuffer;
+
+#define SBUFFER_INIT { NULL, 0 }
+
+/******************************** All function prototypes ***************************************/
+
+/******* initializing the terminal ********/
+
+void die(const char* source);
+
+void disableRawMode();
+
+void enableRawMode();
+
+short int readKeypress();
+
+int getCursorPosition(unsigned short int* rows, unsigned short int* columns);
+
+int getWindowSize(unsigned short int* rows, unsigned short int* columns);
+
+/******* text row operations ********/
+
+size_t getRenderX(TextRow* row, size_t cursorX);
+
+void updateTextRow(TextRow* row);
+
+void insertTextRow(size_t index, const char* str, size_t size);
+
+void freeTextRow(TextRow* row);
+
+void deleteTextRow(size_t index);
+
+void insertCharIntoTextRow(TextRow* row, size_t index, short int input);
+
+void appendStringToTextRow(TextRow* row, char* str, size_t size);
+
+void deleteCharFromTextRow(TextRow* row, size_t index);
+
+/******* editor operations ********/
+
+void insertChar(short int input);
+
+void insertNewLine();
+
+void deleteChar();
+
+/******* file i/o  ********/
+
+char* TextRowToString(size_t* bufferSize);
+
+void openFile(const char* filename);
+
+void saveToFile();
+
+/******* screen buffer ********/
+
+void appendToSBuffer(SBuffer* sbuf, const char* string, size_t size);
+
+void freeSBuffer(SBuffer* sbuf);
+
+/******* output ********/
+
+void scroll();
+
+void clearStatusMessage();
 
 void setStatusMessage(const char* fstring, ...);
 
-/*** terminal ***/
+void drawRows(SBuffer* sbuf);
+
+void drawStatusBar(SBuffer* sbuf);
+
+void drawMessageBar(SBuffer* sbuf);
+
+void refreshScreen();
+
+char* promptForInput(char* prompt);
+
+void moveCursor(short int key);
+
+void processKeypress();
+
+/******* initializing the Editor ********/
+
+void killEditor();
+
+void initEditor();
+
+void handleScreenResize(int signal);
+
+/******* Main Function, where all the real work happens ********/
+
+int main(int argc, char** argv)
+{
+    enableRawMode();
+    initEditor();
+    signal(SIGWINCH, handleScreenResize);
+
+    if (argc >= 2)
+        openFile(argv[1]);
+
+    setStatusMessage("HELP: Ctrl-Q = quit");
+
+    while (1)
+    {
+        refreshScreen();
+        processKeypress();
+    }
+
+    return 0;
+}
+
+/******************************** All function inplementations ***********************************************/
+
+
+/******* initializing the terminal ********/
 
 void die(const char* source)
 {
@@ -242,7 +359,7 @@ int getWindowSize(unsigned short int* rows, unsigned short int* columns)
     }
 }
 
-/*** text row operations ***/
+/******* text row operations ********/
 
 size_t getRenderX(TextRow* row, size_t cursorX)
 {
@@ -390,7 +507,7 @@ void deleteCharFromTextRow(TextRow* row, size_t index)
     config.isSaved = FALSE;
 }
 
-/*** editor operations ***/
+/******* editor operations ********/
 
 void insertChar(short int input)
 {
@@ -443,7 +560,7 @@ void deleteChar()
     }
 }
 
-/*** file i/o  ***/
+/******* file i/o  ********/
 
 char* TextRowToString(size_t* bufferSize)
 {
@@ -505,7 +622,14 @@ void openFile(const char* filename)
 void saveToFile()
 {
     if (config.filename == NULL)
-        return;
+    {
+        config.filename = promptForInput("Save file as: %s");
+        if (config.filename ==  NULL)
+        {
+            setStatusMessage("Save cancelled!");
+            return;
+        }
+    }
 
     size_t bufferSize;
     char* buffer = TextRowToString(&bufferSize);
@@ -532,17 +656,9 @@ void saveToFile()
     setStatusMessage("Save Failed! Error: %s", strerror(errno));
 }
 
-/*** string buffer to write from ***/
+/******* screen buffer handling ********/
 
-struct SBuffer
-{
-    char* string;
-    unsigned int size;
-};
-
-#define SBUFFER_INIT { NULL, 0 }
-
-void appendToSBuffer(struct SBuffer* sbuf, const char* string, size_t size)
+void appendToSBuffer(SBuffer* sbuf, const char* string, size_t size)
 {
     char* temp = realloc(sbuf->string, sbuf->size + size);
     if (temp == NULL)
@@ -554,13 +670,13 @@ void appendToSBuffer(struct SBuffer* sbuf, const char* string, size_t size)
     sbuf->size += size;
 }
 
-void freeSBuffer(struct SBuffer* sbuf)
+void freeSBuffer(SBuffer* sbuf)
 {
     free(sbuf->string);
     sbuf->size = 0;
 }
 
-/*** output ***/
+/******* output ********/
 
 void scroll()
 {
@@ -596,7 +712,7 @@ void setStatusMessage(const char* fstring, ...)
     config.statusMessageTime = time(NULL);
 }
 
-void drawRows(struct SBuffer* sbuf)
+void drawRows(SBuffer* sbuf)
 {
     for (int i = 0; i < config.screenRows; i++)
     {
@@ -645,7 +761,7 @@ void drawRows(struct SBuffer* sbuf)
     }
 }
 
-void drawStatusBar(struct SBuffer* sbuf)
+void drawStatusBar(SBuffer* sbuf)
 {
     appendToSBuffer(sbuf, "\x1b[7m", 4);
 
@@ -678,7 +794,7 @@ void drawStatusBar(struct SBuffer* sbuf)
     appendToSBuffer(sbuf, "\r\n", 2);
 }
 
-void drawMessageBar(struct SBuffer* sbuf)
+void drawMessageBar(SBuffer* sbuf)
 {
 
     appendToSBuffer(sbuf, "\x1b[K", 3);
@@ -715,7 +831,59 @@ void refreshScreen()
     freeSBuffer(&sbuf);
 }
 
-/*** input ***/
+/******* input ********/
+
+char* promptForInput(char* prompt)
+{
+    int maxBufferSize = 150;
+    char* buffer = malloc(maxBufferSize);
+    buffer[0] = '\0';
+    int bufferSize = 0;
+
+    while (1)
+    {
+        setStatusMessage(prompt, buffer);
+        refreshScreen();
+
+        short int input = readKeypress();
+
+        if (input == DELETE_KEY || input == CTRL_KEY('h') || input == BACKSPACE)
+        {
+            if (bufferSize > 0)
+            {
+                bufferSize--;
+                buffer[bufferSize] = '\0';
+            }
+        }
+        else if (input == '\x1b')
+        {
+            setStatusMessage("");
+            free(buffer);
+            return NULL;
+        }
+        else if (input == '\r')
+        {
+            if(bufferSize > 0)
+            {
+                setStatusMessage("");
+                return buffer;
+            }
+        }
+        else if (!iscntrl(input) && input < 128)
+        {
+            if (bufferSize == maxBufferSize - 1)
+            {
+                maxBufferSize *= 2;
+                buffer = realloc(buffer, maxBufferSize);
+                if (buffer == NULL)
+                    die("realloc");
+            }
+            buffer[bufferSize] = input;
+            bufferSize++;
+            buffer[bufferSize] = '\0';
+        }
+    }
+}
 
 void moveCursor(short int key)
 {
@@ -842,7 +1010,7 @@ void processKeypress()
     isQuiting = FALSE;
 }
 
-/*** init ***/
+/******* initializing the editor ********/
 
 void killEditor()
 {
@@ -884,26 +1052,4 @@ void handleScreenResize(int signal)
 
     config.screenRows -= 2;
     refreshScreen();
-}
-
-int main(int argc, char** argv)
-{
-    enableRawMode();
-    initEditor();
-    signal(SIGWINCH, handleScreenResize);
-
-    if (argc >= 2)
-        openFile(argv[1]);
-    else
-        openFile("neo.c"); // just for testing
-
-    setStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
-
-    while (1)
-    {
-        refreshScreen();
-        processKeypress();
-    }
-
-    return 0;
 }
