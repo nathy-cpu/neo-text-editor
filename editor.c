@@ -271,7 +271,7 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                 ScreenBufferAppend(sbuf, welcome, welcomelen);
             }
             else
-                ScreenBufferAppend(sbuf, ">", 1);
+                ScreenBufferAppend(sbuf, "~", 1);
         }
         else
         {
@@ -296,8 +296,8 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                     ScreenBufferAppend(sbuf, "\x1b[m", 3);
                     if (currentColor != NULL)
                     {
-                        char buffer[16];
-                        int len = snprintf(buffer, sizeof(buffer), "\x1b[%sm", currentColor);
+                        char buffer[30];
+                        int len = snprintf(buffer, sizeof(buffer), "%s", currentColor);
                         ScreenBufferAppend(sbuf, buffer, len);
                     }
                 }
@@ -316,8 +316,8 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                     if (color != currentColor)
                     {
                         currentColor = color;
-                        char buffer[16];
-                        int len = snprintf(buffer, sizeof(buffer), "\x1b[%sm", color);
+                        char buffer[30];
+                        int len = snprintf(buffer, sizeof(buffer), "%s", color);
                         ScreenBufferAppend(sbuf, buffer, len);
                     }
                     ScreenBufferAppend(sbuf, &temp[j], 1);
