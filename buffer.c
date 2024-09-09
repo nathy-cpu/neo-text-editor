@@ -32,35 +32,38 @@ char* getSyntaxColor(int highlight)
     switch (highlight)
     {
         case HIGHLIGHT_NUMBER:
-            return "38:5:207";
+            return "\x1b[38:5:207m";
             break;
 
         case HIGHLIGHT_STRING:
-            return "38:5:208";
+            return "\x1b[38:5:208m";
             break;
 
         case HIGHLIGHT_CHARACTER:
-            return "38:5:178";
+            return "\x1b[38:5:178m";
             break;
 
         case HIGHLIGHT_COMMENT:
-            return "38:5:34";
+            return "\x1b[3m\x1b[38:5:70m";
             break;
 
         case HIGHLIGHT_KEYWORD:
-            return "38:5:20";
+            return "\x1b[1m\x1b[38:5:162m";
             break;
 
         case HIGHLIGHT_TYPE:
-            return "38:5:21";
+            return "\x1b[38:5:33m";
             break;
 
-        case HIGHLIGHT_MATCH:
-            return "38:5:51";
+        case HIGHLIGHT_SELECTION:
+            return "\x1b[48:5:240m\x1b[38:5:51m";
             break;
+
+        case HIGHLIGHT_PREPROCESSOR:
+            return "\x1b[38:5:20m";
 
         default:
-            return "37";
+            return "\x1b[0m\x1b[37m";
             break;
     }
 }
@@ -107,21 +110,18 @@ void    TextRowUpdateRender(TextRow* row)
     row->renderSize = index;
 }
 
-void    TextRowUpdateSyntax(TextRow* row, Syntax* syn)
+void    TextRowUpdateSyntax(TextRow* row, const Syntax syn)
 {
-    row->highlight = realloc(row->highlight, row->renderSize);
+    unsigned char* temp = realloc(row->highlight, row->renderSize);
+    if (temp == NULL)
+        die("realloc");
+    else
+        row->highlight = temp;
+
     memset(row->highlight, HIGHLIGHT_NORMAL, row->renderSize);
 
-    if (syn == NULL)
+    if (syn.fileType == NULL)
         return;
-
-    char** keywords = syn->keywords;
-    char** types = syn->types;
-
-    size_t commentLength = syn->singleLineCommentStarter ? strlen(syn->singleLineCommentStarter) : 0;
-
-    size_t mcslen = syn->multilineCommentStart ? strlen(syn->multilineCommentStart) : 0;
-    size_t mcelen = syn->multilineCommentEnd ? strlen(syn->multilineCommentEnd) : 0;
 
     bool previousSeparator = true;
     bool inString = false;
@@ -129,101 +129,99 @@ void    TextRowUpdateSyntax(TextRow* row, Syntax* syn)
 
     for (size_t i = 0; i < row->renderSize; i++)
     {
-        char currentChar = row->render[i];
-        unsigned char previousHighlight = (i > 0) ? row->highlight[i - 1] : HIGHLIGHT_NORMAL;
+        unsigned char previousHighlight = (i > 0)
+                                        ? row->highlight[i - 1]
+                                        : HIGHLIGHT_NORMAL;
 
-        if (commentLength && !inString && !inComment)
+        if (i == 0 && !strncmp(&row->render[i], syn.preprocessorStart, strlen(syn.preprocessorStart)))
         {
-            if (!strncmp(&row->render[i], syn->singleLineCommentStarter, commentLength))
-            {
-                memset(&row->highlight[i], HIGHLIGHT_COMMENT, row->renderSize - i);
-                break;
-            }
+            memset(&row->highlight[i], HIGHLIGHT_PREPROCESSOR, row->renderSize);
+            break;
         }
 
-        if (mcslen && mcelen && !inString)
+        if (!inString && !inComment && !strncmp(&row->render[i], syn.singleLineCommentStarter, strlen(syn.singleLineCommentStarter)))
         {
-            if (inComment)
-            {
-                row->highlight[i] = HIGHLIGHT_COMMENT;
-                if (!strncmp(&row->render[i], syn->multilineCommentEnd, mcelen))
-                {
-                    memset(&row->highlight[i], HIGHLIGHT_COMMENT, mcelen);
-                    i += mcelen - 1;
-                    inComment = false;
-                    previousSeparator = true;
-                    continue;
-                }
-                else
-                    continue;
-            }
-            else if (!strncmp(&row->render[i], syn->multilineCommentStart, mcslen))
-            {
-                memset(&row->highlight[i], HIGHLIGHT_COMMENT, mcslen);
-                i += mcslen - 1;
-                inComment = true;
-                continue;
-            }
+            memset(&row->highlight[i], HIGHLIGHT_COMMENT, row->renderSize - i);
+            break;
         }
 
-        if (syn->flag & HIGHLIGHT_STRING)
+        if (!inComment && !inString && !strncmp(&row->render[i], syn.multilineCommentStart, strlen(syn.multilineCommentStart)))
         {
-            if (inString)
+            int len = strlen(syn.multilineCommentStart);
+
+            memset(&row->highlight[i], HIGHLIGHT_COMMENT, len);
+            i += len - 1;
+            inComment = true;
+            continue;
+        }
+
+        if (inComment && !inString)
+        {
+            row->highlight[i] = HIGHLIGHT_COMMENT;
+            int len = strlen(syn.multilineCommentEnd);
+            if (!strncmp(&row->render[i], syn.multilineCommentEnd, len))
             {
-                row->highlight[i] = HIGHLIGHT_STRING;
+                memset(&row->highlight[i], HIGHLIGHT_COMMENT, len);
+                i += len - 1;
+                inComment = false;
                 previousSeparator = true;
-                if (currentChar == '"')
-                    inString = false;
-                continue;
             }
-            else
+            continue;
+        }
+
+        if (inString)
+        {
+            row->highlight[i] = HIGHLIGHT_STRING;
+            previousSeparator = true;
+            if (row->render[i] == '"')
+                inString = false;
+            continue;
+        }
+        else
+        {
+            if (row->render[i] == '"')
             {
-                if (currentChar == '"')
-                {
-                    inString = true;
-                    row->highlight[i] = HIGHLIGHT_STRING;
-                    continue;
-                }
+                inString = true;
+                row->highlight[i] = HIGHLIGHT_STRING;
+                continue;
             }
         }
 
-        if (syn->flag & HIGHLIGHT_NUMBER)
+
+        if (isdigit(row->render[i]) && (previousSeparator || previousHighlight == HIGHLIGHT_NUMBER))
         {
-            if (isdigit(currentChar) && (previousSeparator || previousHighlight == HIGHLIGHT_NUMBER) || (currentChar == '.' && previousHighlight == HIGHLIGHT_NUMBER))
-            {
-                row->highlight[i] = HIGHLIGHT_NUMBER;
-                previousSeparator = false;
-                continue;
-            }
+            row->highlight[i] = HIGHLIGHT_NUMBER;
+            previousSeparator = false;
+            continue;
         }
 
         if (previousSeparator)
         {
             int j;
-            for (j = 0; keywords[j] != NULL; j++)
+            for(j = 0; syn.keywords[j] != NULL; j++)
             {
-                int keywordLength = strlen(keywords[j]);
+                int keywordLength = strlen(syn.keywords[j]);
 
-                if (!strncmp(&row->render[i], keywords[j], keywordLength) && isSeparator(row->render[i + keywordLength]))
+                if (!strncmp(&row->render[i], syn.keywords[j], keywordLength) && isSeparator(row->render[i + keywordLength]))
                 {
                     memset(&row->highlight[i], HIGHLIGHT_KEYWORD, keywordLength);
-                    i += keywordLength - 1;
+                    i +=keywordLength - 1;
                     break;
                 }
             }
 
-            if (keywords[j] != NULL)
+            if (syn.keywords[j] != NULL)
             {
                 previousSeparator = false;
                 continue;
             }
 
             int k;
-            for (k = 0; types[k] != NULL; k++)
+            for (k = 0; syn.types[k] != NULL; k++)
             {
-                int typesLength = strlen(types[k]);
+                int typesLength = strlen(syn.types[k]);
 
-                if (!strncmp(&row->render[i], types[k], typesLength) && isSeparator(row->render[i + typesLength]))
+                if (!strncmp(&row->render[i], syn.types[k], typesLength) && isSeparator(row->render[i + typesLength]))
                 {
                     memset(&row->highlight[i], HIGHLIGHT_TYPE, typesLength);
                     i += typesLength - 1;
@@ -231,19 +229,19 @@ void    TextRowUpdateSyntax(TextRow* row, Syntax* syn)
                 }
             }
 
-            if (types[k] != NULL)
+            if (syn.types[k] != NULL)
             {
                 previousSeparator = false;
                 continue;
             }
         }
 
-        previousSeparator = isSeparator(currentChar);
+        previousSeparator = isSeparator(row->render[i]);
     }
 
     bool isChanged = (row->openComment != inComment);
     row->openComment = inComment;
-    if (isChanged && ((row + 1) != NULL) && (row + 1)->index == row->index + 1)
+    if (isChanged && (row + 1) != NULL && (row + 1)->index == row->index + 1)
         TextRowUpdateSyntax(row + 1, syn);
 }
 
@@ -254,7 +252,7 @@ void    TextRowFree(TextRow* row)
     free(row->highlight);
 }
 
-void    TextRowInsertChar(TextRow* row, size_t index, short int input, Syntax* syn)
+void    TextRowInsertChar(TextRow* row, size_t index, short int input, const Syntax syn)
 {
     if (index > row->textSize)
         index = row->textSize;
@@ -273,7 +271,7 @@ void    TextRowInsertChar(TextRow* row, size_t index, short int input, Syntax* s
     TextRowUpdateSyntax(row, syn);
 }
 
-void    TextRowAppendString(TextRow* row, char* str, size_t size, Syntax* syn)
+void    TextRowAppendString(TextRow* row, char* str, size_t size, const Syntax syn)
 {
     char* temp = realloc(row->text, row->textSize + size + 1);
     if (temp != NULL)
@@ -289,7 +287,7 @@ void    TextRowAppendString(TextRow* row, char* str, size_t size, Syntax* syn)
     TextRowUpdateSyntax(row, syn);
 }
 
-void    TextRowDeleteChar(TextRow* row, size_t index, Syntax* syn)
+void    TextRowDeleteChar(TextRow* row, size_t index, const Syntax syn)
 {
     if (index >= row->textSize)
         return;
@@ -318,15 +316,13 @@ size_t  TextRowGetCursorX(TextRow* row, size_t renderX)
 {
     size_t cx, rx = 0;
 
-    for (cx = 0; cx < row->textSize; cx++)
+    for (cx = 0; cx < row->textSize && rx <= renderX; cx++)
     {
         if (row->text[cx] == '\t')
             rx += (TAB_STOP - 1) - (rx % TAB_STOP);
         rx++;
-
-        if (rx > renderX)
-            return cx;
     }
+    return cx;
 }
 
 /******* text buffer operations ********/
@@ -358,6 +354,7 @@ void    TextBufferInsertTextRow(TextBuffer* tbuf, size_t index, const char* str,
     tbuf->textRow[index].render = NULL;
     tbuf->textRow[index].highlight = NULL;
     tbuf->textRow[index].openComment = false;
+
     TextRowUpdateRender(&tbuf->textRow[index]);
     TextRowUpdateSyntax(&tbuf->textRow[index], tbuf->syntax);
 

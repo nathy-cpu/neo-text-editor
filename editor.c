@@ -7,8 +7,10 @@ void    disableRawMode(EditorConfiguration *config)
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &config->originalTermios) == -1)
         die("tcsetattr");
 
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    if (write(STDOUT_FILENO, "\x1b[2J", 4) == -1)
+        die("write");
+    if (write(STDOUT_FILENO, "\x1b[H", 3) == -1)
+        die("write");
 }
 
 void    enableRawMode(EditorConfiguration *config)
@@ -89,12 +91,22 @@ int     EditorGetWindowSize(EditorConfiguration *config)
 void    EditorInit(EditorConfiguration *config)
 {
     enableRawMode(config);
+
     config->cursorX = 0;
     config->cursorY = 0;
     config->renderX = 0;
     config->textBuffer.numberofTextRows = 0;
     config->textBuffer.textRow = NULL;
-    config->textBuffer.syntax = NULL;
+    config->textBuffer.syntax = SYNTAXINIT;
+    /*config->textBuffer.syntax.fileType = NULL;
+    config->textBuffer.syntax.fileMatch = NULL;
+    config->textBuffer.syntax.keywords = NULL;
+    config->textBuffer.syntax.types = NULL;
+    config->textBuffer.syntax.singleLineCommentStarter = NULL;
+    config->textBuffer.syntax.multilineCommentStart = NULL;
+    config->textBuffer.syntax.multilineCommentEnd = NULL;
+    config->textBuffer.syntax.preprocessorStart = NULL;
+    config->textBuffer.syntax.flag = 0;*/
     config->rowOffset = 0;
     config->columnOffset = 0;
     config->filename = NULL;
@@ -108,9 +120,9 @@ void    EditorInit(EditorConfiguration *config)
     config->screenRows -= 2;
 }
 
-void    EditorSetSyntaxHighlight(EditorConfiguration *config, Syntax HLDB[])
+void    EditorSetSyntaxHighlight(EditorConfiguration *config, const Syntax HLDB[])
 {
-    config->textBuffer.syntax = NULL;
+    config->textBuffer.syntax = SYNTAXINIT;
     if (config->filename == NULL)
         return;
 
@@ -118,12 +130,12 @@ void    EditorSetSyntaxHighlight(EditorConfiguration *config, Syntax HLDB[])
 
     for (unsigned int j = 0; HLDB[j].fileType != NULL; j++)
     {
-        Syntax* syn = &HLDB[j];
+        Syntax syn = HLDB[j];
 
-        for (unsigned int i = 0; syn->fileMatch[i] != 0; i++)
+        for (unsigned int i = 0; syn.fileMatch[i] != 0; i++)
         {
-            bool isExtension = (syn->fileMatch[i][0] == '.');
-            if ((isExtension && extention && !strcmp(extention, syn->fileMatch[i])) || (!isExtension && strstr(config->filename, syn->fileMatch[i])))
+            bool isExtension = (syn.fileMatch[i][0] == '.');
+            if ((isExtension && extention && !strcmp(extention, syn.fileMatch[i])) || (!isExtension && strstr(config->filename, syn.fileMatch[i])))
             {
                 config->textBuffer.syntax = syn;
 
@@ -138,7 +150,7 @@ void    EditorSetSyntaxHighlight(EditorConfiguration *config, Syntax HLDB[])
 
 /******* handling files to edit ********/
 
-void    EditorOpenFile(EditorConfiguration *config, const char* filename, Syntax HLDB[])
+void    EditorOpenFile(EditorConfiguration *config, const char* filename, const Syntax HLDB[])
 {
     free(config->filename);
 
@@ -172,7 +184,7 @@ void    EditorOpenFile(EditorConfiguration *config, const char* filename, Syntax
     config->isSaved = true;
 }
 
-void    EditorSaveToFile(EditorConfiguration *config, Syntax HLDB[])
+void    EditorSaveToFile(EditorConfiguration *config, const Syntax HLDB[])
 {
     if (config->filename == NULL)
     {
@@ -305,7 +317,7 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                 {
                     if(currentColor != NULL)
                     {
-                        ScreenBufferAppend(sbuf, "\x1b[39m", 5);
+                        ScreenBufferAppend(sbuf, "\x1b[0m\x1b[39m", 9);
                         currentColor = NULL;
                     }
                     ScreenBufferAppend(sbuf, &temp[j], 1);
@@ -324,7 +336,7 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                 }
             }
 
-            ScreenBufferAppend(sbuf, "\x1b[39m", 5);
+            ScreenBufferAppend(sbuf, "\x1b[0m\x1b[39m", 9);
         }
 
         ScreenBufferAppend(sbuf, "\x1b[K", 3);
@@ -398,13 +410,15 @@ void    EditorRefreshScreen(EditorConfiguration *config)
 
     ScreenBufferAppend(&sbuf, "\x1b[?25h", 6);
 
-    write(STDOUT_FILENO, sbuf.string, sbuf.size);
+    if (write(STDOUT_FILENO, sbuf.string, sbuf.size) == -1)
+        die("write");
+
     ScreenBufferFree(&sbuf);
 }
 
 /******* input ********/
 
-char*   EditorPromptForInput(EditorConfiguration *config, char* prompt, void (*callBackFunction)(EditorConfiguration*, char*, int))
+char*   EditorPromptForInput(EditorConfiguration *config, const char* prompt, void (*callBackFunction)(EditorConfiguration*, char*, int))
 {
     int maxBufferSize = 150;
     char* buffer = malloc(maxBufferSize);
@@ -512,7 +526,7 @@ void    EditorMoveCursor(EditorConfiguration *config, short int key)
         config->cursorX = rowSize;
 }
 
-void    EditorProcessKeypress(EditorConfiguration *config, Syntax HLDB[])
+void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
 {
     static bool isQuiting = false;
 
@@ -540,9 +554,12 @@ void    EditorProcessKeypress(EditorConfiguration *config, Syntax HLDB[])
                 return;
             }
 
-            write(STDOUT_FILENO, "\x1b[2J", 4);
-            write(STDOUT_FILENO, "\x1b[H", 3);
-            //EditorKill(config);
+            if (write(STDOUT_FILENO, "\x1b[2J", 4) == -1)
+                die("write");
+
+            if (write(STDOUT_FILENO, "\x1b[H", 3) == -1)
+                die("write");
+
             exit(0);
             break;
 
@@ -711,7 +728,7 @@ void findCallBack(EditorConfiguration* config, char* query, int key)
             savedRow = currentMatch;
             savedHighlight = malloc(row->renderSize);
             memcpy(savedHighlight, row->highlight, row->renderSize);
-            memset(&row->highlight[match - row->render], HIGHLIGHT_MATCH, strlen(query));
+            memset(&row->highlight[match - row->render], HIGHLIGHT_SELECTION, strlen(query));
 
             break;
         }
