@@ -2,7 +2,7 @@
 
 /******* initializing the Editor ********/
 
-void    disableRawMode(EditorConfiguration *config)
+void    disableRawMode(Editor *config)
 {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &config->originalTermios) == -1)
         die("tcsetattr");
@@ -13,7 +13,7 @@ void    disableRawMode(EditorConfiguration *config)
         die("write");
 }
 
-void    enableRawMode(EditorConfiguration *config)
+void    enableRawMode(Editor *config)
 {
     if (tcgetattr(STDIN_FILENO, &config->originalTermios) == -1)
         die("tcgetattr");
@@ -30,7 +30,7 @@ void    enableRawMode(EditorConfiguration *config)
         die("tcsetattr");
 }
 
-void    EditorKill(EditorConfiguration *config)
+void    Editor_kill(Editor *config)
 {
     free(config->filename);
     for (size_t i = 0; i < config->textBuffer.numberofTextRows; i++)
@@ -44,7 +44,7 @@ void    EditorKill(EditorConfiguration *config)
     // todo: figure out disableRawMode situation
 }
 
-int     EditorGetCursorPosition(EditorConfiguration *config)
+int     Editor_getCursorPosition(Editor *config)
 {
     char buffer[32];
     unsigned int i = 0;
@@ -70,7 +70,7 @@ int     EditorGetCursorPosition(EditorConfiguration *config)
     return 0;
 }
 
-int     EditorGetWindowSize(EditorConfiguration *config)
+int     Editor_getWindowSize(Editor *config)
 {
     struct winsize window;
 
@@ -78,7 +78,7 @@ int     EditorGetWindowSize(EditorConfiguration *config)
     {
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
             return -1;
-        return EditorGetCursorPosition(config);
+        return Editor_getCursorPosition(config);
     }
     else
     {
@@ -88,7 +88,7 @@ int     EditorGetWindowSize(EditorConfiguration *config)
     }
 }
 
-void    EditorInit(EditorConfiguration *config)
+void    Editor_init(Editor *config)
 {
     enableRawMode(config);
 
@@ -98,15 +98,6 @@ void    EditorInit(EditorConfiguration *config)
     config->textBuffer.numberofTextRows = 0;
     config->textBuffer.textRow = NULL;
     config->textBuffer.syntax = SYNTAXINIT;
-    /*config->textBuffer.syntax.fileType = NULL;
-    config->textBuffer.syntax.fileMatch = NULL;
-    config->textBuffer.syntax.keywords = NULL;
-    config->textBuffer.syntax.types = NULL;
-    config->textBuffer.syntax.singleLineCommentStarter = NULL;
-    config->textBuffer.syntax.multilineCommentStart = NULL;
-    config->textBuffer.syntax.multilineCommentEnd = NULL;
-    config->textBuffer.syntax.preprocessorStart = NULL;
-    config->textBuffer.syntax.flag = 0;*/
     config->rowOffset = 0;
     config->columnOffset = 0;
     config->filename = NULL;
@@ -114,13 +105,13 @@ void    EditorInit(EditorConfiguration *config)
     config->statusMessageTime = 0;
     config->isSaved = true;
 
-    if (EditorGetWindowSize(config) == -1)
-        die("EditorGetWindowSize");
+    if (Editor_getWindowSize(config) == -1)
+        die("Editor_getWindowSize");
 
     config->screenRows -= 2;
 }
 
-void    EditorSetSyntaxHighlight(EditorConfiguration *config, const Syntax HLDB[])
+void    Editor_setSyntaxHighlight(Editor *config, const Syntax HLDB[])
 {
     config->textBuffer.syntax = SYNTAXINIT;
     if (config->filename == NULL)
@@ -139,8 +130,10 @@ void    EditorSetSyntaxHighlight(EditorConfiguration *config, const Syntax HLDB[
             {
                 config->textBuffer.syntax = syn;
 
-                for(size_t k = 0; k < config->textBuffer.numberofTextRows; k++)
-                    TextRowUpdateSyntax(&config->textBuffer.textRow[k], config->textBuffer.syntax);
+                //for(size_t k = 0; k < config->textBuffer.numberofTextRows; k++)
+                //    TextRow_updateSyntax(&config->textBuffer.textRow[k], config->textBuffer.syntax);
+
+                TextBuffer_updateSyntax(&config->textBuffer, 0);
 
                 return;
             }
@@ -150,7 +143,7 @@ void    EditorSetSyntaxHighlight(EditorConfiguration *config, const Syntax HLDB[
 
 /******* handling files to edit ********/
 
-void    EditorOpenFile(EditorConfiguration *config, const char* filename, const Syntax HLDB[])
+void    Editor_openFile(Editor *config, const char* filename, const Syntax HLDB[])
 {
     free(config->filename);
 
@@ -160,7 +153,7 @@ void    EditorOpenFile(EditorConfiguration *config, const char* filename, const 
     else
         die("strdup");
 
-    EditorSetSyntaxHighlight(config, HLDB);
+    Editor_setSyntaxHighlight(config, HLDB);
 
 
     FILE* file = fopen(filename, "r");
@@ -176,30 +169,32 @@ void    EditorOpenFile(EditorConfiguration *config, const char* filename, const 
         while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
             linelen--;
 
-        TextBufferInsertTextRow(&config->textBuffer, config->textBuffer.numberofTextRows, line, linelen);
+        TextBuffer_insertTextRow(&config->textBuffer, config->textBuffer.numberofTextRows, line, linelen);
     }
+
+    TextBuffer_updateSyntax(&config->textBuffer, 0);
 
     free(line);
     fclose(file);
     config->isSaved = true;
 }
 
-void    EditorSaveToFile(EditorConfiguration *config, const Syntax HLDB[])
+void    Editor_saveToFile(Editor *config, const Syntax HLDB[])
 {
     if (config->filename == NULL)
     {
-        config->filename = EditorPromptForInput(config, "Save file as: %s", NULL);
+        config->filename = Editor_promptForInput(config, "Save file as: %s", NULL);
         if (config->filename ==  NULL)
         {
-            EditorSetStatusMessage(config, "Save cancelled!");
+            Editor_setStatusMessage(config, "Save cancelled!");
             return;
         }
 
-        EditorSetSyntaxHighlight(config, HLDB);
+        Editor_setSyntaxHighlight(config, HLDB);
     }
 
     size_t bufferSize;
-    char* buffer = TextBufferToString(&config->textBuffer, &bufferSize);
+    char* buffer = TextBuffer_toString(&config->textBuffer, &bufferSize);
 
     int file = open(config->filename, O_RDWR | O_CREAT, 0644);
 
@@ -212,7 +207,7 @@ void    EditorSaveToFile(EditorConfiguration *config, const Syntax HLDB[])
                 close(file);
                 free(buffer);
                 config->isSaved = true;
-                EditorSetStatusMessage(config, "%ldB written to disk.", bufferSize);
+                Editor_setStatusMessage(config, "%ldB written to disk.", bufferSize);
                 return;
             }
         }
@@ -220,16 +215,16 @@ void    EditorSaveToFile(EditorConfiguration *config, const Syntax HLDB[])
     }
 
     free(buffer);
-    EditorSetStatusMessage(config, "Save Failed! Error: %s", strerror(errno)); // for testing only
+    Editor_setStatusMessage(config, "Save Failed! Error: %s", strerror(errno)); // for testing only
 }
 
 /******* Editor output ********/
 
-void    EditorScroll(EditorConfiguration *config)
+void    Editor_scroll(Editor *config)
 {
     config->renderX = 0;
     if (config->cursorY < config->textBuffer.numberofTextRows)
-        config->renderX = TextRowGetRenderX(&config->textBuffer.textRow[config->cursorY], config->cursorX);
+        config->renderX = TextRow_getRenderX(&config->textBuffer.textRow[config->cursorY], config->cursorX);
 
     if (config->cursorY < config->rowOffset)
         config->rowOffset = config->cursorY;
@@ -244,7 +239,7 @@ void    EditorScroll(EditorConfiguration *config)
         config->columnOffset = config->renderX - config->screenColumns + 1;
 }
 
-void    EditorSetStatusMessage(EditorConfiguration *config, const char* fstring, ...)
+void    Editor_setStatusMessage(Editor *config, const char* fstring, ...)
 {
     va_list arg;
     va_start(arg, fstring);
@@ -253,7 +248,7 @@ void    EditorSetStatusMessage(EditorConfiguration *config, const char* fstring,
     config->statusMessageTime = time(NULL);
 }
 
-void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
+void    Editor_drawRows(Editor *config, ScreenBuffer* sbuf)
 {
     for (int i = 0; i < config->screenRows; i++)
     {
@@ -271,19 +266,19 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                 int padding = (config->screenColumns - welcomelen) / 2;
                 if (padding > 0)
                 {
-                    ScreenBufferAppend(sbuf, ">", 1);
+                    ScreenBuffer_append(sbuf, ">", 1);
                     padding--;
                 }
                 while (padding)
                 {
-                    ScreenBufferAppend(sbuf, " ", 1);
+                    ScreenBuffer_append(sbuf, " ", 1);
                     padding--;
                 }
 
-                ScreenBufferAppend(sbuf, welcome, welcomelen);
+                ScreenBuffer_append(sbuf, welcome, welcomelen);
             }
             else
-                ScreenBufferAppend(sbuf, "~", 1);
+                ScreenBuffer_append(sbuf, "~", 1);
         }
         else
         {
@@ -298,29 +293,30 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
             unsigned char* highlight = &config->textBuffer.textRow[fileRow].highlight[config->columnOffset];
             char* currentColor = NULL;
 
+
             for (size_t j = 0; j < len; j++)
             {
                 if (iscntrl(temp[j]))
                 {
                     char symbol = (temp[j] <= 26) ? '@' + temp[j] : '?';
-                    ScreenBufferAppend(sbuf, "\x1b[7m", 4);
-                    ScreenBufferAppend(sbuf, &symbol, 1);
-                    ScreenBufferAppend(sbuf, "\x1b[m", 3);
+                    ScreenBuffer_append(sbuf, "\x1b[7m", 4);
+                    ScreenBuffer_append(sbuf, &symbol, 1);
+                    ScreenBuffer_append(sbuf, "\x1b[m", 3);
                     if (currentColor != NULL)
                     {
                         char buffer[30];
                         int len = snprintf(buffer, sizeof(buffer), "%s", currentColor);
-                        ScreenBufferAppend(sbuf, buffer, len);
+                        ScreenBuffer_append(sbuf, buffer, len);
                     }
                 }
                 else if(highlight[j] == HIGHLIGHT_NORMAL)
                 {
                     if(currentColor != NULL)
                     {
-                        ScreenBufferAppend(sbuf, "\x1b[0m\x1b[39m", 9);
+                        ScreenBuffer_append(sbuf, "\x1b[0m\x1b[39m", 9);
                         currentColor = NULL;
                     }
-                    ScreenBufferAppend(sbuf, &temp[j], 1);
+                    ScreenBuffer_append(sbuf, &temp[j], 1);
                 }
                 else
                 {
@@ -330,23 +326,23 @@ void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf)
                         currentColor = color;
                         char buffer[30];
                         int len = snprintf(buffer, sizeof(buffer), "%s", color);
-                        ScreenBufferAppend(sbuf, buffer, len);
+                        ScreenBuffer_append(sbuf, buffer, len);
                     }
-                    ScreenBufferAppend(sbuf, &temp[j], 1);
+                    ScreenBuffer_append(sbuf, &temp[j], 1);
                 }
             }
 
-            ScreenBufferAppend(sbuf, "\x1b[0m\x1b[39m", 9);
+            ScreenBuffer_append(sbuf, "\x1b[0m\x1b[39m", 9);
         }
 
-        ScreenBufferAppend(sbuf, "\x1b[K", 3);
-        ScreenBufferAppend(sbuf, "\r\n", 2);
+        ScreenBuffer_append(sbuf, "\x1b[K", 3);
+        ScreenBuffer_append(sbuf, "\r\n", 2);
     }
 }
 
-void    EditorDrawStatusBar(EditorConfiguration *config, ScreenBuffer* sbuf)
+void    Editor_drawStatusBar(Editor *config, ScreenBuffer* sbuf)
 {
-    ScreenBufferAppend(sbuf, "\x1b[7m", 4);
+    ScreenBuffer_append(sbuf, "\x1b[7m", 4);
 
     char* filename = (config->filename == NULL) ? "[No File Opened]" : config->filename;
 
@@ -360,65 +356,65 @@ void    EditorDrawStatusBar(EditorConfiguration *config, ScreenBuffer* sbuf)
     if (statusSize > config->screenColumns)
         statusSize = config->screenColumns;
 
-    ScreenBufferAppend(sbuf, status, statusSize);
+    ScreenBuffer_append(sbuf, status, statusSize);
 
     for (int i = statusSize; i < config->screenColumns; i++)
     {
         if (config->screenColumns - i == cursorSize)
         {
-            ScreenBufferAppend(sbuf, cursor, cursorSize);
+            ScreenBuffer_append(sbuf, cursor, cursorSize);
             break;
         }
         else
-            ScreenBufferAppend(sbuf, " ", 1);
+            ScreenBuffer_append(sbuf, " ", 1);
     }
 
-    ScreenBufferAppend(sbuf, "\x1b[m", 3);
-    ScreenBufferAppend(sbuf, "\r\n", 2);
+    ScreenBuffer_append(sbuf, "\x1b[m", 3);
+    ScreenBuffer_append(sbuf, "\r\n", 2);
 }
 
-void    EditorDrawMessageBar(EditorConfiguration *config, ScreenBuffer* sbuf)
+void    Editor_drawMessageBar(Editor *config, ScreenBuffer* sbuf)
 {
 
-    ScreenBufferAppend(sbuf, "\x1b[K", 3);
+    ScreenBuffer_append(sbuf, "\x1b[K", 3);
     int messageSize = strlen(config->statusMessage);
 
     if (messageSize > config->screenColumns)
         messageSize = config->screenColumns;
 
     if (messageSize && time(NULL) - config->statusMessageTime < STATUS_MESSAGE_DELAY)
-        ScreenBufferAppend(sbuf, config->statusMessage, messageSize);
+        ScreenBuffer_append(sbuf, config->statusMessage, messageSize);
 }
 
-void    EditorRefreshScreen(EditorConfiguration *config)
+void    Editor_refreshScreen(Editor *config)
 {
-    EditorScroll(config);
+    Editor_scroll(config);
 
     ScreenBuffer sbuf = SCREEN_BUFFER_INIT;
 
-    ScreenBufferAppend(&sbuf, "\x1b[?25l", 6);
-    ScreenBufferAppend(&sbuf, "\x1b[H", 3);
+    ScreenBuffer_append(&sbuf, "\x1b[?25l", 6);
+    ScreenBuffer_append(&sbuf, "\x1b[H", 3);
 
-    EditorDrawRows(config, &sbuf);
-    EditorDrawStatusBar(config, &sbuf);
-    EditorDrawMessageBar(config, &sbuf);
+    Editor_drawRows(config, &sbuf);
+    Editor_drawStatusBar(config, &sbuf);
+    Editor_drawMessageBar(config, &sbuf);
 
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "\x1b[%ld;%ldH", (config->cursorY - config->rowOffset) + 1, (config->renderX - config->columnOffset) + 1);
 
-    ScreenBufferAppend(&sbuf, buffer, strlen(buffer));
+    ScreenBuffer_append(&sbuf, buffer, strlen(buffer));
 
-    ScreenBufferAppend(&sbuf, "\x1b[?25h", 6);
+    ScreenBuffer_append(&sbuf, "\x1b[?25h", 6);
 
     if (write(STDOUT_FILENO, sbuf.string, sbuf.size) == -1)
         die("write");
 
-    ScreenBufferFree(&sbuf);
+    ScreenBuffer_free(&sbuf);
 }
 
 /******* input ********/
 
-char*   EditorPromptForInput(EditorConfiguration *config, const char* prompt, void (*callBackFunction)(EditorConfiguration*, char*, int))
+char*   Editor_promptForInput(Editor *config, const char* prompt, void (*callBackFunction)(Editor*, char*, int))
 {
     int maxBufferSize = 150;
     char* buffer = malloc(maxBufferSize);
@@ -427,8 +423,8 @@ char*   EditorPromptForInput(EditorConfiguration *config, const char* prompt, vo
 
     while (1)
     {
-        EditorSetStatusMessage(config, prompt, buffer);
-        EditorRefreshScreen(config);
+        Editor_setStatusMessage(config, prompt, buffer);
+        Editor_refreshScreen(config);
 
         short int input = readKeypress();
 
@@ -442,7 +438,7 @@ char*   EditorPromptForInput(EditorConfiguration *config, const char* prompt, vo
         }
         else if (input == '\x1b')
         {
-            EditorSetStatusMessage(config, "");
+            Editor_setStatusMessage(config, "");
 
             if (callBackFunction)
                 callBackFunction(config, buffer, input);
@@ -454,7 +450,7 @@ char*   EditorPromptForInput(EditorConfiguration *config, const char* prompt, vo
         {
             if(bufferSize > 0)
             {
-                EditorSetStatusMessage(config, "");
+                Editor_setStatusMessage(config, "");
 
                 if (callBackFunction)
                     callBackFunction(config, buffer, input);
@@ -481,7 +477,7 @@ char*   EditorPromptForInput(EditorConfiguration *config, const char* prompt, vo
     }
 }
 
-void    EditorMoveCursor(EditorConfiguration *config, short int key)
+void    Editor_moveCursor(Editor *config, short int key)
 {
     TextRow* row = (config->cursorY >= config->textBuffer.numberofTextRows)
                    ? NULL
@@ -497,8 +493,8 @@ void    EditorMoveCursor(EditorConfiguration *config, short int key)
                 config->cursorY--;
                 config->cursorX = config->textBuffer.textRow[config->cursorY].textSize;
             }
-            break;
         case ARROW_RIGHT:
+            break;
             if (row != NULL && config->cursorX < row->textSize)
                 config->cursorX++;
             else if (row != NULL && config->cursorX == row->textSize)
@@ -526,7 +522,7 @@ void    EditorMoveCursor(EditorConfiguration *config, short int key)
         config->cursorX = rowSize;
 }
 
-void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
+void    Editor_processKeypress(Editor *config, const Syntax HLDB[])
 {
     static bool isQuiting = false;
 
@@ -535,21 +531,21 @@ void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
     switch (input)
     {
         case '\r':
-            EditorInsertNewLine(config);
+            Editor_insertNewLine(config);
             break;
 
         case CTRL_KEY('s'):
-            EditorSaveToFile(config, HLDB);
+            Editor_saveToFile(config, HLDB);
             break;
 
         case CTRL_KEY('f'):
-            EditorFind(config);
+            Editor_find(config);
             break;
 
         case CTRL_KEY('q'):
             if (!config->isSaved && !isQuiting)
             {
-                EditorSetStatusMessage(config, "File has unsaved changes! Press Ctrl-Q again to quit anyways.");
+                Editor_setStatusMessage(config, "File has unsaved changes! Press Ctrl-Q again to quit anyways.");
                 isQuiting = true;
                 return;
             }
@@ -576,8 +572,8 @@ void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
         case CTRL_KEY('h'):
         case DELETE_KEY:
             if (input == DELETE_KEY)
-                EditorMoveCursor(config, ARROW_RIGHT);
-            EditorDeleteChar(config);
+                Editor_moveCursor(config, ARROW_RIGHT);
+            Editor_deleteChar(config);
             break;
 
         case PAGE_UP:
@@ -592,14 +588,14 @@ void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
             }
 
             for (int i = config->screenRows; i > 0; i--)
-                EditorMoveCursor(config, input == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+                Editor_moveCursor(config, input == PAGE_UP ? ARROW_UP : ARROW_DOWN);
             break;
 
         case ARROW_UP:
         case ARROW_DOWN:
         case ARROW_LEFT:
         case ARROW_RIGHT:
-            EditorMoveCursor(config, input);
+            Editor_moveCursor(config, input);
             break;
 
         case CTRL_KEY('l'):
@@ -607,7 +603,7 @@ void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
             break;
 
         default:
-            EditorInsertChar(config, input);
+            Editor_insertChar(config, input);
             break;
     }
 
@@ -617,29 +613,36 @@ void    EditorProcessKeypress(EditorConfiguration *config, const Syntax HLDB[])
 
 /******* Editor operations ********/
 
-void    EditorInsertChar(EditorConfiguration *config, short int input)
+void    Editor_insertChar(Editor *config, short int input)
 {
     if (config->cursorY == config->textBuffer.numberofTextRows)
-        TextBufferInsertTextRow(&config->textBuffer, config->textBuffer.numberofTextRows, "", 0);
+        TextBuffer_insertTextRow(&config->textBuffer, config->textBuffer.numberofTextRows, "", 0);
 
-    TextRowInsertChar(&config->textBuffer.textRow[config->cursorY], config->cursorX, input, config->textBuffer.syntax);
+    bool isCommented = config->textBuffer.textRow[config->cursorY].openComment;
+
+    TextRow_insertChar(&config->textBuffer.textRow[config->cursorY], config->cursorX, input, config->textBuffer.syntax);
     config->isSaved = false;
+
+    if (isCommented != config->textBuffer.textRow[config->cursorY].openComment)
+        TextBuffer_updateSyntax(&config->textBuffer, config->cursorY);
+
     config->cursorX++;
 }
 
-void    EditorInsertNewLine(EditorConfiguration *config)
+void    Editor_insertNewLine(Editor *config)
 {
     if (config->cursorX == 0)
-        TextBufferInsertTextRow(&config->textBuffer, config->cursorY, "", 0);
+        TextBuffer_insertTextRow(&config->textBuffer, config->cursorY, "", 0);
     else
     {
         TextRow* row = &config->textBuffer.textRow[config->cursorY];
-        TextBufferInsertTextRow(&config->textBuffer, config->cursorY + 1, &row->text[config->cursorX], row->textSize - config->cursorX);
+        TextBuffer_insertTextRow(&config->textBuffer, config->cursorY + 1, &row->text[config->cursorX], row->textSize - config->cursorX);
         row = &config->textBuffer.textRow[config->cursorY];
         row->textSize = config->cursorX;
         row->text[row->textSize] = '\0';
-        TextRowUpdateRender(row);
-        TextRowUpdateSyntax(row, config->textBuffer.syntax);
+        TextRow_updateRender(row);
+        TextBuffer_updateSyntax(&config->textBuffer, config->cursorY);
+        //TextRow_updateSyntax(row, config->textBuffer.syntax);
     }
 
     config->cursorY++;
@@ -647,7 +650,7 @@ void    EditorInsertNewLine(EditorConfiguration *config)
     config->isSaved = false;
 }
 
-void    EditorDeleteChar(EditorConfiguration *config)
+void    Editor_deleteChar(Editor *config)
 {
     if (config->cursorX == 0 && config->cursorY == 0)
         return;
@@ -658,15 +661,15 @@ void    EditorDeleteChar(EditorConfiguration *config)
     TextRow* row = &config->textBuffer.textRow[config->cursorY];
     if (config->cursorX > 0)
     {
-        TextRowDeleteChar(row, config->cursorX - 1, config->textBuffer.syntax);
+        TextRow_deleteChar(row, config->cursorX - 1, config->textBuffer.syntax);
         config->isSaved = false;
         config->cursorX--;
     }
     else
     {
         config->cursorX = config->textBuffer.textRow[config->cursorY - 1].textSize;
-        TextRowAppendString(&config->textBuffer.textRow[config->cursorY - 1], row->text, row->textSize, config->textBuffer.syntax);
-        TextBufferDeleteTextRow(&config->textBuffer, config->cursorY);
+        TextRow_appendString(&config->textBuffer.textRow[config->cursorY - 1], row->text, row->textSize, config->textBuffer.syntax);
+        TextBuffer_deleteTextRow(&config->textBuffer, config->cursorY);
         config->isSaved = false;
         config->cursorY--;
     }
@@ -674,7 +677,7 @@ void    EditorDeleteChar(EditorConfiguration *config)
 
 /******* text search ********/
 
-void findCallBack(EditorConfiguration* config, char* query, int key)
+void    findCallBack(Editor* config, char* query, int key)
 {
     static ssize_t lastMatch = -1;
     static int direction = 1;
@@ -722,7 +725,7 @@ void findCallBack(EditorConfiguration* config, char* query, int key)
         {
             lastMatch = currentMatch;
             config->cursorY = currentMatch;
-            config->cursorX = TextRowGetCursorX(row, match - row->render);
+            config->cursorX = TextRow_getCursorX(row, match - row->render);
             config->rowOffset = config->textBuffer.numberofTextRows;
 
             savedRow = currentMatch;
@@ -735,14 +738,14 @@ void findCallBack(EditorConfiguration* config, char* query, int key)
     }
 }
 
-void EditorFind(EditorConfiguration* config)
+void    Editor_find(Editor* config)
 {
     size_t cx = config->cursorX;
     size_t cy = config->cursorY;
     size_t columnOffset = config->columnOffset;
     size_t rowOffset = config->rowOffset;
 
-    char* query = EditorPromptForInput(config, "Search for: %s", findCallBack);
+    char* query = Editor_promptForInput(config, "Search for: %s", findCallBack);
 
     if (query != NULL)
         free(query);

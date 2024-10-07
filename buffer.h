@@ -13,11 +13,11 @@ typedef struct
 
 } ScreenBuffer;
 
-#define SCREEN_BUFFER_INIT { NULL, 0 }
+#define SCREEN_BUFFER_INIT (ScreenBuffer){NULL,0}
 
-void ScreenBufferAppend(ScreenBuffer* sbuf, const char* string, size_t size);
+void ScreenBuffer_append(ScreenBuffer* sbuf, const char* string, size_t size);
 
-void ScreenBufferFree(ScreenBuffer* sbuf);
+void ScreenBuffer_free(ScreenBuffer* sbuf);
 
 /******* syntax highlighting ********/
 
@@ -26,15 +26,14 @@ enum HighlightFlag
     HIGHLIGHT_NORMAL          =    0,
     HIGHLIGHT_NUMBER          =    1,
     HIGHLIGHT_STRING          =    2,
-    HIGHLIGHT_MATCH           =    4,
-    HIGHLIGHT_CHARACTER       =    8,
-    HIGHLIGHT_COMMENT         =    16,
-    HIGHLIGHT_KEYWORD         =    32,
-    HIGHLIGHT_SELECTION       =    64,
-    HIGHLIGHT_TYPE            =    128,
-    HIGHLIGHT_PREPROCESSOR    =    256,
-    HIGHLIGHT_SEPARATOR       =    512,
-    HIGHLIGHT_ALL             =    1024
+    HIGHLIGHT_CHARACTER       =    3,
+    HIGHLIGHT_SELECTION       =    4,
+    HIGHLIGHT_COMMENT         =    5,
+    HIGHLIGHT_KEYWORD         =    6,
+    HIGHLIGHT_TYPE            =    7,
+    HIGHLIGHT_PREPROCESSOR    =    8,
+    HIGHLIGHT_SEPARATOR       =    9,
+    HIGHLIGHT_ALL             =    10
 };
 
 typedef struct
@@ -46,9 +45,12 @@ typedef struct
     char*    singleLineCommentStarter;
     char*    multilineCommentStart;
     char*    multilineCommentEnd;
+    char**   preprocessorStart;
     int      flag;
 
 } Syntax;
+
+#define  SYNTAXINIT (Syntax){NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0}
 
 char*   getSyntaxColor(int highlight);
 
@@ -68,36 +70,40 @@ typedef struct
 
 } TextRow;
 
-void    TextRowUpdateRender(TextRow* row);
+void    TextRow_updateRender(TextRow* row);
 
-void    TextRowUpdateSyntax(TextRow* row, Syntax* syn);
+void    TextRow_updateSyntax(TextRow* row, const Syntax syn);
 
-void    TextRowFree(TextRow* row);
+void    TextRow_free(TextRow* row);
 
-void    TextRowInsertChar(TextRow* row, size_t index, short int input, Syntax* syn);
+void    TextRow_insertChar(TextRow* row, size_t index, short int input, const Syntax syn);
 
-void    TextRowAppendString(TextRow* row, char* str, size_t size, Syntax* syn);
+void    TextRow_appendString(TextRow* row, char* str, size_t size, const Syntax syn);
 
-void    TextRowDeleteChar(TextRow* row, size_t index, Syntax* syn);
+void    TextRow_deleteChar(TextRow* row, size_t index, const Syntax syn);
 
-size_t  TextRowGetRenderX(TextRow* row, size_t cursorX);
+size_t  TextRow_getRenderX(TextRow* row, size_t cursorX);
 
-size_t  TextRowGetCursorX(TextRow* row, size_t renderX);
+size_t  TextRow_getCursorX(TextRow* row, size_t renderX);
+
+bool    previousWhiteSpace(const TextRow* row, size_t index);
 
 /******* text buffer structure to render and edit a file from ********/
 
 typedef struct
 {
-    Syntax*     syntax;
+    Syntax      syntax;
     TextRow*    textRow;
     size_t      numberofTextRows;
 
 } TextBuffer;
 
-void    TextBufferInsertTextRow(TextBuffer* tbuf, size_t index, const char* str, size_t size);
+void    TextBuffer_insertTextRow(TextBuffer* tbuf, size_t index, const char* str, size_t size);
 
-void    TextBufferDeleteTextRow(TextBuffer* tbuf,size_t index);
+void    TextBuffer_deleteTextRow(TextBuffer* tbuf,size_t index);
 
-char*   TextBufferToString(TextBuffer* tbuf, size_t* bufferSize);
+void    TextBuffer_updateSyntax(TextBuffer* tbuf, size_t offset);
+
+char*   TextBuffer_toString(TextBuffer* tbuf, size_t* bufferSize);
 
 #endif // BUFFER_H

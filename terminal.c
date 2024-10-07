@@ -2,8 +2,10 @@
 
 void die(const char* source)
 {
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    if (write(STDOUT_FILENO, "\x1b[2J", 4) == -1)
+        perror("write");
+    if (write(STDOUT_FILENO, "\x1b[H", 3) == -1)
+        perror("write");
 
     perror(source);
     exit(1);

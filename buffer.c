@@ -1,8 +1,9 @@
 #include "buffer.h"
+#include <bits/types/struct_iovec.h>
 
 /******* screen buffer handling ********/
 
-void ScreenBufferAppend(ScreenBuffer* sbuf, const char* string, size_t size)
+void ScreenBuffer_append(ScreenBuffer* sbuf, const char* string, size_t size)
 {
     char* temp = realloc(sbuf->string, sbuf->size + size);
     if (temp == NULL)
@@ -14,7 +15,7 @@ void ScreenBufferAppend(ScreenBuffer* sbuf, const char* string, size_t size)
     sbuf->size += size;
 }
 
-void ScreenBufferFree(ScreenBuffer* sbuf)
+void ScreenBuffer_free(ScreenBuffer* sbuf)
 {
     free(sbuf->string);
     sbuf->size = 0;
@@ -24,7 +25,7 @@ void ScreenBufferFree(ScreenBuffer* sbuf)
 
 bool isSeparator(int character)
 {
-    return isspace(character) || character == '\0' || strchr(",.()+-/*=~%<>[];", character) != NULL;
+    return isspace(character) || character == '\0' || strchr(",.()+-/*=~%<>[];{}", character) != NULL;
 }
 
 char* getSyntaxColor(int highlight)
@@ -32,15 +33,15 @@ char* getSyntaxColor(int highlight)
     switch (highlight)
     {
         case HIGHLIGHT_NUMBER:
-            return "\x1b[38:5:207m";
+            return "\x1b[0m\x1b[38:5:207m";
             break;
 
         case HIGHLIGHT_STRING:
-            return "\x1b[38:5:208m";
+            return "\x1b[0m\x1b[38:5:208m";
             break;
 
         case HIGHLIGHT_CHARACTER:
-            return "\x1b[38:5:178m";
+            return "\x1b[0m\x1b[38:5:178m";
             break;
 
         case HIGHLIGHT_COMMENT:
@@ -52,15 +53,24 @@ char* getSyntaxColor(int highlight)
             break;
 
         case HIGHLIGHT_TYPE:
-            return "\x1b[38:5:33m";
+            return "\x1b[0m\x1b[38:5:33m";
             break;
 
         case HIGHLIGHT_SELECTION:
-            return "\x1b[48:5:240m\x1b[38:5:51m";
+            return "\x1b[1m\x1b[48:5:240m\x1b[38:5:51m";
             break;
 
         case HIGHLIGHT_PREPROCESSOR:
-            return "\x1b[38:5:20m";
+            return "\x1b[0m\x1b[38:5:20m";
+            break;
+
+
+        case HIGHLIGHT_SEPARATOR:
+            return "\x1b[1m\x1b[38:5:229m";
+            break;
+
+        case HIGHLIGHT_NORMAL:
+            return "\x1b[0m\x1b[38:5:15m";
 
         default:
             return "\x1b[0m\x1b[37m";
@@ -70,7 +80,7 @@ char* getSyntaxColor(int highlight)
 
 /******* text row operations ********/
 
-void    TextRowUpdateRender(TextRow* row)
+void    TextRow_updateRender(TextRow* row)
 {
     unsigned int tabs = 0;
     for (size_t i = 0; i < row->textSize; i++)
@@ -110,13 +120,14 @@ void    TextRowUpdateRender(TextRow* row)
     row->renderSize = index;
 }
 
-void    TextRowUpdateSyntax(TextRow* row, const Syntax syn)
+void    TextRow_updateSyntax(TextRow* row, const Syntax syn)
 {
     unsigned char* temp = realloc(row->highlight, row->renderSize);
+
     if (temp == NULL)
         die("realloc");
-    else
-        row->highlight = temp;
+
+    row->highlight = temp;
 
     memset(row->highlight, HIGHLIGHT_NORMAL, row->renderSize);
 
@@ -133,10 +144,19 @@ void    TextRowUpdateSyntax(TextRow* row, const Syntax syn)
                                         ? row->highlight[i - 1]
                                         : HIGHLIGHT_NORMAL;
 
-        if (i == 0 && !strncmp(&row->render[i], syn.preprocessorStart, strlen(syn.preprocessorStart)))
+
+        if (previousWhiteSpace(row, i) && syn.preprocessorStart != NULL)
         {
-            memset(&row->highlight[i], HIGHLIGHT_PREPROCESSOR, row->renderSize);
-            break;
+            for (size_t k = 0; syn.preprocessorStart[k] != NULL; k++)
+            {
+                int len = strlen(syn.preprocessorStart[k]);
+
+                if (!strncmp(&row->render[i], syn.preprocessorStart[k], len))
+                {
+                    memset(&row->highlight[i], HIGHLIGHT_PREPROCESSOR, row->renderSize - i);
+                    return;
+                }
+            }
         }
 
         if (!inString && !inComment && !strncmp(&row->render[i], syn.singleLineCommentStarter, strlen(syn.singleLineCommentStarter)))
@@ -216,12 +236,11 @@ void    TextRowUpdateSyntax(TextRow* row, const Syntax syn)
                 continue;
             }
 
-            int k;
-            for (k = 0; syn.types[k] != NULL; k++)
+            for (j = 0; syn.types[j] != NULL; j++)
             {
-                int typesLength = strlen(syn.types[k]);
+                int typesLength = strlen(syn.types[j]);
 
-                if (!strncmp(&row->render[i], syn.types[k], typesLength) && isSeparator(row->render[i + typesLength]))
+                if (!strncmp(&row->render[i], syn.types[j], typesLength) && isSeparator(row->render[i + typesLength]))
                 {
                     memset(&row->highlight[i], HIGHLIGHT_TYPE, typesLength);
                     i += typesLength - 1;
@@ -229,30 +248,37 @@ void    TextRowUpdateSyntax(TextRow* row, const Syntax syn)
                 }
             }
 
-            if (syn.types[k] != NULL)
+            if (syn.types[j] != NULL)
             {
                 previousSeparator = false;
                 continue;
             }
         }
 
+        if (isSeparator(row->render[i]) && !isspace(row->render[i]))
+        {
+            row->highlight[i] = HIGHLIGHT_SEPARATOR;
+            previousSeparator = true;
+            continue;
+        }
+
         previousSeparator = isSeparator(row->render[i]);
     }
 
-    bool isChanged = (row->openComment != inComment);
+    //bool isChanged = (row->openComment != inComment);
     row->openComment = inComment;
-    if (isChanged && (row + 1) != NULL && (row + 1)->index == row->index + 1)
-        TextRowUpdateSyntax(row + 1, syn);
+    //if (isChanged && (row + 1) != NULL && (row + 1)->index == row->index + 1)
+    //    TextRow_updateSyntax(row + 1, syn);
 }
 
-void    TextRowFree(TextRow* row)
+void    TextRow_free(TextRow* row)
 {
     free(row->render);
     free(row->text);
     free(row->highlight);
 }
 
-void    TextRowInsertChar(TextRow* row, size_t index, short int input, const Syntax syn)
+void    TextRow_insertChar(TextRow* row, size_t index, short int input, const Syntax syn)
 {
     if (index > row->textSize)
         index = row->textSize;
@@ -263,15 +289,15 @@ void    TextRowInsertChar(TextRow* row, size_t index, short int input, const Syn
     else
         die("realloc");
 
-    memmove(&row->text[index + 1], &row->text[index], row->textSize - index + 1);
+    memcpy(&row->text[index + 1], &row->text[index], row->textSize - index + 1);
 
     row->textSize++;
     row->text[index] = input;
-    TextRowUpdateRender(row);
-    TextRowUpdateSyntax(row, syn);
+    TextRow_updateRender(row);
+    TextRow_updateSyntax(row, syn);
 }
 
-void    TextRowAppendString(TextRow* row, char* str, size_t size, const Syntax syn)
+void    TextRow_appendString(TextRow* row, char* str, size_t size, const Syntax syn)
 {
     char* temp = realloc(row->text, row->textSize + size + 1);
     if (temp != NULL)
@@ -283,26 +309,26 @@ void    TextRowAppendString(TextRow* row, char* str, size_t size, const Syntax s
 
     row->textSize += size;
     row->text[row->textSize] = '\0';
-    TextRowUpdateRender(row);
-    TextRowUpdateSyntax(row, syn);
+    TextRow_updateRender(row);
+    TextRow_updateSyntax(row, syn);
 }
 
-void    TextRowDeleteChar(TextRow* row, size_t index, const Syntax syn)
+void    TextRow_deleteChar(TextRow* row, size_t index, const Syntax syn)
 {
     if (index >= row->textSize)
         return;
 
-    memmove(&row->text[index], &row->text[index + 1], row->textSize - index);
+    memcpy(&row->text[index], &row->text[index + 1], row->textSize - index);
 
     row->textSize--;
-    TextRowUpdateRender(row);
-    TextRowUpdateSyntax(row, syn);
+    TextRow_updateRender(row);
+    TextRow_updateSyntax(row, syn);
 }
 
-size_t  TextRowGetRenderX(TextRow* row, size_t cursorX)
+size_t  TextRow_getRenderX(TextRow* row, size_t cursorX)
 {
     size_t rx = 0;
-    for (size_t i = 0; i < cursorX; i++)
+    for (size_t i = 0; i < cursorX && i < row->textSize; i++)
     {
         if (row->text[i] == '\t')
             rx += (TAB_STOP - 1) - (rx % TAB_STOP);
@@ -312,7 +338,7 @@ size_t  TextRowGetRenderX(TextRow* row, size_t cursorX)
     return rx;
 }
 
-size_t  TextRowGetCursorX(TextRow* row, size_t renderX)
+size_t  TextRow_getCursorX(TextRow* row, size_t renderX)
 {
     size_t cx, rx = 0;
 
@@ -325,9 +351,19 @@ size_t  TextRowGetCursorX(TextRow* row, size_t renderX)
     return cx;
 }
 
+bool    previousWhiteSpace(const TextRow* row, size_t index)
+{
+    for (size_t i = 0; i < index; i++)
+    {
+        if (row->render[i] != ' ')
+            return false;
+    }
+    return true;
+}
+
 /******* text buffer operations ********/
 
-void    TextBufferInsertTextRow(TextBuffer* tbuf, size_t index, const char* str, size_t size)
+void    TextBuffer_insertTextRow(TextBuffer* tbuf, size_t index, const char* str, size_t size)
 {
     if (index > tbuf->numberofTextRows)
         return;
@@ -355,18 +391,19 @@ void    TextBufferInsertTextRow(TextBuffer* tbuf, size_t index, const char* str,
     tbuf->textRow[index].highlight = NULL;
     tbuf->textRow[index].openComment = false;
 
-    TextRowUpdateRender(&tbuf->textRow[index]);
-    TextRowUpdateSyntax(&tbuf->textRow[index], tbuf->syntax);
+    TextRow_updateRender(&tbuf->textRow[index]);
+    //TextRow_updateSyntax(&tbuf->textRow[index], tbuf->syntax);
+    TextBuffer_updateSyntax(tbuf, index);
 
     tbuf->numberofTextRows++;
 }
 
-void    TextBufferDeleteTextRow(TextBuffer* tbuf, size_t index)
+void    TextBuffer_deleteTextRow(TextBuffer* tbuf, size_t index)
 {
     if (index >= tbuf->numberofTextRows)
         return;
 
-    TextRowFree(&tbuf->textRow[index]);
+    TextRow_free(&tbuf->textRow[index]);
 
     memmove(&tbuf->textRow[index], &tbuf->textRow[index + 1], sizeof(TextRow) * (tbuf->numberofTextRows - index - 1));
 
@@ -374,9 +411,17 @@ void    TextBufferDeleteTextRow(TextBuffer* tbuf, size_t index)
         tbuf->textRow[j].index--;
 
     tbuf->numberofTextRows--;
+
+    TextBuffer_updateSyntax(tbuf, index);
 }
 
-char*   TextBufferToString(TextBuffer* tbuf, size_t* bufferSize)
+void    TextBuffer_updateSyntax(TextBuffer* tbuf, size_t offset)
+{
+    for (size_t i = offset; i < tbuf->numberofTextRows; i++)
+        TextRow_updateSyntax(&tbuf->textRow[i], tbuf->syntax);
+}
+
+char*   TextBuffer_toString(TextBuffer* tbuf, size_t* bufferSize)
 {
     size_t totalSize = 0;
     for (size_t i = 0; i < tbuf->numberofTextRows; i++)

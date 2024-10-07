@@ -20,65 +20,65 @@ typedef struct
     time_t                 statusMessageTime;
     bool                   isSaved;
 
-} EditorConfiguration;
+} Editor;
 
 /******* initializing the Editor ********/
 
-void    disableRawMode(EditorConfiguration *config);
+void    disableRawMode(Editor *config);
 
-void    enableRawMode(EditorConfiguration *config);
+void    enableRawMode(Editor *config);
 
-void    EditorKill(EditorConfiguration *config);
+void    Editor_kill(Editor *config);
 
-int     EditorGetCursorPosition(EditorConfiguration *config);
+int     Editor_getCursorPosition(Editor *config);
 
-int     EditorGetWindowSize(EditorConfiguration *config);
+int     Editor_getWindowSize(Editor *config);
 
-void    EditorInit(EditorConfiguration *config);
+void    Editor_init(Editor *config);
 
-void    EditorSetSyntaxHighlight(EditorConfiguration *config, Syntax HLDB[]);
+void    Editor_setSyntaxHighlight(Editor *config, const Syntax HLDB[]);
 
 /******* handling files to edit ********/
 
-void    EditorOpenFile(EditorConfiguration *config, const char* filename, Syntax HLDB[]);
+void    Editor_openFile(Editor *config, const char* filename, const Syntax HLDB[]);
 
-void    EditorSaveToFile(EditorConfiguration *config, Syntax HLDB[]);
+void    Editor_saveToFile(Editor *config, const Syntax HLDB[]);
 
 /******* Editor output ********/
 
-void    EditorScroll(EditorConfiguration *config);
+void    Editor_scroll(Editor *config);
 
-void    EditorSetStatusMessage(EditorConfiguration *config, const char* fstring, ...);
+void    Editor_setStatusMessage(Editor *config, const char* fstring, ...);
 
-void    EditorDrawRows(EditorConfiguration *config, ScreenBuffer* sbuf);
+void    Editor_drawRows(Editor *config, ScreenBuffer* sbuf);
 
-void    EditorDrawStatusBar(EditorConfiguration *config, ScreenBuffer* sbuf);
+void    Editor_drawStatusBar(Editor *config, ScreenBuffer* sbuf);
 
-void    EditorDrawMessageBar(EditorConfiguration *config, ScreenBuffer* sbuf);
+void    Editor_drawMessageBar(Editor *config, ScreenBuffer* sbuf);
 
-void    EditorRefreshScreen(EditorConfiguration *config);
+void    Editor_refreshScreen(Editor *config);
 
 /******* input ********/
 
-char*   EditorPromptForInput(EditorConfiguration *config, char* prompt, void (*callBackFunction)(EditorConfiguration*, char*, int));
+char*   Editor_promptForInput(Editor *config, const char* prompt, void (*callBackFunction)(Editor*, char*, int));
 
-void    EditorMoveCursor(EditorConfiguration *config, short int key);
+void    Editor_moveCursor(Editor *config, short int key);
 
-void    EditorProcessKeypress(EditorConfiguration *config, Syntax HLDB[]);
+void    Editor_processKeypress(Editor *config, const Syntax HLDB[]);
 
 
 /******* Editor operations ********/
 
-void    EditorInsertChar(EditorConfiguration *config, short int input);
+void    Editor_insertChar(Editor *config, short int input);
 
-void    EditorInsertNewLine(EditorConfiguration *config);
+void    Editor_insertNewLine(Editor *config);
 
-void    EditorDeleteChar(EditorConfiguration *config);
+void    Editor_deleteChar(Editor *config);
 
 /******* text search ********/
 
-void findCallBack(EditorConfiguration* config, char* query, int key);
+void findCallBack(Editor* config, char* query, int key);
 
-void EditorFind(EditorConfiguration* config);
+void Editor_find(Editor* config);
 
 #endif // EDITOR_H
