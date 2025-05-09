@@ -7,11 +7,13 @@ typedef struct {
     size_t size;
 } Slice;
 
-// Create a slice from a pointer and length
+// Creation
 Slice Slice_Make(const void* data, size_t size);
 
-// Convenience macro for string literals (automatically computes length)
 Slice Slice_From(const void* str);
 
-// Check if two slices are equal (byte-wise comparison)
+// Comparison
 bool Slice_Equals(Slice a, Slice b);
+
+// Utility
+Slice Slice_Subslice(Slice slice, size_t start, size_t end);
