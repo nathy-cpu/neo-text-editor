@@ -76,7 +76,7 @@ static void test_errors() {
 static void test_null_safety() {
     // Test Buffer_Append with NULL
     Buffer buf = {0};
-    Buffer_Init(&buf, 10);
+    Buffer_InitChar(&buf, 10);
     assert(!Buffer_Append(&buf, NULL, 10) && "Should reject NULL source");
     Buffer_Free(&buf);
 
