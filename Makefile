@@ -18,7 +18,7 @@ TEST_TARGET = $(BIN_DIR)/neo_test
 
 # Source files
 SRCS = $(wildcard $(SRC_DIR)/*.c)
-TEST_SRCS = $(wildcard $(TEST_DIR)/*.c)
+TEST_SRCS = $(wildcard $(TEST_DIR)/main.c)
 
 # Ensure bin/ exists
 $(shell mkdir -p $(BIN_DIR))
@@ -36,7 +36,7 @@ all: $(TARGET)
 
 build: $(TARGET)
 
-test: $(TEST_TARGET)
+test: clean $(TEST_TARGET)
 	./$(TEST_TARGET)
 
 run: $(TARGET)

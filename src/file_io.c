@@ -20,6 +20,8 @@ bool FileIO_Read(const char* path, Buffer* out) {
         MappedFile mf = FileIO_MMap(path);
         if (mf.fd == -1) return false;
         
+        // Initialize buffer with the correct size
+        Buffer_Init(out, sizeof(char), mf.content.size, 0);
         bool ok = Buffer_Append(out, mf.content.data, mf.content.size);
         FileIO_Unmap(&mf);
         return ok;

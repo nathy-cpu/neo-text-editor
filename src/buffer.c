@@ -3,6 +3,7 @@
 #include <stdalign.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static inline void* aligned_alloc_posix(size_t alignment, size_t size)
 {
@@ -20,7 +21,14 @@ void Buffer_Init(Buffer* buffer, size_t itemSize, size_t capacity, size_t alignm
     // Default to natural alignment if none specified
     alignment = (alignment > 0) ? alignment : alignof(max_align_t);
 
-    buffer->data = aligned_alloc_posix(alignment, itemSize * capacity);
+    // Ensure the total size is a multiple of alignment
+    size_t totalSize = itemSize * capacity;
+    size_t alignedSize = totalSize;
+    if (alignedSize % alignment != 0) {
+        alignedSize = ((totalSize / alignment) + 1) * alignment;
+    }
+
+    buffer->data = aligned_alloc_posix(alignment, alignedSize);
     buffer->size = 0;
     buffer->capacity = (buffer->data != NULL) ? capacity : 0;
     buffer->itemSize = itemSize;
@@ -44,6 +52,8 @@ bool Buffer_Append(Buffer* buffer, const void* items, size_t count)
     if (count == 0)
         return true;
     if (!buffer->data)
+        return false;
+    if (!items)
         return false;
 
     // Resize if needed (geometric growth)

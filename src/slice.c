@@ -13,7 +13,7 @@ Slice Slice_Make(const void* data, size_t size)
 
 Slice Slice_From(const void* str)
 {
-    return (Slice) { .data = str, .size = strlen(str) - 1 };
+    return (Slice) { .data = str, .size = strlen(str) };
 }
 
 Slice Slice_Subslice(Slice slice, size_t start, size_t end)
@@ -21,5 +21,5 @@ Slice Slice_Subslice(Slice slice, size_t start, size_t end)
     if (start > slice.size - 1 || end > slice.size)
         return (Slice) { .data = NULL, .size = 0 };
 
-    return (Slice) { .data = slice.data + start, .size = end - start };
+    return (Slice) { .data = (const char*)slice.data + start, .size = end - start };
 }
