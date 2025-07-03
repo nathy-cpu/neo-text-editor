@@ -29,7 +29,7 @@ void* Buffer_At(Buffer* buffer, size_t index);
 
 size_t Buffer_Size(Buffer* buffer);
 
-Slice Buffer_ToSLice(Buffer* buffer);
+Slice Buffer_ToSlice(Buffer* buffer);
 
 // Type-safe macros
 #define Buffer_InitChar(buf, cap) Buffer_Init(buf, sizeof(char), cap, 64) // Cache line
