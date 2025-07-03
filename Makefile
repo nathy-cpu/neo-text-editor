@@ -14,7 +14,7 @@ TEST_DIR = tests
 
 # Targets
 TARGET = $(BIN_DIR)/neo
-TEST_TARGET = $(BIN_DIR)/file_io_test
+TEST_TARGET = $(BIN_DIR)/neo_test
 
 # Source files
 SRCS = $(wildcard $(SRC_DIR)/*.c)
