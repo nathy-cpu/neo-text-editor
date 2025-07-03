@@ -28,7 +28,7 @@ static void test_read_write() {
 
     // Test FileIO_Write
     const char *new_content = "Goodbye!";
-    Slice new_slice = Slice_Make(new_content, strlen(new_content));
+    Slice new_slice = Slice_From(new_content);
     assert(FileIO_Write(path, new_slice) && "Write failed");
 
     // Verify the write
