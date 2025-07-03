@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "tab.h"
 #include "file_io.h"
 #include <assert.h>
