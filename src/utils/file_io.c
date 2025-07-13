@@ -1,13 +1,15 @@
 #include "file_io.h"
 #include <fcntl.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <stdlib.h>
+#include <unistd.h>
 
-bool FileIO_Read(const char* path, Buffer* out) {
+bool FileIO_Read(const char* path, Buffer* out)
+{
     int fd = open(path, O_RDONLY);
-    if (fd == -1) return false;
+    if (fd == -1)
+        return false;
 
     struct stat st;
     if (fstat(fd, &st)) {
@@ -18,8 +20,9 @@ bool FileIO_Read(const char* path, Buffer* out) {
     // Use mmap for files > 1MB
     if (st.st_size > 1024 * 1024) {
         MappedFile mf = FileIO_MMap(path);
-        if (mf.fd == -1) return false;
-        
+        if (mf.fd == -1)
+            return false;
+
         // Initialize buffer with the correct size
         Buffer_Init(out, sizeof(char), mf.content.size, 0);
         bool ok = Buffer_Append(out, mf.content.data, mf.content.size);
@@ -41,9 +44,11 @@ bool FileIO_Read(const char* path, Buffer* out) {
     return true;
 }
 
-bool FileIO_Write(const char* path, Slice content) {
+bool FileIO_Write(const char* path, Slice content)
+{
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd == -1) return false;
+    if (fd == -1)
+        return false;
 
     ssize_t written = write(fd, content.data, content.size);
     close(fd);
@@ -51,29 +56,32 @@ bool FileIO_Write(const char* path, Slice content) {
     return written == (ssize_t)content.size;
 }
 
-MappedFile FileIO_MMap(const char* path) {
+MappedFile FileIO_MMap(const char* path)
+{
     int fd = open(path, O_RDONLY);
-    if (fd == -1) return (MappedFile){ .fd = -1 };
+    if (fd == -1)
+        return (MappedFile) { .fd = -1 };
 
     struct stat st;
     if (fstat(fd, &st)) {
         close(fd);
-        return (MappedFile){ .fd = -1 };
+        return (MappedFile) { .fd = -1 };
     }
 
     void* data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED) {
         close(fd);
-        return (MappedFile){ .fd = -1 };
+        return (MappedFile) { .fd = -1 };
     }
 
-    return (MappedFile){
+    return (MappedFile) {
         .content = Slice_Make(data, st.st_size),
         .fd = fd
     };
 }
 
-void FileIO_Unmap(MappedFile* file) {
+void FileIO_Unmap(MappedFile* file)
+{
     if (file->fd != -1) {
         munmap((void*)file->content.data, file->content.size);
         close(file->fd);

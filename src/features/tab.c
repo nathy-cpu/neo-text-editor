@@ -2,9 +2,9 @@
 #include "tab.h"
 #include "file_io.h"
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 // Initialize tab with default values
 void Tab_Init(Tab* tab)

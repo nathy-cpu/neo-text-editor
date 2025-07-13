@@ -1,5 +1,6 @@
-#include "../src/file_io.h"
-#include "../src/buffer.h"
+#include "../src/utils/file_io.h"
+#include "../src/core/buffer.h"
+#include "../src/core/slice.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -91,7 +92,7 @@ static void test_large_file() {
     const size_t size = 1024 * 1024 * 1024; // 1GB
 
     // Create a 1GB file (manual test)
-    printf("Creating 1GB test file...\n");
+    printf("Creating 1GB test file...\n\r");
     FILE *file = fopen(path, "wb");
     assert(file && "Failed to create large file");
     fseek(file, size - 1, SEEK_SET);

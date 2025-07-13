@@ -1,5 +1,5 @@
 #pragma once
-#include "gap_buffer.h"
+#include "../core/gap_buffer.h"
 
 typedef struct {
     // Text buffer

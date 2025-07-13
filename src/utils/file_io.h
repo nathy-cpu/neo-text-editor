@@ -1,6 +1,6 @@
 #pragma once
-#include "buffer.h"
-#include "slice.h"
+#include "../core/buffer.h"
+#include "../core/slice.h"
 
 // Read entire file into buffer (uses memory mapping for large files)
 bool FileIO_Read(const char* path, Buffer* out);
