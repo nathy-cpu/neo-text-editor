@@ -20,10 +20,10 @@ static void test_read_write() {
     create_test_file(path, content);
 
     // Test FileIO_Read
-    Buffer buf1 = {0};
-    assert(FileIO_Read(path, &buf1) && "Read failed");
-    assert(buf1.size == strlen(content) && "Incorrect read length");
-    assert(memcmp(buf1.data, content, buf1.size) == 0 && "Read content mismatch");
+    Array arr1 = {0};
+    assert(FileIO_Read(path, &arr1) && "Read failed");
+    assert(arr1.size == strlen(content) && "Incorrect read length");
+    assert(memcmp(arr1.data, content, arr1.size) == 0 && "Read content mismatch");
 
     // Test FileIO_Write
     const char *new_content = "Goodbye!";
@@ -31,13 +31,13 @@ static void test_read_write() {
     assert(FileIO_Write(path, new_slice) && "Write failed");
 
     // Verify the write
-    Buffer buf2 = {0};
-    assert(FileIO_Read(path, &buf2) && "Re-read failed");
-    assert(buf2.size == strlen(new_content) && "Incorrect write length");
-    assert(memcmp(buf2.data, new_content, buf2.size) == 0 && "Write content mismatch");
+    Array arr2 = {0};
+    assert(FileIO_Read(path, &arr2) && "Re-read failed");
+    assert(arr2.size == strlen(new_content) && "Incorrect write length");
+    assert(memcmp(arr2.data, new_content, arr2.size) == 0 && "Write content mismatch");
 
-    Buffer_Free(&buf1);
-    Buffer_Free(&buf2);
+    Array_Free(&arr1);
+    Array_Free(&arr2);
     unlink(path); // Delete the test file
 }
 
@@ -59,30 +59,30 @@ static void test_mmap() {
 // Test error cases
 static void test_errors() {
     // Nonexistent file
-    Buffer buffer = {0};
-    assert(!FileIO_Read("nonexistent.txt", &buffer) && "Read should fail");
+    Array array = {0};
+    assert(!FileIO_Read("nonexistent.txt", &array) && "Read should fail");
 
     // Permission denied (create a file and make it unreadable)
     const char *path = "no_perms.txt";
     create_test_file(path, "test");
     chmod(path, 0000); // Remove all permissions
 
-    assert(!FileIO_Read(path, &buffer) && "Read should fail (permissions)");
+    assert(!FileIO_Read(path, &array) && "Read should fail (permissions)");
     chmod(path, 0644); // Restore permissions
     unlink(path);
 }
 
 static void test_null_safety() {
-    // Test Buffer_Append with NULL
-    Buffer buf = {0};
-    Buffer_InitChar(&buf, 10);
-    assert(!Buffer_Append(&buf, NULL, 10) && "Should reject NULL source");
-    Buffer_Free(&buf);
+    // Test Array_Append with NULL
+    Array arr = {0};
+    Array_InitChar(&arr, 10);
+    assert(!Array_Append(&arr, NULL, 10) && "Should reject NULL source");
+    Array_Free(&arr);
 
-    // Test empty buffer
-    Buffer buf2 = {0};
-    assert(Buffer_Append(&buf2, "hello", 0) && "Empty append should succeed");
-    Buffer_Free(&buf2);
+    // Test empty array
+    Array arr2 = {0};
+    assert(Array_Append(&arr2, "hello", 0) && "Empty append should succeed");
+    Array_Free(&arr2);
 }
 
 static void test_large_file() {
@@ -98,10 +98,10 @@ static void test_large_file() {
     fclose(file);
 
     // Test reading
-    Buffer buf = {0};
-    assert(FileIO_Read(path, &buf) && "Large read failed");
-    assert(buf.size == size && "Incorrect large file length");
-    Buffer_Free(&buf);
+    Array arr = {0};
+    assert(FileIO_Read(path, &arr) && "Large read failed");
+    assert(arr.size == size && "Incorrect large file length");
+    Array_Free(&arr);
 
     unlink(path);
 }

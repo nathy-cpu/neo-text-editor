@@ -29,7 +29,7 @@ $(TARGET):
 
 # Test rule
 $(TEST_TARGET):
-	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_SRCS) $(SRCS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_SRCS) $(filter-out src/main.c,$(SRCS)) -o $@
 
 # Phony targets
 all: $(TARGET)
