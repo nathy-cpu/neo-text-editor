@@ -1,11 +1,11 @@
-#include "file_io.h"
+#include "../neo.h"
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-bool FileIO_Read(const char* path, Buffer* out)
+bool FileIO_Read(const char* path, Array* out)
 {
     int fd = open(path, O_RDONLY);
     if (fd == -1)
@@ -23,20 +23,20 @@ bool FileIO_Read(const char* path, Buffer* out)
         if (mf.fd == -1)
             return false;
 
-        // Initialize buffer with the correct size
-        Buffer_Init(out, sizeof(char), mf.content.size, 0);
-        bool ok = Buffer_Append(out, mf.content.data, mf.content.size);
+        // Initialize array with the correct size
+        Array_Init(out, sizeof(char), mf.content.size, 0);
+        bool ok = Array_Append(out, mf.content.data, mf.content.size);
         FileIO_Unmap(&mf);
         return ok;
     }
 
     // Small file fallback
-    Buffer_Init(out, sizeof(char), st.st_size + 1, 0);
+    Array_Init(out, sizeof(char), st.st_size + 1, 0);
     ssize_t read_bytes = read(fd, out->data, st.st_size);
     close(fd);
 
     if (read_bytes != st.st_size) {
-        Buffer_Free(out);
+        Array_Free(out);
         return false;
     }
 

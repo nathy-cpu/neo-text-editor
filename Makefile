@@ -17,7 +17,7 @@ TARGET = $(BIN_DIR)/neo
 TEST_TARGET = $(BIN_DIR)/neo_test
 
 # Source files
-SRCS = $(wildcard $(SRC_DIR)/*.c)
+SRCS = $(shell find $(SRC_DIR) -name "*.c")
 TEST_SRCS = $(wildcard $(TEST_DIR)/main.c)
 
 # Ensure bin/ exists

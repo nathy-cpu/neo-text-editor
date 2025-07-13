@@ -1,6 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "tab.h"
-#include "file_io.h"
+#include "../neo.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -43,11 +42,11 @@ void Tab_LoadFile(Tab* tab, const char* path)
 {
     assert(tab && path);
 
-    Buffer fileContent;
-    Buffer_InitChar(&fileContent, 4096); // 4KB initial buffer
+    Array fileContent;
+    Array_InitChar(&fileContent, 4096); // 4KB initial array
 
     if (!FileIO_Read(path, &fileContent)) {
-        Buffer_Free(&fileContent);
+        Array_Free(&fileContent);
         return; // Silent fail (caller can check filename)
     }
 
@@ -65,7 +64,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->cursorX = tab->cursorY = 0;
     tab->rowOffset = tab->columnOffset = 0;
 
-    Buffer_Free(&fileContent);
+    Array_Free(&fileContent);
 }
 
 // Save tab content to file

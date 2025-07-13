@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
-#include "../src/terminal/terminal.h"
+#include "../src/neo.h"
 
 void test_Terminal_EnableRawMode(void) {
     Terminal term = {0};

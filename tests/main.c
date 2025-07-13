@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include "file_io_test.c"
-#include "terminal_test.c"
+#include "test_file_io.c"
+#include "test_terminal.c"
 
 int main(void) {
     // Call terminal tests

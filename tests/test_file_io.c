@@ -1,6 +1,4 @@
-#include "../src/utils/file_io.h"
-#include "../src/core/buffer.h"
-#include "../src/core/slice.h"
+#include "../src/neo.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

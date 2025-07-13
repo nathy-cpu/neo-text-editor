@@ -1,4 +1,4 @@
-#include "terminal.h"
+#include "../neo.h"
 #include <unistd.h>
 #include <signal.h>
 #include <stdio.h>
