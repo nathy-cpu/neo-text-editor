@@ -34,7 +34,7 @@ $(TEST_TARGET):
 # Phony targets
 all: $(TARGET)
 
-build: $(TARGET)
+build: clean $(TARGET)
 
 test: clean $(TEST_TARGET)
 	./$(TEST_TARGET)
@@ -48,7 +48,7 @@ clean:
 format:
 	find $(SRC_DIR) -name "*.c" -o -name "*.h" | xargs clang-format -i --fallback-style=Webkit
 
-lint:
+lint: format
 	clang-tidy $(SRCS) $(TEST_SRCS) -checks=-*,clang-analyzer-*,-clang-analyzer-cplusplus* -- $(CFLAGS) $(LDFLAGS)
 
 .PHONY: all build test run clean format lint

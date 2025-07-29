@@ -10,8 +10,12 @@ void Tab_Init(Tab* tab)
 {
     assert(tab != NULL);
 
-    // Initialize text buffer with cache-line alignment
-    GapBuffer_Init(&tab->text, 4096, 64); // 4KB initial, 64-byte aligned
+    // Initialize buffer
+    tab->buffer = Buffer_New();
+    if (!tab->buffer) {
+        // Handle allocation failure
+        return;
+    }
 
     // Cursor state
     tab->cursorX = 0;
@@ -33,7 +37,7 @@ void Tab_Free(Tab* tab)
     if (!tab)
         return;
 
-    GapBuffer_Free(&tab->text);
+    Buffer_Free(tab->buffer);
     free(tab->filename); // Safe even if NULL
 }
 
@@ -50,10 +54,40 @@ void Tab_LoadFile(Tab* tab, const char* path)
         return; // Silent fail (caller can check filename)
     }
 
-    // Replace content efficiently
-    GapBuffer_Clear(&tab->text);
-    GapBuffer_InsertSlice(&tab->text, 0,
-        (Slice) { fileContent.data, fileContent.size });
+    // Clear existing content
+    Buffer_Free(tab->buffer);
+    tab->buffer = Buffer_New();
+
+    // Parse file content into lines
+    char* content = (char*)fileContent.data;
+    size_t contentSize = fileContent.size;
+    size_t lineStart = 0;
+    size_t lineNumber = 0;
+
+    for (size_t i = 0; i < contentSize; i++) {
+        if (content[i] == '\n' || i == contentSize - 1) {
+            size_t lineLength = i - lineStart;
+            if (i == contentSize - 1 && content[i] != '\n') {
+                lineLength++; // Include the last character if not a newline
+            }
+
+            if (lineLength > 0) {
+                Line* line = Buffer_GetLine(tab->buffer, lineNumber);
+                if (line) {
+                    Line_InsertText(line, 0, content + lineStart, lineLength);
+                }
+            }
+
+            if (content[i] == '\n') {
+                lineNumber++;
+                if (lineNumber >= Buffer_GetLineCount(tab->buffer)) {
+                    Buffer_InsertLine(tab->buffer, lineNumber);
+                }
+            }
+
+            lineStart = i + 1;
+        }
+    }
 
     // Update metadata
     free(tab->filename);
@@ -73,8 +107,9 @@ void Tab_SaveFile(Tab* tab)
     if (!tab || !tab->filename)
         return;
 
-    Slice content = GapBuffer_ToSlice(&tab->text);
+    Slice content = Buffer_ToSlice(tab->buffer);
     if (FileIO_Write(tab->filename, content)) {
         tab->isSaved = true;
     }
+    free((void*) content.data);
 }

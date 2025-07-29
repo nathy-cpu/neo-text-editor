@@ -78,6 +78,57 @@ size_t GapBuffer_Size(GapBuffer* gapBuffer);
 void GapBuffer_MoveGap(GapBuffer* gapBuffer, size_t newGapStart);
 
 // ============================================================================
+// LINKED LIST TEXT BUFFER
+// ============================================================================
+
+// Line - Represents a single line in the text buffer
+typedef struct Line {
+    GapBuffer text; // Text content of the line
+    GapBuffer styles; // Parallel gap buffer for syntax highlighting
+    size_t lineNumber; // 0-based line number
+    bool isFolded; // Whether this line is folded/collapsed
+    size_t foldLevel; // Nesting level for folding
+    struct Line* next; // Next line in the list
+    struct Line* prev; // Previous line in the list
+} Line;
+
+// Buffer - Main text buffer containing linked list of lines
+typedef struct Buffer {
+    Line* firstLine; // First line in the buffer
+    Line* lastLine; // Last line in the buffer
+    Line* currentLine; // Currently active line
+    size_t totalLines; // Total number of lines
+    size_t totalBytes; // Total number of bytes across all lines
+    char* filename; // Associated filename
+    bool isModified; // Whether buffer has been modified
+    bool isReadOnly; // Whether buffer is read-only
+} Buffer;
+
+// Line operations
+Line* Line_New(size_t initialCapacity);
+void Line_Free(Line* line);
+void Line_InsertChar(Line* line, size_t position, char c);
+void Line_DeleteChar(Line* line, size_t position);
+void Line_InsertText(Line* line, size_t position, const char* text, size_t length);
+void Line_DeleteText(Line* line, size_t position, size_t length);
+size_t Line_Length(Line* line);
+Slice Line_GetText(Line* line);
+
+// Buffer operations
+Buffer* Buffer_New(void);
+void Buffer_Free(Buffer* buffer);
+Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber);
+void Buffer_DeleteLine(Buffer* buffer, size_t lineNumber);
+Line* Buffer_GetLine(Buffer* buffer, size_t lineNumber);
+void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column, char c);
+void Buffer_DeleteChar(Buffer* buffer, size_t lineNumber, size_t column);
+void Buffer_SplitLine(Buffer* buffer, size_t lineNumber, size_t column);
+void Buffer_JoinLine(Buffer* buffer, size_t lineNumber);
+size_t Buffer_GetLineCount(Buffer* buffer);
+size_t Buffer_GetTotalBytes(Buffer* buffer);
+Slice Buffer_ToSlice(Buffer* buffer);
+
+// ============================================================================
 // TERMINAL HANDLING
 // ============================================================================
 
@@ -89,22 +140,22 @@ typedef struct Terminal {
 } Terminal;
 
 // Enables raw mode. Returns 0 on success, -1 on failure.
-int Terminal_EnableRawMode(Terminal *terminal);
+int Terminal_EnableRawMode(Terminal* terminal);
 
 // Disables raw mode. Returns 0 on success, -1 on failure.
-int Terminal_DisableRawMode(Terminal *terminal);
+int Terminal_DisableRawMode(Terminal* terminal);
 
 // Restores the terminal to its original state. Safe to call multiple times.
-int Terminal_Restore(Terminal *terminal);
+int Terminal_Restore(Terminal* terminal);
 
 // Clears the terminal screen using ANSI escape codes.
-void Terminal_ClearScreen(Terminal *terminal);
+void Terminal_ClearScreen(Terminal* terminal);
 
 // Reads a single key from the terminal. Raw mode must be enabled. Returns the character read, or -1 on error.
 int ReadKey(void);
 
 // Handles signals for terminal cleanup. Intended for use as a signal handler.
-void Terminal_HandleSignal(Terminal *terminal, int signalNumber);
+void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
 
 // ============================================================================
 // FILE I/O
@@ -131,7 +182,7 @@ void FileIO_Unmap(MappedFile* file);
 
 typedef struct {
     // Text buffer
-    GapBuffer text;
+    Buffer* buffer;
 
     // Cursor state
     size_t cursorX;
