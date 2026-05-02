@@ -1,0 +1,18 @@
+CompileFlags:
+  Add:
+    - -std=c11
+    - -pedantic
+    - -Wall
+    - -Wextra
+    - -Werror
+    - -Isrc
+    - -Isrc/core
+    - -Isrc/terminal
+    - -Isrc/utils
+    - -Isrc/features
+    - -fsanitize=undefined
+    - -fsanitize=address
+Diagnostics:
+  ClangTidy:
+    Add: [clang-analyzer-*]
+    Remove: [clang-analyzer-cplusplus*]
