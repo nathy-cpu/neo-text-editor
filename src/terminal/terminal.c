@@ -50,7 +50,7 @@ int Terminal_Restore(Terminal* terminal)
     return 0;
 }
 
-void Terminal_ClearScreen(Terminal* terminal)
+void Terminal_ClearScreen(const Terminal* terminal)
 {
     (void)terminal;
     const char* clear = "\x1b[2J\x1b[H";
