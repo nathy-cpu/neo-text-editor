@@ -1,20 +1,21 @@
 #include "../neo.h"
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
 
-int Terminal_EnableRawMode(Terminal* terminal)
+bool Terminal_EnableRawMode(Terminal* terminal)
 {
     struct termios rawTermios;
 
     if (terminal->rawModeEnabled)
-        return 0; // Already enabled
+        return true;
     if (!isatty(STDIN_FILENO))
-        return -1;
+        return false;
     if (tcgetattr(STDIN_FILENO, &terminal->originalTermios) == -1)
-        return -1;
+        return false;
     terminal->termiosSaved = true;
 
     rawTermios = terminal->originalTermios;
@@ -26,28 +27,28 @@ int Terminal_EnableRawMode(Terminal* terminal)
     rawTermios.c_cc[VTIME] = 1;
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &rawTermios) < 0)
-        return -1;
+        return false;
     terminal->rawModeEnabled = true;
-    return 0;
+    return true;
 }
 
-int Terminal_DisableRawMode(Terminal* terminal)
+bool Terminal_DisableRawMode(Terminal *terminal)
 {
     if (terminal->rawModeEnabled && terminal->termiosSaved) {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->originalTermios);
         terminal->rawModeEnabled = false;
     }
-    return 0;
+    return true;
 }
 
-int Terminal_Restore(Terminal* terminal)
+bool Terminal_Restore(Terminal* terminal)
 {
     Terminal_DisableRawMode(terminal);
     // Move cursor to home position and flush output
     const char* reset = "\r\n\x1b[H";
     write(STDOUT_FILENO, reset, strlen(reset));
     fflush(stdout);
-    return 0;
+    return true;
 }
 
 void Terminal_ClearScreen(const Terminal* terminal)

@@ -147,13 +147,13 @@ typedef struct Terminal {
 } Terminal;
 
 // Enables raw mode. Returns 0 on success, -1 on failure.
-int Terminal_EnableRawMode(Terminal *terminal);
+bool Terminal_EnableRawMode(Terminal *terminal);
 
 // Disables raw mode. Returns 0 on success, -1 on failure.
-int Terminal_DisableRawMode(Terminal *terminal);
+bool Terminal_DisableRawMode(Terminal *terminal);
 
 // Restores the terminal to its original state. Safe to call multiple times.
-int Terminal_Restore(Terminal *terminal);
+bool Terminal_Restore(Terminal *terminal);
 
 // Clears the terminal screen using ANSI escape codes.
 void Terminal_ClearScreen(const Terminal *terminal);
