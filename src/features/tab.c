@@ -111,5 +111,5 @@ void Tab_SaveFile(Tab* tab)
     if (FileIO_Write(tab->filename, content)) {
         tab->isSaved = true;
     }
-    free((void*) content.data);
+    free((void*)content.data);
 }

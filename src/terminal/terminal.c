@@ -32,7 +32,7 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     return true;
 }
 
-bool Terminal_DisableRawMode(Terminal *terminal)
+bool Terminal_DisableRawMode(Terminal* terminal)
 {
     if (terminal->rawModeEnabled && terminal->termiosSaved) {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->originalTermios);
