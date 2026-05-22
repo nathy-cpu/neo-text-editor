@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-bool FileIO_Read(const char* path, Array* out)
+bool FileIORead(const char* path, Array* out)
 {
     int fd = open(path, O_RDONLY);
     if (fd == -1)
@@ -19,14 +19,14 @@ bool FileIO_Read(const char* path, Array* out)
 
     // Use mmap for files > 1MB
     if (st.st_size > 1024 * 1024) {
-        MappedFile mf = FileIO_MMap(path);
+        MappedFile mf = FileIOMMap(path);
         if (mf.fd == -1)
             return false;
 
         // Initialize array with the correct size
         Array_Init(out, sizeof(char), mf.content.size, 0);
         bool ok = Array_Append(out, mf.content.data, mf.content.size);
-        FileIO_Unmap(&mf);
+        MappedFile_Unmap(&mf);
         return ok;
     }
 
@@ -44,7 +44,7 @@ bool FileIO_Read(const char* path, Array* out)
     return true;
 }
 
-bool FileIO_Write(const char* path, Slice content)
+bool FileIOWrite(const char* path, Slice content)
 {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1)
@@ -56,7 +56,7 @@ bool FileIO_Write(const char* path, Slice content)
     return written == (ssize_t)content.size;
 }
 
-MappedFile FileIO_MMap(const char* path)
+MappedFile FileIOMMap(const char* path)
 {
     int fd = open(path, O_RDONLY);
     if (fd == -1)
@@ -80,7 +80,7 @@ MappedFile FileIO_MMap(const char* path)
     };
 }
 
-void FileIO_Unmap(MappedFile* file)
+void MappedFile_Unmap(MappedFile* file)
 {
     if (file->fd != -1) {
         munmap((void*)file->content.data, file->content.size);

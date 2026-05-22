@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <termios.h>
+#include <time.h>
 
 // ============================================================================
 // CORE DATA STRUCTURES
@@ -139,6 +140,21 @@ Slice Buffer_ToSlice(const Buffer* buffer);
 // TERMINAL HANDLING
 // ============================================================================
 
+#define CTRL_KEY(k) ((k) & 0x1f)
+
+enum Key {
+    BACKSPACE = 127,
+    ARROW_LEFT = 2000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    DELETE_KEY,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
+};
+
 // Encapsulates terminal state
 typedef struct Terminal {
     struct termios originalTermios;
@@ -162,6 +178,12 @@ void Terminal_ClearScreen(const Terminal* terminal);
 // character read, or -1 on error.
 int ReadKey(void);
 
+// Gets the terminal cursor position
+bool TerminalGetCursorPosition(size_t* rows, size_t* columns);
+
+// Gets the terminal window size
+bool TerminalGetWindowSize(size_t* rows, size_t* columns);
+
 // Handles signals for terminal cleanup. Intended for use as a signal handler.
 void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
 
@@ -170,10 +192,10 @@ void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
 // ============================================================================
 
 // Read entire file into array (uses memory mapping for large files)
-bool FileIO_Read(const char* path, Array* out);
+bool FileIORead(const char* path, Array* out);
 
 // Write slice to file (atomic write on POSIX)
-bool FileIO_Write(const char* path, Slice content);
+bool FileIOWrite(const char* path, Slice content);
 
 // Memory-mapped file variant (zero-copy for large files)
 typedef struct {
@@ -181,16 +203,51 @@ typedef struct {
     int fd; // File descriptor for cleanup
 } MappedFile;
 
-MappedFile FileIO_MMap(const char* path);
-void FileIO_Unmap(MappedFile* file);
+MappedFile FileIOMMap(const char* path);
+void MappedFile_Unmap(MappedFile* file);
+
+// ============================================================================
+// SYNTAX HIGHLIGHTING
+// ============================================================================
+
+#define HIGHLIGHT_NORMAL 0
+#define HIGHLIGHT_NUMBER 1
+#define HIGHLIGHT_MATCH 2
+#define HIGHLIGHT_STRING 3
+#define HIGHLIGHT_COMMENT 4
+#define HIGHLIGHT_KEYWORD 5
+#define HIGHLIGHT_TYPE 6
+
+typedef struct {
+    char* fileType;
+    char** fileMatch;
+    char** keywords;
+    char** types;
+    char* singleLineCommentStart;
+    char* multiLineCommentStart;
+    char* multiLineCommentEnd;
+} Syntax;
 
 // ============================================================================
 // EDITOR FEATURES
 // ============================================================================
 
 typedef struct {
+    size_t screenRows;
+    size_t screenColumns;
+    char statusMessage[200];
+    time_t statusMessageTime;
+} Editor;
+
+typedef struct {
     // Text buffer
     Buffer* buffer;
+
+    // Editor state
+    Editor* editor;
+
+    // Syntax Highlighting
+    Syntax* syntax;
 
     // Cursor state
     size_t cursorX;
@@ -206,7 +263,32 @@ typedef struct {
     bool isSaved;
 } Tab;
 
+void Editor_Init(Editor* editor);
+void Editor_Free(Editor* editor);
+void Editor_SetStatusMessage(Editor* editor, const char* fstring, ...);
+void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer);
+
 void Tab_Init(Tab* tab);
 void Tab_Free(Tab* tab);
 void Tab_LoadFile(Tab* tab, const char* path);
 void Tab_SaveFile(Tab* tab);
+
+void Tab_SetSyntaxHighlight(Tab* tab);
+void Tab_UpdateSyntax(Tab* tab);
+char* GetSyntaxColor(int highlight);
+
+// ============================================================================
+// TERMINAL RENDERING
+// ============================================================================
+
+void Tab_Scroll(Tab* tab);
+void Tab_DrawRows(Tab* tab, Array* screenBuffer);
+void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer);
+void Tab_RefreshScreen(Tab* tab);
+
+// ============================================================================
+// KEYBOARD INPUT
+// ============================================================================
+
+void Tab_MoveCursor(Tab* tab, int key);
+void Tab_ProcessKeypress(Tab* tab);

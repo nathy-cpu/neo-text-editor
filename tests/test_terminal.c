@@ -18,8 +18,8 @@ void test_Terminal_EnableRawMode(void) {
 void test_Terminal_DisableRawMode(void) {
     Terminal term = {0};
     Terminal_EnableRawMode(&term);
-    int result = Terminal_DisableRawMode(&term);
-    if (result == 0 && !term.rawModeEnabled) {
+    bool result = Terminal_DisableRawMode(&term);
+    if (result == true && !term.rawModeEnabled) {
         printf("test_Terminal_DisableRawMode: PASS\n\r");
     } else {
         printf("test_Terminal_DisableRawMode: FAIL\n\r");
@@ -30,8 +30,8 @@ void test_Terminal_DisableRawMode(void) {
 void test_Terminal_Restore(void) {
     Terminal term = {0};
     Terminal_EnableRawMode(&term);
-    int result = Terminal_Restore(&term);
-    if (result == 0 && !term.rawModeEnabled) {
+    bool result = Terminal_Restore(&term);
+    if (result == true && !term.rawModeEnabled) {
         printf("test_Terminal_Restore: PASS\n\r");
     } else {
         printf("test_Terminal_Restore: FAIL\n\r");

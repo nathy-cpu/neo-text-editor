@@ -19,7 +19,7 @@ int main(int argc, char* argv[])
     signal(SIGTERM, signal_handler);
 
     // Initialize terminal
-    if (Terminal_EnableRawMode(&terminal) != 0) {
+    if (!Terminal_EnableRawMode(&terminal)) {
         fprintf(stderr, "Failed to enable raw mode\n");
         return 1;
     }
@@ -33,19 +33,12 @@ int main(int argc, char* argv[])
         Tab_LoadFile(&tab, argv[1]);
     }
 
-    printf("Neo Text Editor - Press 'q' to quit\n");
-    printf("File: %s\n", tab.filename ? tab.filename : "No file opened");
-    printf("Content size: %zu bytes\n", Buffer_GetTotalBytes(tab.buffer));
+    Editor_SetStatusMessage(tab.editor, "HELP: Ctrl-S = save | Ctrl-Q = quit");
 
-    // Simple input loop
+    // Main event loop
     while (1) {
-        int key = ReadKey();
-        if (key == 'q') {
-            break;
-        }
-
-        // Echo the key (for testing)
-        printf("Key pressed: %c (%d)\n", key, key);
+        Tab_RefreshScreen(&tab);
+        Tab_ProcessKeypress(&tab);
     }
 
     // Cleanup

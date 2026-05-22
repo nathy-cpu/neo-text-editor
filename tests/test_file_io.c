@@ -13,26 +13,26 @@ static void create_test_file(const char *path, const char *content) {
     fclose(file);
 }
 
-// Test FileIO_Read and FileIO_Write
+// Test FileIORead and FileIOWrite
 static void test_read_write() {
     const char *path = "testfile.txt";
     const char *content = "Hello, world!";
     create_test_file(path, content);
 
-    // Test FileIO_Read
+    // Test FileIORead
     Array arr1 = {0};
-    assert(FileIO_Read(path, &arr1) && "Read failed");
+    assert(FileIORead(path, &arr1) && "Read failed");
     assert(arr1.size == strlen(content) && "Incorrect read length");
     assert(memcmp(arr1.data, content, arr1.size) == 0 && "Read content mismatch");
 
-    // Test FileIO_Write
+    // Test FileIOWrite
     const char *new_content = "Goodbye!";
     Slice new_slice = Slice_From(new_content);
-    assert(FileIO_Write(path, new_slice) && "Write failed");
+    assert(FileIOWrite(path, new_slice) && "Write failed");
 
     // Verify the write
     Array arr2 = {0};
-    assert(FileIO_Read(path, &arr2) && "Re-read failed");
+    assert(FileIORead(path, &arr2) && "Re-read failed");
     assert(arr2.size == strlen(new_content) && "Incorrect write length");
     assert(memcmp(arr2.data, new_content, arr2.size) == 0 && "Write content mismatch");
 
@@ -41,18 +41,18 @@ static void test_read_write() {
     unlink(path); // Delete the test file
 }
 
-// Test FileIO_MMap
+// Test FileIOMMap
 static void test_mmap() {
     const char *path = "mmap_test.txt";
     const char *content = "Memory-mapped file test";
     create_test_file(path, content);
 
-    MappedFile file = FileIO_MMap(path);
+    MappedFile file = FileIOMMap(path);
     assert(file.fd != -1 && "MMap failed");
     assert(file.content.size == strlen(content) && "MMap length mismatch");
     assert(memcmp(file.content.data, content, file.content.size) == 0 && "MMap content mismatch");
 
-    FileIO_Unmap(&file);
+    MappedFile_Unmap(&file);
     unlink(path);
 }
 
@@ -60,14 +60,14 @@ static void test_mmap() {
 static void test_errors() {
     // Nonexistent file
     Array array = {0};
-    assert(!FileIO_Read("nonexistent.txt", &array) && "Read should fail");
+    assert(!FileIORead("nonexistent.txt", &array) && "Read should fail");
 
     // Permission denied (create a file and make it unreadable)
     const char *path = "no_perms.txt";
     create_test_file(path, "test");
     chmod(path, 0000); // Remove all permissions
 
-    assert(!FileIO_Read(path, &array) && "Read should fail (permissions)");
+    assert(!FileIORead(path, &array) && "Read should fail (permissions)");
     chmod(path, 0644); // Restore permissions
     unlink(path);
 }
@@ -99,7 +99,7 @@ static void test_large_file() {
 
     // Test reading
     Array arr = {0};
-    assert(FileIO_Read(path, &arr) && "Large read failed");
+    assert(FileIORead(path, &arr) && "Large read failed");
     assert(arr.size == size && "Incorrect large file length");
     Array_Free(&arr);
 

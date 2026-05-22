@@ -17,6 +17,14 @@ void Tab_Init(Tab* tab)
         return;
     }
 
+    // Editor state
+    tab->editor = malloc(sizeof(Editor));
+    if (tab->editor) {
+        Editor_Init(tab->editor);
+    }
+
+    tab->syntax = NULL;
+
     // Cursor state
     tab->cursorX = 0;
     tab->cursorY = 0;
@@ -38,6 +46,10 @@ void Tab_Free(Tab* tab)
         return;
 
     Buffer_Free(tab->buffer);
+    if (tab->editor) {
+        Editor_Free(tab->editor);
+        free(tab->editor);
+    }
     free(tab->filename); // Safe even if NULL
 }
 
@@ -49,7 +61,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
     Array fileContent;
     Array_InitChar(&fileContent, 4096); // 4KB initial array
 
-    if (!FileIO_Read(path, &fileContent)) {
+    if (!FileIORead(path, &fileContent)) {
         Array_Free(&fileContent);
         return; // Silent fail (caller can check filename)
     }
@@ -94,6 +106,8 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->filename = strdup(path);
     tab->isSaved = true;
 
+    Tab_SetSyntaxHighlight(tab);
+
     // Reset view state
     tab->cursorX = tab->cursorY = 0;
     tab->rowOffset = tab->columnOffset = 0;
@@ -108,7 +122,7 @@ void Tab_SaveFile(Tab* tab)
         return;
 
     Slice content = Buffer_ToSlice(tab->buffer);
-    if (FileIO_Write(tab->filename, content)) {
+    if (FileIOWrite(tab->filename, content)) {
         tab->isSaved = true;
     }
     free((void*)content.data);
