@@ -1,10 +1,10 @@
 #include "../neo.h"
+#include <ctype.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <ctype.h>
 #include <time.h>
-#include <stdarg.h>
+#include <unistd.h>
 
 void Editor_Init(Editor* editor)
 {
@@ -15,10 +15,7 @@ void Editor_Init(Editor* editor)
     TerminalGetWindowSize(&editor->screenRows, &editor->screenColumns);
 }
 
-void Editor_Free(Editor* editor)
-{
-    (void)editor;
-}
+void Editor_Free(Editor* editor) { (void)editor; }
 
 void Editor_SetStatusMessage(Editor* editor, const char* fstring, ...)
 {
@@ -62,13 +59,10 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
 {
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
 
-    for (size_t i = 0; i < tab->editor->screenRows; i++)
-    {
+    for (size_t i = 0; i < tab->editor->screenRows; i++) {
         size_t fileRow = i + tab->rowOffset;
-        if (fileRow >= totalLines)
-        {
-            if (totalLines == 0 && i == tab->editor->screenRows / 3)
-            {
+        if (fileRow >= totalLines) {
+            if (totalLines == 0 && i == tab->editor->screenRows / 3) {
                 char welcome[50];
                 int welcomelen = snprintf(welcome, sizeof(welcome), "Neo Text Editor");
 
@@ -76,24 +70,19 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                     welcomelen = tab->editor->screenColumns;
 
                 int padding = (tab->editor->screenColumns - welcomelen) / 2;
-                if (padding > 0)
-                {
+                if (padding > 0) {
                     Array_Append(screenBuffer, ">", 1);
                     padding--;
                 }
-                while (padding)
-                {
+                while (padding) {
                     Array_Append(screenBuffer, " ", 1);
                     padding--;
                 }
 
                 Array_Append(screenBuffer, welcome, welcomelen);
-            }
-            else
+            } else
                 Array_Append(screenBuffer, ">", 1);
-        }
-        else
-        {
+        } else {
             Line* line = Buffer_GetLine(tab->buffer, fileRow);
             if (line) {
                 // Ensure gaps are moved to the end so we can read contiguous data
@@ -105,7 +94,8 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
 
                 // Handle column offset (horizontal scrolling)
                 ssize_t len = logicalSize - tab->columnOffset;
-                if (len < 0) len = 0;
+                if (len < 0)
+                    len = 0;
                 if (len > (ssize_t)tab->editor->screenColumns)
                     len = tab->editor->screenColumns;
 
@@ -114,10 +104,8 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                     char* styles = (char*)styleSlice.data + tab->columnOffset;
                     int currentColor = -1;
 
-                    for (ssize_t j = 0; j < len; j++)
-                    {
-                        if (iscntrl(temp[j]))
-                        {
+                    for (ssize_t j = 0; j < len; j++) {
+                        if (iscntrl(temp[j])) {
                             char symbol = (temp[j] <= 26) ? '@' + temp[j] : '?';
                             Array_Append(screenBuffer, "\x1b[7m", 4);
                             Array_Append(screenBuffer, &symbol, 1);
@@ -127,12 +115,13 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                                 int clen = snprintf(cbuf, sizeof(cbuf), "\x1b[%sm", GetSyntaxColor(currentColor));
                                 Array_Append(screenBuffer, cbuf, clen);
                             }
-                        }
-                        else
-                        {
-                            int highlight = (j < (ssize_t)styleSlice.size - (ssize_t)tab->columnOffset) ? styles[j] : HIGHLIGHT_NORMAL;
+                        } else {
+                            int highlight = (j < (ssize_t)styleSlice.size - (ssize_t)tab->columnOffset)
+                                ? styles[j]
+                                : HIGHLIGHT_NORMAL;
                             if (highlight != currentColor) {
-                                if (currentColor != -1) Array_Append(screenBuffer, "\x1b[39m", 5);
+                                if (currentColor != -1)
+                                    Array_Append(screenBuffer, "\x1b[39m", 5);
                                 if (highlight != HIGHLIGHT_NORMAL) {
                                     char* color = GetSyntaxColor(highlight);
                                     char cbuf[16];
@@ -165,7 +154,8 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer)
     char status[140], cursor[50];
 
     char* saveStatus = tab->isSaved ? "" : "[UNSAVED]";
-    int statusSize = snprintf(status, sizeof(status), "%s  %.50s ~ %zu lines", saveStatus, filename, Buffer_GetLineCount(tab->buffer));
+    int statusSize = snprintf(
+        status, sizeof(status), "%s  %.50s ~ %zu lines", saveStatus, filename, Buffer_GetLineCount(tab->buffer));
 
     int cursorSize = snprintf(cursor, sizeof(cursor), "%zu:%zu", tab->cursorY + 1, tab->cursorX + 1);
 
@@ -174,14 +164,11 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer)
 
     Array_Append(screenBuffer, status, statusSize);
 
-    for (int i = statusSize; i < (int)tab->editor->screenColumns; i++)
-    {
-        if (tab->editor->screenColumns - i == (size_t)cursorSize)
-        {
+    for (int i = statusSize; i < (int)tab->editor->screenColumns; i++) {
+        if (tab->editor->screenColumns - i == (size_t)cursorSize) {
             Array_Append(screenBuffer, cursor, cursorSize);
             break;
-        }
-        else
+        } else
             Array_Append(screenBuffer, " ", 1);
     }
 
@@ -204,7 +191,8 @@ void Tab_RefreshScreen(Tab* tab)
     Editor_DrawMessageBar(tab->editor, &screenBuffer);
 
     char buffer[32];
-    snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (tab->cursorY - tab->rowOffset) + 1, (tab->renderX - tab->columnOffset) + 1);
+    snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (tab->cursorY - tab->rowOffset) + 1,
+        (tab->renderX - tab->columnOffset) + 1);
 
     Array_Append(&screenBuffer, buffer, strlen(buffer));
     Array_Append(&screenBuffer, "\x1b[?25h", 6);

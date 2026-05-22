@@ -74,10 +74,7 @@ MappedFile FileIOMMap(const char* path)
         return (MappedFile) { .fd = -1 };
     }
 
-    return (MappedFile) {
-        .content = Slice_Make(data, st.st_size),
-        .fd = fd
-    };
+    return (MappedFile) { .content = Slice_Make(data, st.st_size), .fd = fd };
 }
 
 void MappedFile_Unmap(MappedFile* file)

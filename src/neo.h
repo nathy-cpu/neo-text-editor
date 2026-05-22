@@ -35,8 +35,7 @@ typedef struct {
 } Array;
 
 // Life cycle
-void Array_Init(Array* array, size_t itemSize, size_t capacity,
-    size_t alignment);
+void Array_Init(Array* array, size_t itemSize, size_t capacity, size_t alignment);
 void Array_Free(Array* array);
 void Array_Clear(Array* array);
 
@@ -50,10 +49,8 @@ size_t Array_Size(const Array* array);
 Slice Array_ToSlice(const Array* array);
 
 // Type-safe macros
-#define Array_InitChar(arr, cap) \
-    Array_Init(arr, sizeof(char), cap, 64) // Cache line
-#define Array_InitStruct(arr, type, cap) \
-    Array_Init(arr, sizeof(type), cap, alignof(type))
+#define Array_InitChar(arr, cap) Array_Init(arr, sizeof(char), cap, 64) // Cache line
+#define Array_InitStruct(arr, type, cap) Array_Init(arr, sizeof(type), cap, alignof(type))
 #define Array_Get(arr, type, idx) (*(type*)Array_At(arr, idx))
 #define Array_AppendSlice(arr, slice) Array_Append(arr, slice.data, slice.size)
 
@@ -65,15 +62,13 @@ typedef struct {
 } GapBuffer;
 
 // Initialize with initial capacity
-void GapBuffer_Init(GapBuffer* gapBuffer, size_t initialCapacity,
-    size_t alignment);
+void GapBuffer_Init(GapBuffer* gapBuffer, size_t initialCapacity, size_t alignment);
 
 // Free resources
 void GapBuffer_Free(GapBuffer* gapBuffer);
 
 // Core operations
-void GapBuffer_InsertSlice(GapBuffer* gapBuffer, size_t position,
-    Slice content);
+void GapBuffer_InsertSlice(GapBuffer* gapBuffer, size_t position, Slice content);
 void GapBuffer_InsertChar(GapBuffer* gapBuffer, size_t position, char content);
 void GapBuffer_Delete(GapBuffer* gapBuffer, size_t position, size_t size);
 Slice GapBuffer_ToSlice(GapBuffer* gapBuffer); // Get all content as slice
@@ -115,8 +110,7 @@ Line* Line_New(size_t initialCapacity);
 void Line_Free(Line* line);
 void Line_InsertChar(Line* line, size_t position, char c);
 void Line_DeleteChar(Line* line, size_t position);
-void Line_InsertText(Line* line, size_t position, const char* text,
-    size_t length);
+void Line_InsertText(Line* line, size_t position, const char* text, size_t length);
 void Line_DeleteText(Line* line, size_t position, size_t length);
 size_t Line_Length(Line* line);
 Slice Line_GetText(Line* line);
@@ -127,8 +121,7 @@ void Buffer_Free(Buffer* buffer);
 Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber);
 void Buffer_DeleteLine(Buffer* buffer, size_t lineNumber);
 Line* Buffer_GetLine(const Buffer* buffer, size_t lineNumber);
-void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column,
-    char c);
+void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column, char c);
 void Buffer_DeleteChar(Buffer* buffer, size_t lineNumber, size_t column);
 void Buffer_SplitLine(Buffer* buffer, size_t lineNumber, size_t column);
 void Buffer_JoinLine(Buffer* buffer, size_t lineNumber);

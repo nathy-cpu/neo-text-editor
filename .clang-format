@@ -1,4 +1,5 @@
-BIndentWidth: 4
+BasedOnStyle: WebKit
+IndentWidth: 4
 TabWidth: 4
 UseTab: Never
-ColumnLimit: 120asedOnStyle: WebKit
+ColumnLimit: 120
