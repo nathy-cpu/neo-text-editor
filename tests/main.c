@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "test_file_io.c"
 #include "test_terminal.c"
+#include "test_gap_buffer.c"
 
 int main(void) {
     // Call terminal tests
@@ -10,6 +11,12 @@ int main(void) {
     test_Terminal_Restore();
     test_Terminal_ClearScreen();
     printf("All terminal tests passed!\n\r");
+    
+    // Call gap buffer tests
+    printf("Running gap buffer tests...\n\r");
+    test_gap_buffer_basic();
+    printf("All gap buffer tests passed!\n\r");
+
     // Call other tests here as needed
     printf("Running file I/O tests...\n\r");
     test_read_write();

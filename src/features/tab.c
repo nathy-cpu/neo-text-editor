@@ -58,8 +58,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
 {
     assert(tab && path);
 
-    Array fileContent;
-    Array_InitChar(&fileContent, 4096); // 4KB initial array
+    Array fileContent = { 0 };
 
     if (!FileIORead(path, &fileContent)) {
         Array_Free(&fileContent);
