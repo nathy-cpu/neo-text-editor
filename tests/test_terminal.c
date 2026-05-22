@@ -1,11 +1,12 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include "../src/neo.h"
 
 void test_Terminal_EnableRawMode(void) {
     Terminal term = {0};
-    int result = Terminal_EnableRawMode(&term);
-    if (result == 0 && term.rawModeEnabled) {
+    bool result = Terminal_EnableRawMode(&term);
+    if (result == true && term.rawModeEnabled) {
         printf("test_Terminal_EnableRawMode: PASS\n\r");
     } else {
         printf("test_Terminal_EnableRawMode: FAIL\n\r");
