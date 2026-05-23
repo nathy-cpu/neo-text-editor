@@ -5,19 +5,22 @@
 #include <string.h>
 
 char* CfileExtensions[] = { ".c", ".h", NULL };
-char* CppfileExtensions[] = { ".cpp", ".hpp", NULL };
+char* CppfileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
 
-char* Ckeywords[] = { "alignas", "alignof", "auto", "break", "case", "char", "const", "constexpr", "continue",
+char* Ckeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
     "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
     "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
-    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while", "size_t", "ssize_t", NULL };
+    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
 
-char* Ctypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "void", "bool", NULL };
+char* Ctypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed",  "bool", "size_t", "ssize_t", NULL };
 
-char* Cppkeywords[] = { "class", "delete", "new", "namespace", "try", "catch", "throw", "public", "private",
+char* Cppkeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
+    "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
+    "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
+    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while","class", "delete", "new", "namespace", "try", "catch", "throw", "public", "private",
     "protected", "virtual", "template", "typename", NULL };
 
-char* Cpptypes[] = { "bool", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
+char* Cpptypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
 
 Syntax HLDB[] = { { "C", CfileExtensions, Ckeywords, Ctypes, "//", "/*", "*/" },
     { "C++", CppfileExtensions, Cppkeywords, Cpptypes, "//", "/*", "*/" },
