@@ -64,6 +64,8 @@ sudo make install PREFIX=/opt/custom
 
 The codebase is heavily documented. If you are developing features, ensure your language server (like `clangd`) is active. Hovering over any `neo.h` function will provide full Doxygen-style documentation outlining parameters, return types, and expected behavior.
 
+Currently, Neo is built using linux-specific headers. As such, it will only build on linux.
+
 ## TODO
 - Implement `Ctrl+C` and `Ctrl+V` clipboard integration 
 - Implement proper syntax highlighting for popular programming and scripting languages
