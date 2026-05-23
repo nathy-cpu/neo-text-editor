@@ -34,6 +34,10 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &rawTermios) < 0)
         return false;
     terminal->rawModeEnabled = true;
+
+    // Set cursor to blinking vertical bar
+    write(STDOUT_FILENO, "\x1b[5 q", 5);
+
     return true;
 }
 
@@ -49,8 +53,8 @@ bool Terminal_DisableRawMode(Terminal* terminal)
 bool Terminal_Restore(Terminal* terminal)
 {
     Terminal_DisableRawMode(terminal);
-    // Move cursor to home position and flush output
-    const char* reset = "\r\n\x1b[H";
+    // Reset cursor style to default block, move to home, and clear
+    const char* reset = "\x1b[0 q\r\n\x1b[H";
     write(STDOUT_FILENO, reset, strlen(reset));
     fflush(stdout);
     return true;
@@ -86,7 +90,7 @@ int ReadKey(void)
     }
 
     if (input == '\x1b') {
-        char sequence[3];
+        char sequence[6];
 
         if (read(STDIN_FILENO, &sequence[0], 1) != 1)
             return '\x1b';
@@ -118,6 +122,31 @@ int ReadKey(void)
                         return HOME_KEY;
                     case '8':
                         return END_KEY;
+                    }
+                } else if (sequence[2] == ';') {
+                    if (read(STDIN_FILENO, &sequence[3], 1) != 1)
+                        return '\x1b';
+                    if (read(STDIN_FILENO, &sequence[4], 1) != 1)
+                        return '\x1b';
+
+                    if (sequence[3] == '5') {
+                        switch (sequence[4]) {
+                        case 'C':
+                            return CTRL_ARROW_RIGHT;
+                        case 'D':
+                            return CTRL_ARROW_LEFT;
+                        }
+                    } else if (sequence[3] == '2') {
+                        switch (sequence[4]) {
+                        case 'A':
+                            return SHIFT_ARROW_UP;
+                        case 'B':
+                            return SHIFT_ARROW_DOWN;
+                        case 'C':
+                            return SHIFT_ARROW_RIGHT;
+                        case 'D':
+                            return SHIFT_ARROW_LEFT;
+                        }
                     }
                 }
             } else {

@@ -81,6 +81,7 @@ void GapBuffer_InsertChar(GapBuffer* gapBuffer, size_t position, char content);
 void GapBuffer_Delete(GapBuffer* gapBuffer, size_t position, size_t size);
 Slice GapBuffer_ToSlice(GapBuffer* gapBuffer); // Get all content as slice
 void GapBuffer_Clear(GapBuffer* gapBuffer);
+char GapBuffer_Get(const GapBuffer* gapBuffer, size_t index);
 
 // Utility
 size_t GapBuffer_Size(const GapBuffer* gapBuffer);
@@ -158,7 +159,13 @@ enum Key {
     PAGE_UP,
     PAGE_DOWN,
     RESIZE_EVENT,
-    ALT_S
+    ALT_S,
+    CTRL_ARROW_LEFT,
+    CTRL_ARROW_RIGHT,
+    SHIFT_ARROW_UP,
+    SHIFT_ARROW_DOWN,
+    SHIFT_ARROW_LEFT,
+    SHIFT_ARROW_RIGHT
 };
 
 extern volatile sig_atomic_t windowResized;
@@ -273,6 +280,11 @@ typedef struct {
     // File state
     char* filename;
     bool isSaved;
+
+    // Selection state
+    bool hasSelection;
+    size_t selectStartX;
+    size_t selectStartY;
 } Tab;
 
 void Editor_Init(Editor* editor);
@@ -287,7 +299,7 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer);
 typedef struct {
     Array tabs;
     size_t activeTabIndex;
-    
+
     // Explorer State
     bool isExplorerActive;
     Array explorerItems; // Array of dynamically allocated strings (char*)
@@ -331,4 +343,5 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer);
 
 void Tab_MoveCursor(Tab* tab, int key);
 void Tab_ProcessInput(Tab* tab, int input);
+void Tab_GetSelection(Tab* tab, size_t* startX, size_t* startY, size_t* endX, size_t* endY);
 char* Editor_Prompt(App* app, const char* prompt);

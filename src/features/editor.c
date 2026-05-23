@@ -6,6 +6,23 @@
 #include <time.h>
 #include <unistd.h>
 
+static bool IsSelected(Tab* tab, size_t row, size_t col)
+{
+    if (!tab->hasSelection)
+        return false;
+    size_t startX, startY, endX, endY;
+    Tab_GetSelection(tab, &startX, &startY, &endX, &endY);
+
+    if (row < startY || row > endY)
+        return false;
+    if (row == startY && col < startX)
+        return false;
+    if (row == endY && col >= endX)
+        return false;
+
+    return true;
+}
+
 void Editor_Init(Editor* editor)
 {
     editor->screenRows = 0;
@@ -120,6 +137,10 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                     HighlightType currentColor = HIGHLIGHT_NORMAL;
 
                     for (ssize_t j = 0; j < length; j++) {
+                        bool isSelected = IsSelected(tab, fileRow, tab->columnOffset + j);
+                        if (isSelected)
+                            Array_Append(screenBuffer, "\x1b[7m", 4);
+
                         if (textData[j] == '\t') {
                             // Expand to next TAB_STOP boundary
                             size_t renderX = Line_GetRenderX(line, tab->columnOffset + j);
@@ -130,7 +151,7 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                             char symbol = (textData[j] <= 26) ? '@' + textData[j] : '?';
                             Array_Append(screenBuffer, "\x1b[7m", 4);
                             Array_Append(screenBuffer, &symbol, 1);
-                            Array_Append(screenBuffer, "\x1b[m", 3);
+                            Array_Append(screenBuffer, "\x1b[27m", 5);
                             if (currentColor != HIGHLIGHT_NORMAL) {
                                 char colorBuffer[16];
                                 int colorLength = snprintf(
@@ -154,9 +175,21 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                             }
                             Array_Append(screenBuffer, &textData[j], 1);
                         }
+
+                        if (isSelected)
+                            Array_Append(screenBuffer, "\x1b[27m", 5);
                     }
                     if (currentColor != HIGHLIGHT_NORMAL) {
                         Array_Append(screenBuffer, "\x1b[39m", 5);
+                    }
+
+                    if (length < (ssize_t)tab->editor->screenColumns && IsSelected(tab, fileRow, logicalSize)) {
+                        Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                    }
+                } else if (IsSelected(tab, fileRow, logicalSize)) {
+                    // For empty lines that are selected
+                    if (tab->editor->screenColumns > 0) {
+                        Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
                     }
                 }
             }
@@ -197,5 +230,3 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer)
     Array_Append(screenBuffer, "\x1b[m", 3);
     Array_Append(screenBuffer, "\r\n", 2);
 }
-
-

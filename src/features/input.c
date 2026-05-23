@@ -43,12 +43,100 @@ void Tab_MoveCursor(Tab* tab, int key)
         tab->cursorX = rowSize;
 }
 
+void Tab_GetSelection(Tab* tab, size_t* startX, size_t* startY, size_t* endX, size_t* endY)
+{
+    if (tab->selectStartY < tab->cursorY || (tab->selectStartY == tab->cursorY && tab->selectStartX < tab->cursorX)) {
+        *startX = tab->selectStartX;
+        *startY = tab->selectStartY;
+        *endX = tab->cursorX;
+        *endY = tab->cursorY;
+    } else {
+        *startX = tab->cursorX;
+        *startY = tab->cursorY;
+        *endX = tab->selectStartX;
+        *endY = tab->selectStartY;
+    }
+}
+
+void Tab_DeleteSelection(Tab* tab)
+{
+    if (!tab->hasSelection)
+        return;
+    size_t startX, startY, endX, endY;
+    Tab_GetSelection(tab, &startX, &startY, &endX, &endY);
+
+    tab->cursorX = endX;
+    tab->cursorY = endY;
+
+    while (tab->cursorY > startY || (tab->cursorY == startY && tab->cursorX > startX)) {
+        if (tab->cursorX > 0) {
+            Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
+            tab->cursorX--;
+        } else if (tab->cursorY > 0) {
+            Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
+            size_t previousLength = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+            Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
+            tab->cursorY--;
+            tab->cursorX = previousLength;
+        }
+    }
+    tab->hasSelection = false;
+    tab->isSaved = false;
+}
+
+static void Tab_MoveCursorWord(Tab* tab, int key)
+{
+    Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
+    if (!row)
+        return;
+
+    if (key == CTRL_ARROW_RIGHT) {
+        while (tab->cursorX < GapBuffer_Size(&row->text)) {
+            char c = GapBuffer_Get(&row->text, tab->cursorX);
+            if (isspace(c))
+                break;
+            tab->cursorX++;
+        }
+        while (tab->cursorX < GapBuffer_Size(&row->text)) {
+            char c = GapBuffer_Get(&row->text, tab->cursorX);
+            if (!isspace(c))
+                break;
+            tab->cursorX++;
+        }
+        if (tab->cursorX == GapBuffer_Size(&row->text) && tab->cursorY < Buffer_GetLineCount(tab->buffer) - 1) {
+            tab->cursorY++;
+            tab->cursorX = 0;
+        }
+    } else if (key == CTRL_ARROW_LEFT) {
+        if (tab->cursorX == 0 && tab->cursorY > 0) {
+            tab->cursorY--;
+            row = Buffer_GetLine(tab->buffer, tab->cursorY);
+            tab->cursorX = row ? GapBuffer_Size(&row->text) : 0;
+            return;
+        }
+        while (tab->cursorX > 0) {
+            char c = GapBuffer_Get(&row->text, tab->cursorX - 1);
+            if (!isspace(c))
+                break;
+            tab->cursorX--;
+        }
+        while (tab->cursorX > 0) {
+            char c = GapBuffer_Get(&row->text, tab->cursorX - 1);
+            if (isspace(c))
+                break;
+            tab->cursorX--;
+        }
+    }
+}
+
 void Tab_ProcessInput(Tab* tab, int input)
 {
     bool modified = false;
 
     switch (input) {
     case '\r':
+        if (tab->hasSelection)
+            Tab_DeleteSelection(tab);
         Buffer_SplitLine(tab->buffer, tab->cursorY, tab->cursorX);
         tab->cursorY++;
         tab->cursorX = 0;
@@ -59,6 +147,15 @@ void Tab_ProcessInput(Tab* tab, int input)
     case CTRL_KEY('s'):
         Tab_SaveFile(tab);
         Editor_SetStatusMessage(tab->editor, "File saved.");
+        break;
+
+    case CTRL_KEY('a'):
+        tab->selectStartX = 0;
+        tab->selectStartY = 0;
+        tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
+        Line* lastRow = Buffer_GetLine(tab->buffer, tab->cursorY);
+        tab->cursorX = lastRow ? GapBuffer_Size(&lastRow->text) : 0;
+        tab->hasSelection = true;
         break;
 
     case CTRL_KEY('q'):
@@ -82,22 +179,27 @@ void Tab_ProcessInput(Tab* tab, int input)
     case BACKSPACE:
     case CTRL_KEY('h'):
     case DELETE_KEY:
-        if (input == DELETE_KEY)
-            Tab_MoveCursor(tab, ARROW_RIGHT);
+        if (tab->hasSelection) {
+            Tab_DeleteSelection(tab);
+            modified = true;
+        } else {
+            if (input == DELETE_KEY)
+                Tab_MoveCursor(tab, ARROW_RIGHT);
 
-        if (tab->cursorX > 0) {
-            Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
-            tab->cursorX--;
-            tab->isSaved = false;
-            modified = true;
-        } else if (tab->cursorY > 0) {
-            Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
-            size_t previousLength = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
-            Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
-            tab->cursorY--;
-            tab->cursorX = previousLength;
-            tab->isSaved = false;
-            modified = true;
+            if (tab->cursorX > 0) {
+                Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
+                tab->cursorX--;
+                tab->isSaved = false;
+                modified = true;
+            } else if (tab->cursorY > 0) {
+                Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
+                size_t previousLength = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+                Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
+                tab->cursorY--;
+                tab->cursorX = previousLength;
+                tab->isSaved = false;
+                modified = true;
+            }
         }
         break;
 
@@ -119,7 +221,33 @@ void Tab_ProcessInput(Tab* tab, int input)
     case ARROW_DOWN:
     case ARROW_LEFT:
     case ARROW_RIGHT:
+        tab->hasSelection = false;
         Tab_MoveCursor(tab, input);
+        break;
+
+    case CTRL_ARROW_LEFT:
+    case CTRL_ARROW_RIGHT:
+        tab->hasSelection = false;
+        Tab_MoveCursorWord(tab, input);
+        break;
+
+    case SHIFT_ARROW_UP:
+    case SHIFT_ARROW_DOWN:
+    case SHIFT_ARROW_LEFT:
+    case SHIFT_ARROW_RIGHT:
+        if (!tab->hasSelection) {
+            tab->hasSelection = true;
+            tab->selectStartX = tab->cursorX;
+            tab->selectStartY = tab->cursorY;
+        }
+        if (input == SHIFT_ARROW_UP)
+            Tab_MoveCursor(tab, ARROW_UP);
+        else if (input == SHIFT_ARROW_DOWN)
+            Tab_MoveCursor(tab, ARROW_DOWN);
+        else if (input == SHIFT_ARROW_LEFT)
+            Tab_MoveCursor(tab, ARROW_LEFT);
+        else if (input == SHIFT_ARROW_RIGHT)
+            Tab_MoveCursor(tab, ARROW_RIGHT);
         break;
 
     case CTRL_KEY('l'):
@@ -128,6 +256,9 @@ void Tab_ProcessInput(Tab* tab, int input)
 
     default:
         if (!iscntrl(input) && input < 128) {
+            if (tab->hasSelection) {
+                Tab_DeleteSelection(tab);
+            }
             Buffer_InsertChar(tab->buffer, tab->cursorY, tab->cursorX, input);
             tab->cursorX++;
             tab->isSaved = false;
@@ -204,7 +335,8 @@ void App_ProcessKeypress(App* app)
         }
 
         if (hasUnsaved && !isQuiting) {
-            Editor_SetStatusMessage(activeTab->editor, "Some files have unsaved changes! Press Ctrl-Q again to quit anyways.");
+            Editor_SetStatusMessage(
+                activeTab->editor, "Some files have unsaved changes! Press Ctrl-Q again to quit anyways.");
             isQuiting = true;
             return;
         }
@@ -241,7 +373,8 @@ void App_ProcessKeypress(App* app)
 
     case CTRL_KEY('w'): {
         if (!activeTab->isSaved && !isQuiting) {
-            Editor_SetStatusMessage(activeTab->editor, "File has unsaved changes! Press Ctrl-W again to close anyways.");
+            Editor_SetStatusMessage(
+                activeTab->editor, "File has unsaved changes! Press Ctrl-W again to close anyways.");
             isQuiting = true;
             return;
         }
@@ -263,7 +396,7 @@ void App_ProcessKeypress(App* app)
             }
         }
         break;
-        
+
     case '\x1b': { // ESC sequence for Alt or other keys
         // We might need to read more chars if it's an escape sequence
         // This is a naive implementation since we read one key at a time, but ReadKey usually handles it.

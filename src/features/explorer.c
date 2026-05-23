@@ -15,8 +15,10 @@ static int CompareExplorerItems(const void* a, const void* b)
     bool isDirA = strA[strlen(strA) - 1] == '/';
     bool isDirB = strB[strlen(strB) - 1] == '/';
 
-    if (isDirA && !isDirB) return -1;
-    if (!isDirA && isDirB) return 1;
+    if (isDirA && !isDirB)
+        return -1;
+    if (!isDirA && isDirB)
+        return 1;
 
     return strcmp(strA, strB);
 }
@@ -24,7 +26,8 @@ static int CompareExplorerItems(const void* a, const void* b)
 void Explorer_ReadDir(App* app, const char* path)
 {
     DIR* dir = opendir(path);
-    if (!dir) return;
+    if (!dir)
+        return;
 
     // Clear existing items
     for (size_t i = 0; i < Array_Size(&app->explorerItems); i++) {
@@ -35,13 +38,15 @@ void Explorer_ReadDir(App* app, const char* path)
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0) continue;
+        if (strcmp(entry->d_name, ".") == 0)
+            continue;
 
         char fullpath[1024];
         snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entry->d_name);
 
         struct stat st;
-        if (stat(fullpath, &st) == -1) continue;
+        if (stat(fullpath, &st) == -1)
+            continue;
 
         bool isDir = S_ISDIR(st.st_mode);
 
@@ -74,7 +79,8 @@ void Explorer_Draw(App* app, Array* screenBuffer)
     Array_Append(screenBuffer, "\x1b[7m", 4);
     char header[256];
     int headerLen = snprintf(header, sizeof(header), " EXPLORER: %s ", app->currentExplorerPath);
-    if (headerLen > (int)cols) headerLen = cols;
+    if (headerLen > (int)cols)
+        headerLen = cols;
     Array_Append(screenBuffer, header, headerLen);
     for (int i = headerLen; i < (int)cols; i++) {
         Array_Append(screenBuffer, " ", 1);
@@ -98,10 +104,11 @@ void Explorer_Draw(App* app, Array* screenBuffer)
             if (itemIdx == app->explorerSelectedIndex) {
                 Array_Append(screenBuffer, "\x1b[7m", 4);
             }
-            
+
             char* item = Array_Get(&app->explorerItems, char*, itemIdx);
             int len = strlen(item);
-            if (len > (int)cols) len = cols;
+            if (len > (int)cols)
+                len = cols;
             Array_Append(screenBuffer, item, len);
 
             if (itemIdx == app->explorerSelectedIndex) {
@@ -144,9 +151,10 @@ void Explorer_ProcessInput(App* app, int input)
         app->isExplorerActive = false;
         break;
     case '\r': {
-        if (numItems == 0) return;
+        if (numItems == 0)
+            return;
         char* selected = Array_Get(&app->explorerItems, char*, app->explorerSelectedIndex);
-        
+
         char newPath[1024];
         if (strcmp(selected, "../") == 0) {
             // Basic parent dir resolution
@@ -168,7 +176,7 @@ void Explorer_ProcessInput(App* app, int input)
                 snprintf(newPath, sizeof(newPath), "%s/%s", app->currentExplorerPath, selected);
             }
             // Remove trailing slash for ReadDir if needed, but opendir handles it
-            newPath[strlen(newPath)-1] = '\0'; 
+            newPath[strlen(newPath) - 1] = '\0';
             Explorer_ReadDir(app, newPath);
         } else {
             // It's a file

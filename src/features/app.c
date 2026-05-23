@@ -45,7 +45,7 @@ void App_AddTab(App* app, const char* filename)
         return;
 
     Tab_Init(newTab);
-    
+
     if (filename) {
         Tab_LoadFile(newTab, filename);
     }
@@ -68,7 +68,7 @@ void App_CloseTab(App* app)
     // Prompt logic or unsaved check should ideally happen before this is called
     // or we can handle it here if we want to block closing.
     // For now, just close it.
-    
+
     Tab_Free(activeTab);
     free(activeTab);
 
@@ -80,7 +80,7 @@ void App_CloseTab(App* app)
         void* dest = Array_RawAt(&app->tabs, i);
         memcpy(dest, &nextTab, sizeof(Tab*));
     }
-    
+
     app->tabs.size--;
 
     if (app->tabs.size == 0) {
@@ -176,7 +176,7 @@ static void App_DrawTabsBar(App* app, Array* screenBuffer)
             Array_Append(screenBuffer, " ", 1);
         }
     }
-    
+
     Array_Append(screenBuffer, "\x1b[m", 3); // Reset
     Array_Append(screenBuffer, "\r\n", 2);
 }
@@ -217,8 +217,7 @@ void App_RefreshScreen(App* app)
         // Position cursor
         size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH",
-            (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
+        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
             (activeTab->renderX - activeTab->columnOffset) + 1);
 
         Array_Append(&screenBuffer, buffer, strlen(buffer));

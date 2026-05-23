@@ -51,7 +51,8 @@ int main(int argc, char* argv[])
 
     if (Array_Size(&app.tabs) > 0) {
         Tab* activeTab = Array_Get(&app.tabs, Tab*, app.activeTabIndex);
-        Editor_SetStatusMessage(activeTab->editor, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-W = close tab | Ctrl-N/P = switch tab");
+        Editor_SetStatusMessage(
+            activeTab->editor, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-W = close tab | Ctrl-N/P = switch tab");
     }
 
     // Main event loop
