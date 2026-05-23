@@ -13,6 +13,9 @@ void Editor_Init(Editor* editor)
     editor->statusMessage[0] = '\0';
     editor->statusMessageTime = 0;
     TerminalGetWindowSize(&editor->screenRows, &editor->screenColumns);
+    // Reserve 1 row for status bar (top) + 1 row for message bar (bottom)
+    if (editor->screenRows > 2)
+        editor->screenRows -= 2;
 }
 
 void Editor_Free(Editor* editor) { (void)editor; }
@@ -28,14 +31,20 @@ void Editor_SetStatusMessage(Editor* editor, const char* fstring, ...)
 
 void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
 {
-    Array_Append(screenBuffer, "\x1b[K", 3);
-    int messageSize = strlen(editor->statusMessage);
+    Array_Append(screenBuffer, "\x1b[7m", 4);
 
+    int messageSize = strlen(editor->statusMessage);
     if (messageSize > (int)editor->screenColumns)
         messageSize = editor->screenColumns;
 
-    if (messageSize && time(NULL) - editor->statusMessageTime < 5)
+    if (messageSize > 0)
         Array_Append(screenBuffer, editor->statusMessage, messageSize);
+
+    // Pad remaining columns with spaces to fill the full highlighted line
+    for (int i = messageSize; i < (int)editor->screenColumns; i++)
+        Array_Append(screenBuffer, " ", 1);
+
+    Array_Append(screenBuffer, "\x1b[m", 3);
 }
 
 void Tab_Scroll(Tab* tab)
@@ -183,16 +192,24 @@ void Tab_RefreshScreen(Tab* tab)
     Array screenBuffer;
     Array_InitChar(&screenBuffer, 4096);
 
+    // Hide cursor, move to top-left
     Array_Append(&screenBuffer, "\x1b[?25l", 6);
     Array_Append(&screenBuffer, "\x1b[H", 3);
 
-    Tab_DrawRows(tab, &screenBuffer);
+    // 1. Status bar at the top
     Tab_DrawStatusBar(tab, &screenBuffer);
+
+    // 2. Text rows (viewport)
+    Tab_DrawRows(tab, &screenBuffer);
+
+    // 3. Message bar at the bottom
     Editor_DrawMessageBar(tab->editor, &screenBuffer);
 
+    // Position cursor: row 1 is status bar, so text starts at row 2
     char buffer[32];
-    snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (tab->cursorY - tab->rowOffset) + 1,
-        (tab->renderX - tab->columnOffset) + 1);
+    snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH",
+        (tab->cursorY - tab->rowOffset) + 2,          // +2: row 1 = status bar
+        (tab->renderX  - tab->columnOffset) + 1);
 
     Array_Append(&screenBuffer, buffer, strlen(buffer));
     Array_Append(&screenBuffer, "\x1b[?25h", 6);
