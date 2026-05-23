@@ -158,7 +158,6 @@ enum Key {
     PAGE_UP,
     PAGE_DOWN,
     RESIZE_EVENT,
-    ALT_N,
     ALT_S
 };
 

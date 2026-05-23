@@ -217,17 +217,8 @@ void App_ProcessKeypress(App* app)
         break;
 
     case CTRL_KEY('t'):
-    case ALT_N:
         App_AddTab(app, NULL); // New empty tab
         break;
-
-    case CTRL_KEY('o'): {
-        char* filename = Editor_Prompt(app, "Open file: %s");
-        if (filename) {
-            Tab_LoadFile(activeTab, filename);
-            free(filename);
-        }
-    } break;
 
     case ALT_S: {
         char* filename = Editor_Prompt(app, "Save as: %s");

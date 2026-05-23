@@ -90,6 +90,11 @@ int ReadKey(void)
 
         if (read(STDIN_FILENO, &sequence[0], 1) != 1)
             return '\x1b';
+
+        if (sequence[0] == 's' || sequence[0] == 'S') {
+            return ALT_S;
+        }
+
         if (read(STDIN_FILENO, &sequence[1], 1) != 1)
             return '\x1b';
 
@@ -138,10 +143,6 @@ int ReadKey(void)
             case 'F':
                 return END_KEY;
             }
-        } else if (sequence[0] == 'n' || sequence[0] == 'N') {
-            return ALT_N;
-        } else if (sequence[0] == 's' || sequence[0] == 'S') {
-            return ALT_S;
         }
 
         return '\x1b';

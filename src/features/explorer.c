@@ -178,7 +178,11 @@ void Explorer_ProcessInput(App* app, int input)
                 snprintf(newPath, sizeof(newPath), "%s/%s", app->currentExplorerPath, selected);
             }
             Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
-            Tab_LoadFile(activeTab, newPath);
+            if (activeTab->filename == NULL && activeTab->isSaved) {
+                Tab_LoadFile(activeTab, newPath);
+            } else {
+                App_AddTab(app, newPath);
+            }
             app->isExplorerActive = false;
         }
         break;
