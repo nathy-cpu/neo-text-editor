@@ -117,7 +117,7 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                 if (length > 0) {
                     char* textData = (char*)textSlice.data + tab->columnOffset;
                     char* styles = (char*)styleSlice.data + tab->columnOffset;
-                    int currentColor = -1;
+                    HighlightType currentColor = HIGHLIGHT_NORMAL;
 
                     for (ssize_t j = 0; j < length; j++) {
                         if (textData[j] == '\t') {
@@ -131,17 +131,18 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                             Array_Append(screenBuffer, "\x1b[7m", 4);
                             Array_Append(screenBuffer, &symbol, 1);
                             Array_Append(screenBuffer, "\x1b[m", 3);
-                            if (currentColor != -1) {
+                            if (currentColor != HIGHLIGHT_NORMAL) {
                                 char colorBuffer[16];
-                                int colorLength = snprintf(colorBuffer, sizeof(colorBuffer), "\x1b[%sm", GetSyntaxColor(currentColor));
+                                int colorLength = snprintf(
+                                    colorBuffer, sizeof(colorBuffer), "\x1b[%sm", GetSyntaxColor(currentColor));
                                 Array_Append(screenBuffer, colorBuffer, colorLength);
                             }
                         } else {
-                            int highlight = (j < (ssize_t)styleSlice.size - (ssize_t)tab->columnOffset)
+                            HighlightType highlight = (j < (ssize_t)styleSlice.size - (ssize_t)tab->columnOffset)
                                 ? styles[j]
                                 : HIGHLIGHT_NORMAL;
                             if (highlight != currentColor) {
-                                if (currentColor != -1)
+                                if (currentColor != HIGHLIGHT_NORMAL)
                                     Array_Append(screenBuffer, "\x1b[39m", 5);
                                 if (highlight != HIGHLIGHT_NORMAL) {
                                     char* color = GetSyntaxColor(highlight);
@@ -154,7 +155,7 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                             Array_Append(screenBuffer, &textData[j], 1);
                         }
                     }
-                    if (currentColor != -1 && currentColor != HIGHLIGHT_NORMAL) {
+                    if (currentColor != HIGHLIGHT_NORMAL) {
                         Array_Append(screenBuffer, "\x1b[39m", 5);
                     }
                 }

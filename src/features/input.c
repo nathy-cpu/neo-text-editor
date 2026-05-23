@@ -79,7 +79,6 @@ void Tab_ProcessKeypress(Tab* tab)
             tab->editor->screenRows -= 2;
         break;
 
-
     case HOME_KEY:
         tab->cursorX = 0;
         break;

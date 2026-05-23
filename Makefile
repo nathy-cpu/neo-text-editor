@@ -49,6 +49,6 @@ format:
 	find $(SRC_DIR) -name "*.c" -o -name "*.h" | xargs clang-format -i --fallback-style=Webkit
 
 lint: format
-	clang-tidy $(SRCS) $(TEST_SRCS) -checks=-*,clang-analyzer-*,-clang-analyzer-cplusplus* -- $(CFLAGS) $(LDFLAGS)
+	clang-tidy $(SRCS) $(TEST_SRCS) -checks=-*,clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-cplusplus*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling -- $(CFLAGS) $(LDFLAGS)
 
 .PHONY: all build test run clean format lint

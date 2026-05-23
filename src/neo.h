@@ -5,10 +5,10 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
+#include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <termios.h>
-#include <signal.h>
 #include <time.h>
 
 // ============================================================================
@@ -216,13 +216,15 @@ void MappedFile_Unmap(MappedFile* file);
 // SYNTAX HIGHLIGHTING
 // ============================================================================
 
-#define HIGHLIGHT_NORMAL 0
-#define HIGHLIGHT_NUMBER 1
-#define HIGHLIGHT_MATCH 2
-#define HIGHLIGHT_STRING 3
-#define HIGHLIGHT_COMMENT 4
-#define HIGHLIGHT_KEYWORD 5
-#define HIGHLIGHT_TYPE 6
+typedef enum {
+    HIGHLIGHT_NORMAL = 0,
+    HIGHLIGHT_NUMBER,
+    HIGHLIGHT_MATCH,
+    HIGHLIGHT_STRING,
+    HIGHLIGHT_COMMENT,
+    HIGHLIGHT_KEYWORD,
+    HIGHLIGHT_TYPE
+} HighlightType;
 
 typedef struct {
     char* fileType;
@@ -281,7 +283,7 @@ void Tab_SaveFile(Tab* tab);
 
 void Tab_SetSyntaxHighlight(Tab* tab);
 void Tab_UpdateSyntax(Tab* tab);
-char* GetSyntaxColor(int highlight);
+char* GetSyntaxColor(HighlightType highlight);
 
 // ============================================================================
 // TERMINAL RENDERING

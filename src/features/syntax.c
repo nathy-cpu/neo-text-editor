@@ -7,28 +7,32 @@
 char* cFileExtensions[] = { ".c", ".h", NULL };
 char* cppFileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
 
-char* cKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
-    "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
-    "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
-    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
+char* cKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue", "default", "do",
+    "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr", "register",
+    "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
+    "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
 
-char* cTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed",  "bool", "size_t", "ssize_t", NULL };
+char* cTypes[]
+    = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", NULL };
 
-char* cppKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
-    "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
-    "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
-    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while","class", "delete", "new", "namespace", "try", "catch", "throw", "public", "private",
-    "protected", "virtual", "template", "typename", NULL };
+char* cppKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue", "default",
+    "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr", "register",
+    "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
+    "typeof", "typeof_unqual", "union", "void", "volatile", "while", "class", "delete", "new", "namespace", "try",
+    "catch", "throw", "public", "private", "protected", "virtual", "template", "typename", NULL };
 
-char* cppTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
+char* cppTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t",
+    "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
 
 Syntax syntaxDatabase[] = { { "C", cFileExtensions, cKeywords, cTypes, "//", "/*", "*/" },
     { "C++", cppFileExtensions, cppKeywords, cppTypes, "//", "/*", "*/" },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL } };
 
-char* GetSyntaxColor(int highlight)
+char* GetSyntaxColor(HighlightType highlight)
 {
     switch (highlight) {
+    case HIGHLIGHT_NORMAL:
+        return NULL;
     case HIGHLIGHT_NUMBER:
         return "31";
     case HIGHLIGHT_MATCH:
