@@ -5,9 +5,9 @@
 
 static Terminal terminal = { 0 };
 
-void signal_handler(int sig)
+void signalHandler(int signalNumber)
 {
-    (void)sig;
+    (void)signalNumber;
     Terminal_Restore(&terminal);
     exit(0);
 }
@@ -15,8 +15,8 @@ void signal_handler(int sig)
 int main(int argc, char* argv[])
 {
     // Set up signal handlers
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
 
     // Initialize terminal
     if (!Terminal_EnableRawMode(&terminal)) {
