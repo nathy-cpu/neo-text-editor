@@ -4,26 +4,26 @@
 #include <stdlib.h>
 #include <string.h>
 
-char* CfileExtensions[] = { ".c", ".h", NULL };
-char* CppfileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
+char* cFileExtensions[] = { ".c", ".h", NULL };
+char* cppFileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
 
-char* Ckeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
+char* cKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
     "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
     "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
     "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
 
-char* Ctypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed",  "bool", "size_t", "ssize_t", NULL };
+char* cTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed",  "bool", "size_t", "ssize_t", NULL };
 
-char* Cppkeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
+char* cppKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
     "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
     "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
     "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while","class", "delete", "new", "namespace", "try", "catch", "throw", "public", "private",
     "protected", "virtual", "template", "typename", NULL };
 
-char* Cpptypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
+char* cppTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
 
-Syntax HLDB[] = { { "C", CfileExtensions, Ckeywords, Ctypes, "//", "/*", "*/" },
-    { "C++", CppfileExtensions, Cppkeywords, Cpptypes, "//", "/*", "*/" },
+Syntax syntaxDatabase[] = { { "C", cFileExtensions, cKeywords, cTypes, "//", "/*", "*/" },
+    { "C++", cppFileExtensions, cppKeywords, cppTypes, "//", "/*", "*/" },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL } };
 
 char* GetSyntaxColor(int highlight)
@@ -46,7 +46,7 @@ char* GetSyntaxColor(int highlight)
     }
 }
 
-static bool is_separator(int c) { return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL; }
+static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL; }
 
 static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineComment)
 {
@@ -67,13 +67,13 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
     if (syntax == NULL)
         return;
 
-    int scs_len = syntax->singleLineCommentStart ? strlen(syntax->singleLineCommentStart) : 0;
-    int mcs_len = syntax->multiLineCommentStart ? strlen(syntax->multiLineCommentStart) : 0;
-    int mce_len = syntax->multiLineCommentEnd ? strlen(syntax->multiLineCommentEnd) : 0;
+    int singleCommentLength = syntax->singleLineCommentStart ? strlen(syntax->singleLineCommentStart) : 0;
+    int multiCommentStartLength = syntax->multiLineCommentStart ? strlen(syntax->multiLineCommentStart) : 0;
+    int multiCommentEndLength = syntax->multiLineCommentEnd ? strlen(syntax->multiLineCommentEnd) : 0;
 
-    bool prev_sep = true;
-    int in_string = 0;
-    bool in_single_string = false;
+    bool previousSeparator = true;
+    int inString = 0;
+    bool inSingleString = false;
 
     size_t i = 0;
     while (i < length) {
@@ -82,14 +82,14 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
         // Strings
         if (!(*inMultiLineComment)) {
             if (c == '"' || c == '\'') {
-                if (in_string && (in_single_string ? c == '\'' : c == '"')) {
+                if (inString && (inSingleString ? c == '\'' : c == '"')) {
                     styles[i] = HIGHLIGHT_STRING;
-                    in_string = 0;
+                    inString = 0;
                     i++;
                     continue;
-                } else if (!in_string) {
-                    in_string = 1;
-                    in_single_string = (c == '\'');
+                } else if (!inString) {
+                    inString = 1;
+                    inSingleString = (c == '\'');
                     styles[i] = HIGHLIGHT_STRING;
                     i++;
                     continue;
@@ -97,7 +97,7 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
             }
         }
 
-        if (in_string) {
+        if (inString) {
             styles[i] = HIGHLIGHT_STRING;
             if (c == '\\' && i + 1 < length) { // Escape sequence
                 styles[i + 1] = HIGHLIGHT_STRING;
@@ -109,53 +109,53 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
         }
 
         // Single line comment
-        if (scs_len && !(*inMultiLineComment)) {
-            if (!strncmp(&text[i], syntax->singleLineCommentStart, scs_len)) {
+        if (singleCommentLength && !(*inMultiLineComment)) {
+            if (!strncmp(&text[i], syntax->singleLineCommentStart, singleCommentLength)) {
                 memset(&styles[i], HIGHLIGHT_COMMENT, length - i);
                 break;
             }
         }
 
         // Multi-line comment
-        if (mcs_len && mce_len) {
+        if (multiCommentStartLength && multiCommentEndLength) {
             if (*inMultiLineComment) {
                 styles[i] = HIGHLIGHT_COMMENT;
-                if (!strncmp(&text[i], syntax->multiLineCommentEnd, mce_len)) {
-                    memset(&styles[i], HIGHLIGHT_COMMENT, mce_len);
-                    i += mce_len;
+                if (!strncmp(&text[i], syntax->multiLineCommentEnd, multiCommentEndLength)) {
+                    memset(&styles[i], HIGHLIGHT_COMMENT, multiCommentEndLength);
+                    i += multiCommentEndLength;
                     *inMultiLineComment = false;
-                    prev_sep = true;
+                    previousSeparator = true;
                     continue;
                 }
                 i++;
                 continue;
-            } else if (!strncmp(&text[i], syntax->multiLineCommentStart, mcs_len)) {
-                memset(&styles[i], HIGHLIGHT_COMMENT, mcs_len);
-                i += mcs_len;
+            } else if (!strncmp(&text[i], syntax->multiLineCommentStart, multiCommentStartLength)) {
+                memset(&styles[i], HIGHLIGHT_COMMENT, multiCommentStartLength);
+                i += multiCommentStartLength;
                 *inMultiLineComment = true;
                 continue;
             }
         }
 
         // Numbers
-        if ((isdigit(c) && (prev_sep || (i > 0 && styles[i - 1] == HIGHLIGHT_NUMBER)))
+        if ((isdigit(c) && (previousSeparator || (i > 0 && styles[i - 1] == HIGHLIGHT_NUMBER)))
             || (c == '.' && i > 0 && styles[i - 1] == HIGHLIGHT_NUMBER)) {
             styles[i] = HIGHLIGHT_NUMBER;
-            prev_sep = false;
+            previousSeparator = false;
             i++;
             continue;
         }
 
         if (syntax->keywords || syntax->types) {
-            if (prev_sep) {
+            if (previousSeparator) {
                 bool matched = false;
                 if (syntax->keywords) {
                     for (int j = 0; syntax->keywords[j]; j++) {
-                        int klen = strlen(syntax->keywords[j]);
-                        if (!strncmp(&text[i], syntax->keywords[j], klen)
-                            && (i + klen == length || is_separator(text[i + klen]))) {
-                            memset(&styles[i], HIGHLIGHT_KEYWORD, klen);
-                            i += klen;
+                        int keywordLength = strlen(syntax->keywords[j]);
+                        if (!strncmp(&text[i], syntax->keywords[j], keywordLength)
+                            && (i + keywordLength == length || IsSeparator(text[i + keywordLength]))) {
+                            memset(&styles[i], HIGHLIGHT_KEYWORD, keywordLength);
+                            i += keywordLength;
                             matched = true;
                             break;
                         }
@@ -163,24 +163,24 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
                 }
                 if (!matched && syntax->types) {
                     for (int j = 0; syntax->types[j]; j++) {
-                        int klen = strlen(syntax->types[j]);
-                        if (!strncmp(&text[i], syntax->types[j], klen)
-                            && (i + klen == length || is_separator(text[i + klen]))) {
-                            memset(&styles[i], HIGHLIGHT_TYPE, klen);
-                            i += klen;
+                        int keywordLength = strlen(syntax->types[j]);
+                        if (!strncmp(&text[i], syntax->types[j], keywordLength)
+                            && (i + keywordLength == length || IsSeparator(text[i + keywordLength]))) {
+                            memset(&styles[i], HIGHLIGHT_TYPE, keywordLength);
+                            i += keywordLength;
                             matched = true;
                             break;
                         }
                     }
                 }
                 if (matched) {
-                    prev_sep = false;
+                    previousSeparator = false;
                     continue;
                 }
             }
         }
 
-        prev_sep = is_separator(c);
+        previousSeparator = IsSeparator(c);
         i++;
     }
 }
@@ -206,8 +206,8 @@ void Tab_SetSyntaxHighlight(Tab* tab)
 
     char* ext = strrchr(tab->filename, '.');
 
-    for (unsigned int j = 0; HLDB[j].fileType != NULL; j++) {
-        Syntax* syn = &HLDB[j];
+    for (unsigned int j = 0; syntaxDatabase[j].fileType != NULL; j++) {
+        Syntax* syn = &syntaxDatabase[j];
         for (unsigned int i = 0; syn->fileMatch[i] != NULL; i++) {
             bool isExt = (syn->fileMatch[i][0] == '.');
             if ((isExt && ext && !strcmp(ext, syn->fileMatch[i]))

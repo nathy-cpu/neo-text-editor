@@ -13,8 +13,8 @@ void Tab_MoveCursor(Tab* tab, int key)
             tab->cursorX--;
         else if (tab->cursorY > 0) {
             tab->cursorY--;
-            Line* prevRow = Buffer_GetLine(tab->buffer, tab->cursorY);
-            tab->cursorX = prevRow ? GapBuffer_Size(&prevRow->text) : 0;
+            Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY);
+            tab->cursorX = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
         }
         break;
     case ARROW_RIGHT:
@@ -95,11 +95,11 @@ void Tab_ProcessKeypress(Tab* tab)
             tab->isSaved = false;
             modified = true;
         } else if (tab->cursorY > 0) {
-            Line* prevRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
-            size_t prevLength = prevRow ? GapBuffer_Size(&prevRow->text) : 0;
+            Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
+            size_t previousLength = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
             Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
             tab->cursorY--;
-            tab->cursorX = prevLength;
+            tab->cursorX = previousLength;
             tab->isSaved = false;
             modified = true;
         }

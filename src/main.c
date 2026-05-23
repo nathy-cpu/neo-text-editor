@@ -5,19 +5,19 @@
 
 static Terminal terminal = { 0 };
 
-static void cleanupTerminal(void) { Terminal_Restore(&terminal); }
+static void CleanupTerminal(void) { Terminal_Restore(&terminal); }
 
-void signalHandler(int signalNumber)
+void SignalHandler(int signalNumber)
 {
     (void)signalNumber;
-    exit(0); // atexit(cleanupTerminal) will fire
+    exit(0); // atexit(CleanupTerminal) will fire
 }
 
 int main(int argc, char* argv[])
 {
     // Set up signal handlers
-    signal(SIGINT, signalHandler);
-    signal(SIGTERM, signalHandler);
+    signal(SIGINT, SignalHandler);
+    signal(SIGTERM, SignalHandler);
 
     // Initialize terminal
     if (!Terminal_EnableRawMode(&terminal)) {
@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
         return 1;
     }
     // Register cleanup to run on any exit() — covers Ctrl-Q, signals, and future paths
-    atexit(cleanupTerminal);
+    atexit(CleanupTerminal);
 
     // Initialize tab
     Tab tab;

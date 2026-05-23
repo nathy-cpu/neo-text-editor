@@ -134,7 +134,7 @@ int ReadKey(void)
         return input;
 }
 
-bool TerminalGetCursorPosition(size_t* rows, size_t* columns)
+bool Terminal_GetCursorPosition(size_t* rows, size_t* columns)
 {
     char buffer[32];
     unsigned int i = 0;
@@ -154,23 +154,23 @@ bool TerminalGetCursorPosition(size_t* rows, size_t* columns)
     if (buffer[0] != '\x1b' || buffer[1] != '[')
         return false;
 
-    unsigned short int r, c;
-    if (sscanf(&buffer[2], "%hu;%hu", &r, &c) != 2)
+    unsigned short int row, column;
+    if (sscanf(&buffer[2], "%hu;%hu", &row, &column) != 2)
         return false;
 
-    *rows = r;
-    *columns = c;
+    *rows = row;
+    *columns = column;
     return true;
 }
 
-bool TerminalGetWindowSize(size_t* rows, size_t* columns)
+bool Terminal_GetWindowSize(size_t* rows, size_t* columns)
 {
     struct winsize window;
 
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &window) == -1 || window.ws_col == 0) {
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
             return false;
-        return TerminalGetCursorPosition(rows, columns);
+        return Terminal_GetCursorPosition(rows, columns);
     } else {
         *columns = window.ws_col;
         *rows = window.ws_row;

@@ -60,7 +60,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
 
     Array fileContent = { 0 };
 
-    if (!FileIORead(path, &fileContent)) {
+    if (!FileIoRead(path, &fileContent)) {
         Array_Free(&fileContent);
         return; // Silent fail (caller can check filename)
     }
@@ -121,7 +121,7 @@ void Tab_SaveFile(Tab* tab)
         return;
 
     Slice content = Buffer_ToSlice(tab->buffer);
-    if (FileIOWrite(tab->filename, content)) {
+    if (FileIoWrite(tab->filename, content)) {
         tab->isSaved = true;
     }
     free((void*)content.data);

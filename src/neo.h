@@ -17,7 +17,7 @@ typedef struct {
 
 // Creation
 Slice Slice_Make(const void* data, size_t size);
-Slice Slice_From(const void* str);
+Slice Slice_From(const void* string);
 
 // Comparison
 bool Slice_Equals(Slice a, Slice b);
@@ -50,10 +50,10 @@ size_t Array_Size(const Array* array);
 Slice Array_ToSlice(const Array* array);
 
 // Type-safe macros
-#define Array_InitChar(arr, cap) Array_Init(arr, sizeof(char), cap, 64) // Cache line
-#define Array_InitStruct(arr, type, cap) Array_Init(arr, sizeof(type), cap, alignof(type))
-#define Array_Get(arr, type, idx) (*(type*)Array_At(arr, idx))
-#define Array_AppendSlice(arr, slice) Array_Append(arr, slice.data, slice.size)
+#define Array_InitChar(array, capacity) Array_Init(array, sizeof(char), capacity, 64) // Cache line
+#define Array_InitStruct(array, type, capacity) Array_Init(array, sizeof(type), capacity, alignof(type))
+#define Array_Get(array, type, index) (*(type*)Array_At(array, index))
+#define Array_AppendSlice(array, slice) Array_Append(array, slice.data, slice.size)
 
 // GapBuffer - Gap buffer with internal Array of char type
 typedef struct {
@@ -109,7 +109,7 @@ typedef struct Buffer {
 // Line operations
 Line* Line_New(size_t initialCapacity);
 void Line_Free(Line* line);
-void Line_InsertChar(Line* line, size_t position, char c);
+void Line_InsertChar(Line* line, size_t position, char character);
 void Line_DeleteChar(Line* line, size_t position);
 void Line_InsertText(Line* line, size_t position, const char* text, size_t length);
 void Line_DeleteText(Line* line, size_t position, size_t length);
@@ -124,7 +124,7 @@ void Buffer_Free(Buffer* buffer);
 Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber);
 void Buffer_DeleteLine(Buffer* buffer, size_t lineNumber);
 Line* Buffer_GetLine(const Buffer* buffer, size_t lineNumber);
-void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column, char c);
+void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column, char character);
 void Buffer_DeleteChar(Buffer* buffer, size_t lineNumber, size_t column);
 void Buffer_SplitLine(Buffer* buffer, size_t lineNumber, size_t column);
 void Buffer_JoinLine(Buffer* buffer, size_t lineNumber);
@@ -176,10 +176,10 @@ void Terminal_ClearScreen(const Terminal* terminal);
 int ReadKey(void);
 
 // Gets the terminal cursor position
-bool TerminalGetCursorPosition(size_t* rows, size_t* columns);
+bool Terminal_GetCursorPosition(size_t* rows, size_t* columns);
 
 // Gets the terminal window size
-bool TerminalGetWindowSize(size_t* rows, size_t* columns);
+bool Terminal_GetWindowSize(size_t* rows, size_t* columns);
 
 // Handles signals for terminal cleanup. Intended for use as a signal handler.
 void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
@@ -189,18 +189,18 @@ void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
 // ============================================================================
 
 // Read entire file into array (uses memory mapping for large files)
-bool FileIORead(const char* path, Array* out);
+bool FileIoRead(const char* path, Array* out);
 
 // Write slice to file (atomic write on POSIX)
-bool FileIOWrite(const char* path, Slice content);
+bool FileIoWrite(const char* path, Slice content);
 
 // Memory-mapped file variant (zero-copy for large files)
 typedef struct {
     Slice content;
-    int fd; // File descriptor for cleanup
+    int fileDescriptor; // File descriptor for cleanup
 } MappedFile;
 
-MappedFile FileIOMMap(const char* path);
+MappedFile FileIoMmap(const char* path);
 void MappedFile_Unmap(MappedFile* file);
 
 // ============================================================================
