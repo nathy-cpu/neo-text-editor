@@ -2,6 +2,10 @@
 #include "test_file_io.c"
 #include "test_terminal.c"
 #include "test_gap_buffer.c"
+#include "test_array.c"
+#include "test_slice.c"
+#include "test_line.c"
+#include "test_buffer.c"
 
 int main(void) {
     // Call terminal tests
@@ -16,6 +20,25 @@ int main(void) {
     printf("Running gap buffer tests...\n\r");
     test_gap_buffer_basic();
     printf("All gap buffer tests passed!\n\r");
+
+    printf("Running array tests...\n\r");
+    test_array_basic();
+    test_array_growth();
+    printf("All array tests passed!\n\r");
+
+    printf("Running slice tests...\n\r");
+    test_slice_basic();
+    printf("All slice tests passed!\n\r");
+
+    printf("Running line tests...\n\r");
+    test_line_basic();
+    test_line_render_x();
+    printf("All line tests passed!\n\r");
+
+    printf("Running buffer tests...\n\r");
+    test_buffer_basic();
+    test_buffer_lines();
+    printf("All buffer tests passed!\n\r");
 
     // Call other tests here as needed
     printf("Running file I/O tests...\n\r");
