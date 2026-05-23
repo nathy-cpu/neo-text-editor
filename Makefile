@@ -2,7 +2,11 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -g -std=c11 -pedantic -Wall -Werror -Wextra -Wswitch-enum -Wunreachable-code -fsanitize=undefined -fsanitize=address
+COMMON_CFLAGS = -std=c11 -pedantic -Wall -Werror -Wextra -Wswitch-enum -Wunreachable-code
+DEBUG_CFLAGS = $(COMMON_CFLAGS) -g -fsanitize=undefined -fsanitize=address
+RELEASE_CFLAGS = $(COMMON_CFLAGS) -O3 -DNDEBUG
+
+CFLAGS ?= $(DEBUG_CFLAGS)
 
 # Linker flags
 LDFLAGS = -llua5.4 -lm
@@ -11,6 +15,9 @@ LDFLAGS = -llua5.4 -lm
 SRC_DIR = src
 BIN_DIR = bin
 TEST_DIR = tests
+
+# Installation path
+PREFIX ?= /usr/local
 
 # Targets
 TARGET = $(BIN_DIR)/neo
@@ -36,6 +43,13 @@ all: $(TARGET)
 
 build: clean $(TARGET)
 
+release: CFLAGS = $(RELEASE_CFLAGS)
+release: clean $(TARGET)
+
+install: release
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/neo
+
 test: clean $(TEST_TARGET)
 	./$(TEST_TARGET)
 
@@ -51,4 +65,4 @@ format:
 lint: format
 	clang-tidy $(SRCS) $(TEST_SRCS) -checks=-*,clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-cplusplus*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling -- $(CFLAGS) $(LDFLAGS)
 
-.PHONY: all build test run clean format lint
+.PHONY: all build release install test run clean format lint
