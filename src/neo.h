@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <signal.h>
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <termios.h>
@@ -278,6 +279,23 @@ void Editor_Free(Editor* editor);
 void Editor_SetStatusMessage(Editor* editor, const char* fstring, ...);
 void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer);
 
+// ============================================================================
+// APP STATE
+// ============================================================================
+
+typedef struct {
+    Array tabs;
+    size_t activeTabIndex;
+} App;
+
+void App_Init(App* app);
+void App_Free(App* app);
+void App_AddTab(App* app, const char* filename);
+void App_CloseTab(App* app);
+void App_ProcessKeypress(App* app);
+void App_UpdateGeometry(App* app);
+void App_RefreshScreen(App* app);
+
 void Tab_Init(Tab* tab);
 void Tab_Free(Tab* tab);
 void Tab_LoadFile(Tab* tab, const char* path);
@@ -294,11 +312,10 @@ char* GetSyntaxColor(HighlightType highlight);
 void Tab_Scroll(Tab* tab);
 void Tab_DrawRows(Tab* tab, Array* screenBuffer);
 void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer);
-void Tab_RefreshScreen(Tab* tab);
 
 // ============================================================================
 // KEYBOARD INPUT
 // ============================================================================
 
 void Tab_MoveCursor(Tab* tab, int key);
-void Tab_ProcessKeypress(Tab* tab);
+void Tab_ProcessInput(Tab* tab, int input);

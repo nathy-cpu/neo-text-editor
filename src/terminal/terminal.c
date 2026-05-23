@@ -141,8 +141,9 @@ int ReadKey(void)
         }
 
         return '\x1b';
-    } else
+    } else {
         return input;
+    }
 }
 
 bool Terminal_GetCursorPosition(size_t* rows, size_t* columns)

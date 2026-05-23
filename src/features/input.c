@@ -43,10 +43,8 @@ void Tab_MoveCursor(Tab* tab, int key)
         tab->cursorX = rowSize;
 }
 
-void Tab_ProcessKeypress(Tab* tab)
+void Tab_ProcessInput(Tab* tab, int input)
 {
-    static bool isQuiting = false;
-    int input = ReadKey();
     bool modified = false;
 
     switch (input) {
@@ -64,19 +62,11 @@ void Tab_ProcessKeypress(Tab* tab)
         break;
 
     case CTRL_KEY('q'):
-        if (!tab->isSaved && !isQuiting) {
-            Editor_SetStatusMessage(tab->editor, "File has unsaved changes! Press Ctrl-Q again to quit anyways.");
-            isQuiting = true;
-            return;
-        }
-        Terminal_ClearScreen((Terminal*)NULL);
-        exit(0);
+        // Handled in App_ProcessKeypress
         break;
 
     case RESIZE_EVENT:
-        Terminal_GetWindowSize(&tab->editor->screenRows, &tab->editor->screenColumns);
-        if (tab->editor->screenRows > 2)
-            tab->editor->screenRows -= 2;
+        // Handled in App_ProcessKeypress
         break;
 
     case HOME_KEY:
@@ -149,6 +139,85 @@ void Tab_ProcessKeypress(Tab* tab)
     if (modified) {
         Tab_UpdateSyntax(tab);
     }
+}
 
-    isQuiting = false;
+void App_ProcessKeypress(App* app)
+{
+    if (Array_Size(&app->tabs) == 0)
+        return;
+
+    Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
+    static bool isQuiting = false;
+    int input = ReadKey();
+
+    switch (input) {
+    case CTRL_KEY('q'): {
+        // Check if any tab is unsaved
+        bool hasUnsaved = false;
+        for (size_t i = 0; i < Array_Size(&app->tabs); i++) {
+            Tab* t = Array_Get(&app->tabs, Tab*, i);
+            if (!t->isSaved) {
+                hasUnsaved = true;
+                break;
+            }
+        }
+
+        if (hasUnsaved && !isQuiting) {
+            Editor_SetStatusMessage(activeTab->editor, "Some files have unsaved changes! Press Ctrl-Q again to quit anyways.");
+            isQuiting = true;
+            return;
+        }
+        Terminal_ClearScreen((Terminal*)NULL);
+        exit(0);
+    } break;
+
+    case RESIZE_EVENT:
+        App_UpdateGeometry(app);
+        break;
+
+    case CTRL_KEY('t'):
+        App_AddTab(app, NULL); // New empty tab
+        break;
+
+    case CTRL_KEY('w'): {
+        if (!activeTab->isSaved && !isQuiting) {
+            Editor_SetStatusMessage(activeTab->editor, "File has unsaved changes! Press Ctrl-W again to close anyways.");
+            isQuiting = true;
+            return;
+        }
+        App_CloseTab(app);
+    } break;
+
+    case CTRL_KEY('n'):
+        if (Array_Size(&app->tabs) > 0) {
+            app->activeTabIndex = (app->activeTabIndex + 1) % Array_Size(&app->tabs);
+        }
+        break;
+
+    case CTRL_KEY('p'):
+        if (Array_Size(&app->tabs) > 0) {
+            if (app->activeTabIndex == 0) {
+                app->activeTabIndex = Array_Size(&app->tabs) - 1;
+            } else {
+                app->activeTabIndex--;
+            }
+        }
+        break;
+        
+    case '\x1b': { // ESC sequence for Alt or other keys
+        // We might need to read more chars if it's an escape sequence
+        // This is a naive implementation since we read one key at a time, but ReadKey usually handles it.
+        // Wait, ReadKey returns single keys or enums like ARROW_LEFT.
+        // If it's literally ESC, pass to tab.
+        Tab_ProcessInput(activeTab, input);
+    } break;
+
+    default:
+        Tab_ProcessInput(activeTab, input);
+        break;
+    }
+
+    if (input != CTRL_KEY('q') && input != CTRL_KEY('w')) {
+        isQuiting = false;
+    }
 }

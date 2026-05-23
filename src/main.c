@@ -36,25 +36,34 @@ int main(int argc, char* argv[])
     // Register cleanup to run on any exit() — covers Ctrl-Q, signals, and future paths
     atexit(CleanupTerminal);
 
-    // Initialize tab
-    Tab tab;
-    Tab_Init(&tab);
+    // Initialize application
+    App app;
+    App_Init(&app);
 
-    // Load file if provided
+    // Load files if provided
     if (argc > 1) {
-        Tab_LoadFile(&tab, argv[1]);
+        for (int i = 1; i < argc; i++) {
+            App_AddTab(&app, argv[i]);
+        }
+    } else {
+        App_AddTab(&app, NULL);
     }
 
-    Editor_SetStatusMessage(tab.editor, "HELP: Ctrl-S = save | Ctrl-Q = quit");
+    if (Array_Size(&app.tabs) > 0) {
+        Tab* activeTab = Array_Get(&app.tabs, Tab*, app.activeTabIndex);
+        Editor_SetStatusMessage(activeTab->editor, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-W = close tab | Ctrl-N/P = switch tab");
+    }
 
     // Main event loop
     while (1) {
-        Tab_RefreshScreen(&tab);
-        Tab_ProcessKeypress(&tab);
+        if (Array_Size(&app.tabs) > 0) {
+            App_RefreshScreen(&app);
+        }
+        App_ProcessKeypress(&app);
     }
 
     // Cleanup
-    Tab_Free(&tab);
+    App_Free(&app);
     Terminal_Restore(&terminal);
 
     return 0;
