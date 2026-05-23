@@ -157,7 +157,9 @@ enum Key {
     END_KEY,
     PAGE_UP,
     PAGE_DOWN,
-    RESIZE_EVENT
+    RESIZE_EVENT,
+    ALT_N,
+    ALT_S
 };
 
 extern volatile sig_atomic_t windowResized;
@@ -286,6 +288,12 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer);
 typedef struct {
     Array tabs;
     size_t activeTabIndex;
+    
+    // Explorer State
+    bool isExplorerActive;
+    Array explorerItems; // Array of dynamically allocated strings (char*)
+    size_t explorerSelectedIndex;
+    char currentExplorerPath[512];
 } App;
 
 void App_Init(App* app);
@@ -295,6 +303,11 @@ void App_CloseTab(App* app);
 void App_ProcessKeypress(App* app);
 void App_UpdateGeometry(App* app);
 void App_RefreshScreen(App* app);
+
+// Explorer Functions
+void Explorer_ReadDir(App* app, const char* path);
+void Explorer_Draw(App* app, Array* screenBuffer);
+void Explorer_ProcessInput(App* app, int input);
 
 void Tab_Init(Tab* tab);
 void Tab_Free(Tab* tab);
@@ -319,3 +332,4 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer);
 
 void Tab_MoveCursor(Tab* tab, int key);
 void Tab_ProcessInput(Tab* tab, int input);
+char* Editor_Prompt(App* app, const char* prompt);

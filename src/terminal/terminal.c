@@ -138,6 +138,10 @@ int ReadKey(void)
             case 'F':
                 return END_KEY;
             }
+        } else if (sequence[0] == 'n' || sequence[0] == 'N') {
+            return ALT_N;
+        } else if (sequence[0] == 's' || sequence[0] == 'S') {
+            return ALT_S;
         }
 
         return '\x1b';

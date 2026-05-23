@@ -141,6 +141,42 @@ void Tab_ProcessInput(Tab* tab, int input)
     }
 }
 
+char* Editor_Prompt(App* app, const char* prompt)
+{
+    size_t bufsize = 128;
+    char* buf = malloc(bufsize);
+    size_t buflen = 0;
+    buf[0] = '\0';
+
+    while (1) {
+        Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
+        Editor_SetStatusMessage(activeTab->editor, prompt, buf);
+        App_RefreshScreen(app);
+
+        int c = ReadKey();
+        if (c == DELETE_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+            if (buflen != 0)
+                buf[--buflen] = '\0';
+        } else if (c == '\x1b') {
+            Editor_SetStatusMessage(activeTab->editor, "");
+            free(buf);
+            return NULL;
+        } else if (c == '\r') {
+            if (buflen != 0) {
+                Editor_SetStatusMessage(activeTab->editor, "");
+                return buf;
+            }
+        } else if (!iscntrl(c) && c < 128) {
+            if (buflen == bufsize - 1) {
+                bufsize *= 2;
+                buf = realloc(buf, bufsize);
+            }
+            buf[buflen++] = c;
+            buf[buflen] = '\0';
+        }
+    }
+}
+
 void App_ProcessKeypress(App* app)
 {
     if (Array_Size(&app->tabs) == 0)
@@ -149,6 +185,11 @@ void App_ProcessKeypress(App* app)
     Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
     static bool isQuiting = false;
     int input = ReadKey();
+
+    if (app->isExplorerActive && input != RESIZE_EVENT) {
+        Explorer_ProcessInput(app, input);
+        return;
+    }
 
     switch (input) {
     case CTRL_KEY('q'): {
@@ -176,8 +217,36 @@ void App_ProcessKeypress(App* app)
         break;
 
     case CTRL_KEY('t'):
+    case ALT_N:
         App_AddTab(app, NULL); // New empty tab
         break;
+
+    case CTRL_KEY('o'): {
+        char* filename = Editor_Prompt(app, "Open file: %s");
+        if (filename) {
+            Tab_LoadFile(activeTab, filename);
+            free(filename);
+        }
+    } break;
+
+    case ALT_S: {
+        char* filename = Editor_Prompt(app, "Save as: %s");
+        if (filename) {
+            free(activeTab->filename);
+            activeTab->filename = filename; // filename is already allocated by malloc
+            Tab_SaveFile(activeTab);
+            Editor_SetStatusMessage(activeTab->editor, "Saved as %s", activeTab->filename);
+        } else {
+            Editor_SetStatusMessage(activeTab->editor, "Save aborted.");
+        }
+    } break;
+
+    case CTRL_KEY('e'): {
+        app->isExplorerActive = true;
+        // Start explorer in current directory, or tab's directory if we want.
+        // For simplicity, just use "."
+        Explorer_ReadDir(app, ".");
+    } break;
 
     case CTRL_KEY('w'): {
         if (!activeTab->isSaved && !isQuiting) {

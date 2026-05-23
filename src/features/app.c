@@ -9,6 +9,12 @@ void App_Init(App* app)
     assert(app != NULL);
     Array_Init(&app->tabs, sizeof(Tab*), 4, alignof(void*));
     app->activeTabIndex = 0;
+
+    app->isExplorerActive = false;
+    Array_Init(&app->explorerItems, sizeof(char*), 16, alignof(void*));
+    app->explorerSelectedIndex = 0;
+    app->currentExplorerPath[0] = '.';
+    app->currentExplorerPath[1] = '\0';
 }
 
 void App_Free(App* app)
@@ -22,6 +28,12 @@ void App_Free(App* app)
         free(tab);
     }
     Array_Free(&app->tabs);
+
+    for (size_t i = 0; i < Array_Size(&app->explorerItems); i++) {
+        char* item = Array_Get(&app->explorerItems, char*, i);
+        free(item);
+    }
+    Array_Free(&app->explorerItems);
 }
 
 void App_AddTab(App* app, const char* filename)
@@ -185,29 +197,33 @@ void App_RefreshScreen(App* app)
     Array_Append(&screenBuffer, "\x1b[?25l", 6);
     Array_Append(&screenBuffer, "\x1b[H", 3);
 
-    // 1. Tabs bar
-    if (numTabs > 1) {
-        App_DrawTabsBar(app, &screenBuffer);
+    if (app->isExplorerActive) {
+        Explorer_Draw(app, &screenBuffer);
+    } else {
+        // 1. Tabs bar
+        if (numTabs > 1) {
+            App_DrawTabsBar(app, &screenBuffer);
+        }
+
+        // 2. Status bar
+        Tab_DrawStatusBar(activeTab, &screenBuffer);
+
+        // 3. Text rows (viewport)
+        Tab_DrawRows(activeTab, &screenBuffer);
+
+        // 4. Message bar
+        Editor_DrawMessageBar(activeTab->editor, &screenBuffer);
+
+        // Position cursor
+        size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH",
+            (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
+            (activeTab->renderX - activeTab->columnOffset) + 1);
+
+        Array_Append(&screenBuffer, buffer, strlen(buffer));
+        Array_Append(&screenBuffer, "\x1b[?25h", 6);
     }
-
-    // 2. Status bar
-    Tab_DrawStatusBar(activeTab, &screenBuffer);
-
-    // 3. Text rows (viewport)
-    Tab_DrawRows(activeTab, &screenBuffer);
-
-    // 4. Message bar
-    Editor_DrawMessageBar(activeTab->editor, &screenBuffer);
-
-    // Position cursor
-    size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH",
-        (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
-        (activeTab->renderX - activeTab->columnOffset) + 1);
-
-    Array_Append(&screenBuffer, buffer, strlen(buffer));
-    Array_Append(&screenBuffer, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, screenBuffer.data, screenBuffer.size);
     Array_Free(&screenBuffer);
