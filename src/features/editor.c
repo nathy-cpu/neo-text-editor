@@ -220,8 +220,8 @@ void Tab_RefreshScreen(Tab* tab)
     // Position cursor: row 1 is status bar, so text starts at row 2
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH",
-        (tab->cursorY - tab->rowOffset) + 2,          // +2: row 1 = status bar
-        (tab->renderX  - tab->columnOffset) + 1);
+        (tab->cursorY - tab->rowOffset) + 2, // +2: row 1 = status bar
+        (tab->renderX - tab->columnOffset) + 1);
 
     Array_Append(&screenBuffer, buffer, strlen(buffer));
     Array_Append(&screenBuffer, "\x1b[?25h", 6);

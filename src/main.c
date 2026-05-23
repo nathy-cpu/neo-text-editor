@@ -5,11 +5,12 @@
 
 static Terminal terminal = { 0 };
 
+static void cleanupTerminal(void) { Terminal_Restore(&terminal); }
+
 void signalHandler(int signalNumber)
 {
     (void)signalNumber;
-    Terminal_Restore(&terminal);
-    exit(0);
+    exit(0); // atexit(cleanupTerminal) will fire
 }
 
 int main(int argc, char* argv[])
@@ -23,6 +24,8 @@ int main(int argc, char* argv[])
         fprintf(stderr, "Failed to enable raw mode\n");
         return 1;
     }
+    // Register cleanup to run on any exit() — covers Ctrl-Q, signals, and future paths
+    atexit(cleanupTerminal);
 
     // Initialize tab
     Tab tab;
