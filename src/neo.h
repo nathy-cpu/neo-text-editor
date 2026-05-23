@@ -44,7 +44,8 @@ bool Array_Append(Array* array, const void* items, size_t count);
 bool Array_Pop(Array* array);
 
 // Access
-void* Array_At(const Array* array, size_t index);
+void* Array_At(const Array* array, size_t index); // Bounds-checked by logical size
+void* Array_RawAt(const Array* array, size_t index); // Bounds-checked by capacity; for internal data structures
 size_t Array_Size(const Array* array);
 Slice Array_ToSlice(const Array* array);
 
