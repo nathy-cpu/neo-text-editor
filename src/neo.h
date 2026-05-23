@@ -9,6 +9,7 @@
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <time.h>
 
@@ -297,12 +298,20 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer);
 // ============================================================================
 
 typedef struct {
+    char* name;
+    bool isDir;
+    mode_t mode;
+    off_t size;
+    time_t mtime;
+} ExplorerItem;
+
+typedef struct {
     Array tabs;
     size_t activeTabIndex;
 
     // Explorer State
     bool isExplorerActive;
-    Array explorerItems; // Array of dynamically allocated strings (char*)
+    Array explorerItems; // Array of dynamically allocated ExplorerItem pointers (ExplorerItem*)
     size_t explorerSelectedIndex;
     char currentExplorerPath[512];
 } App;

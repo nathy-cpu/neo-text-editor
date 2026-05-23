@@ -8,19 +8,50 @@
 
 static int CompareExplorerItems(const void* a, const void* b)
 {
-    const char* strA = *(const char**)a;
-    const char* strB = *(const char**)b;
+    const ExplorerItem* itemA = *(const ExplorerItem**)a;
+    const ExplorerItem* itemB = *(const ExplorerItem**)b;
 
-    // Sort directories first (they end with '/')
-    bool isDirA = strA[strlen(strA) - 1] == '/';
-    bool isDirB = strB[strlen(strB) - 1] == '/';
-
-    if (isDirA && !isDirB)
+    if (itemA->isDir && !itemB->isDir)
         return -1;
-    if (!isDirA && isDirB)
+    if (!itemA->isDir && itemB->isDir)
         return 1;
 
-    return strcmp(strA, strB);
+    return strcmp(itemA->name, itemB->name);
+}
+
+static void FormatMode(mode_t mode, char* buf)
+{
+    buf[0] = S_ISDIR(mode) ? 'd' : '-';
+    buf[1] = (mode & S_IRUSR) ? 'r' : '-';
+    buf[2] = (mode & S_IWUSR) ? 'w' : '-';
+    buf[3] = (mode & S_IXUSR) ? 'x' : '-';
+    buf[4] = (mode & S_IRGRP) ? 'r' : '-';
+    buf[5] = (mode & S_IWGRP) ? 'w' : '-';
+    buf[6] = (mode & S_IXGRP) ? 'x' : '-';
+    buf[7] = (mode & S_IROTH) ? 'r' : '-';
+    buf[8] = (mode & S_IWOTH) ? 'w' : '-';
+    buf[9] = (mode & S_IXOTH) ? 'x' : '-';
+    buf[10] = '\0';
+}
+
+static void FormatSize(off_t size, bool isDir, char* buf, size_t bufSize)
+{
+    if (isDir) {
+        snprintf(buf, bufSize, "   - ");
+        return;
+    }
+    const char* units[] = { "B", "K", "M", "G" };
+    int unitIndex = 0;
+    double dsize = size;
+    while (dsize >= 1024.0 && unitIndex < 3) {
+        dsize /= 1024.0;
+        unitIndex++;
+    }
+    if (unitIndex == 0) {
+        snprintf(buf, bufSize, "%4.0f%s", dsize, units[unitIndex]);
+    } else {
+        snprintf(buf, bufSize, "%4.1f%s", dsize, units[unitIndex]);
+    }
 }
 
 void Explorer_ReadDir(App* app, const char* path)
@@ -37,7 +68,8 @@ void Explorer_ReadDir(App* app, const char* path)
 
     // Clear existing items
     for (size_t i = 0; i < Array_Size(&app->explorerItems); i++) {
-        char* item = Array_Get(&app->explorerItems, char*, i);
+        ExplorerItem* item = Array_Get(&app->explorerItems, ExplorerItem*, i);
+        free(item->name);
         free(item);
     }
     Array_Clear(&app->explorerItems);
@@ -66,13 +98,19 @@ void Explorer_ReadDir(App* app, const char* path)
             snprintf(itemName, sizeof(itemName), "%s", entry->d_name);
         }
 
-        char* allocatedName = strdup(itemName);
-        Array_Append(&app->explorerItems, &allocatedName, 1);
+        ExplorerItem* item = malloc(sizeof(ExplorerItem));
+        item->name = strdup(itemName);
+        item->isDir = isDir;
+        item->mode = st.st_mode;
+        item->size = st.st_size;
+        item->mtime = st.st_mtime;
+
+        Array_Append(&app->explorerItems, &item, 1);
     }
     closedir(dir);
 
     // Sort items
-    qsort(app->explorerItems.data, Array_Size(&app->explorerItems), sizeof(char*), CompareExplorerItems);
+    qsort(app->explorerItems.data, Array_Size(&app->explorerItems), sizeof(ExplorerItem*), CompareExplorerItems);
 
     app->explorerSelectedIndex = 0;
     strncpy(app->currentExplorerPath, resolvedPath, sizeof(app->currentExplorerPath) - 1);
@@ -116,11 +154,25 @@ void Explorer_Draw(App* app, Array* screenBuffer)
                 Array_Append(screenBuffer, "\x1b[7m", 4);
             }
 
-            char* item = Array_Get(&app->explorerItems, char*, itemIdx);
-            int len = strlen(item);
+            ExplorerItem* item = Array_Get(&app->explorerItems, ExplorerItem*, itemIdx);
+
+            char modeStr[16];
+            FormatMode(item->mode, modeStr);
+
+            char sizeStr[16];
+            FormatSize(item->size, item->isDir, sizeStr, sizeof(sizeStr));
+
+            char timeStr[32];
+            struct tm* tmInfo = localtime(&item->mtime);
+            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M", tmInfo);
+
+            char displayLine[1024];
+            int len
+                = snprintf(displayLine, sizeof(displayLine), " %s  %s  %s  %s", modeStr, sizeStr, timeStr, item->name);
+
             if (len > (int)cols)
                 len = cols;
-            Array_Append(screenBuffer, item, len);
+            Array_Append(screenBuffer, displayLine, len);
 
             if (itemIdx == app->explorerSelectedIndex) {
                 for (int p = len; p < (int)cols; p++) {
@@ -164,7 +216,8 @@ void Explorer_ProcessInput(App* app, int input)
     case '\r': {
         if (numItems == 0)
             return;
-        char* selected = Array_Get(&app->explorerItems, char*, app->explorerSelectedIndex);
+        ExplorerItem* selectedItem = Array_Get(&app->explorerItems, ExplorerItem*, app->explorerSelectedIndex);
+        char* selected = selectedItem->name;
 
         char newPath[1024];
         if (strcmp(selected, "../") == 0) {
