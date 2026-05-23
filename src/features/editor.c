@@ -49,7 +49,13 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
 
 void Tab_Scroll(Tab* tab)
 {
-    tab->renderX = tab->cursorX;
+    // Compute visual render column from raw cursor byte-position
+    tab->renderX = 0;
+    if (tab->cursorY < Buffer_GetLineCount(tab->buffer)) {
+        Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
+        if (line)
+            tab->renderX = Line_GetRenderX(line, tab->cursorX);
+    }
 
     if (tab->cursorY < tab->rowOffset)
         tab->rowOffset = tab->cursorY;
@@ -114,7 +120,13 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                     int currentColor = -1;
 
                     for (ssize_t j = 0; j < len; j++) {
-                        if (iscntrl(temp[j])) {
+                        if (temp[j] == '\t') {
+                            // Expand to next TAB_STOP boundary
+                            size_t rx = Line_GetRenderX(line, tab->columnOffset + j);
+                            int spaces = TAB_STOP - (rx % TAB_STOP);
+                            while (spaces-- > 0)
+                                Array_Append(screenBuffer, " ", 1);
+                        } else if (iscntrl(temp[j])) {
                             char symbol = (temp[j] <= 26) ? '@' + temp[j] : '?';
                             Array_Append(screenBuffer, "\x1b[7m", 4);
                             Array_Append(screenBuffer, &symbol, 1);

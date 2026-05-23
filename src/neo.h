@@ -115,6 +115,8 @@ void Line_InsertText(Line* line, size_t position, const char* text, size_t lengt
 void Line_DeleteText(Line* line, size_t position, size_t length);
 size_t Line_Length(Line* line);
 Slice Line_GetText(Line* line);
+// Converts a byte-position cursor to its visual render column, accounting for tabs
+size_t Line_GetRenderX(Line* line, size_t cursorX);
 
 // Buffer operations
 Buffer* Buffer_New(void);
@@ -135,6 +137,7 @@ Slice Buffer_ToSlice(const Buffer* buffer);
 // ============================================================================
 
 #define CTRL_KEY(k) ((k) & 0x1f)
+#define TAB_STOP 4
 
 enum Key {
     BACKSPACE = 127,
