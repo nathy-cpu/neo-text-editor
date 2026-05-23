@@ -34,23 +34,27 @@ char* GetSyntaxColor(HighlightType highlight)
     case HIGHLIGHT_NORMAL:
         return NULL;
     case HIGHLIGHT_NUMBER:
-        return "31";
+        return "35"; // purple/magenta
     case HIGHLIGHT_MATCH:
-        return "34";
+        return "34"; // blue
     case HIGHLIGHT_STRING:
-        return "35";
+        return "38;5;208"; // orange
+    case HIGHLIGHT_CHARACTER:
+        return "33"; // yellow
     case HIGHLIGHT_COMMENT:
-        return "36";
+        return "90"; // dim gray
     case HIGHLIGHT_KEYWORD:
-        return "33";
+        return "34"; // blue
     case HIGHLIGHT_TYPE:
-        return "32";
+        return "32"; // green
+    case HIGHLIGHT_SYMBOL:
+        return "36"; // cyan (for punctuation)
     default:
         return "39";
     }
 }
 
-static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL; }
+static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];{}!&|^?:", c) != NULL; }
 
 static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineComment)
 {
@@ -87,14 +91,14 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
         if (!(*inMultiLineComment)) {
             if (c == '"' || c == '\'') {
                 if (inString && (inSingleString ? c == '\'' : c == '"')) {
-                    styles[i] = HIGHLIGHT_STRING;
+                    styles[i] = inSingleString ? HIGHLIGHT_CHARACTER : HIGHLIGHT_STRING;
                     inString = 0;
                     i++;
                     continue;
                 } else if (!inString) {
                     inString = 1;
                     inSingleString = (c == '\'');
-                    styles[i] = HIGHLIGHT_STRING;
+                    styles[i] = inSingleString ? HIGHLIGHT_CHARACTER : HIGHLIGHT_STRING;
                     i++;
                     continue;
                 }
@@ -102,9 +106,9 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
         }
 
         if (inString) {
-            styles[i] = HIGHLIGHT_STRING;
+            styles[i] = inSingleString ? HIGHLIGHT_CHARACTER : HIGHLIGHT_STRING;
             if (c == '\\' && i + 1 < length) { // Escape sequence
-                styles[i + 1] = HIGHLIGHT_STRING;
+                styles[i + 1] = inSingleString ? HIGHLIGHT_CHARACTER : HIGHLIGHT_STRING;
                 i += 2;
                 continue;
             }
@@ -185,6 +189,9 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
         }
 
         previousSeparator = IsSeparator(c);
+        if (previousSeparator && !isspace(c) && c != '\0' && styles[i] == HIGHLIGHT_NORMAL) {
+            styles[i] = HIGHLIGHT_SYMBOL;
+        }
         i++;
     }
 }
