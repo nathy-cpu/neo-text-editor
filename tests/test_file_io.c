@@ -19,20 +19,20 @@ static void test_read_write() {
     const char *content = "Hello, world!";
     create_test_file(path, content);
 
-    // Test FileIORead
+    // Test FileIoRead
     Array arr1 = {0};
-    assert(FileIORead(path, &arr1) && "Read failed");
+    assert(FileIoRead(path, &arr1) && "Read failed");
     assert(arr1.size == strlen(content) && "Incorrect read length");
     assert(memcmp(arr1.data, content, arr1.size) == 0 && "Read content mismatch");
 
-    // Test FileIOWrite
+    // Test FileIoWrite
     const char *new_content = "Goodbye!";
     Slice new_slice = Slice_From(new_content);
-    assert(FileIOWrite(path, new_slice) && "Write failed");
+    assert(FileIoWrite(path, new_slice) && "Write failed");
 
     // Verify the write
     Array arr2 = {0};
-    assert(FileIORead(path, &arr2) && "Re-read failed");
+    assert(FileIoRead(path, &arr2) && "Re-read failed");
     assert(arr2.size == strlen(new_content) && "Incorrect write length");
     assert(memcmp(arr2.data, new_content, arr2.size) == 0 && "Write content mismatch");
 
@@ -47,8 +47,8 @@ static void test_mmap() {
     const char *content = "Memory-mapped file test";
     create_test_file(path, content);
 
-    MappedFile file = FileIOMMap(path);
-    assert(file.fd != -1 && "MMap failed");
+    MappedFile file = FileIoMmap(path);
+    assert(file.fileDescriptor != -1 && "MMap failed");
     assert(file.content.size == strlen(content) && "MMap length mismatch");
     assert(memcmp(file.content.data, content, file.content.size) == 0 && "MMap content mismatch");
 
@@ -60,14 +60,14 @@ static void test_mmap() {
 static void test_errors() {
     // Nonexistent file
     Array array = {0};
-    assert(!FileIORead("nonexistent.txt", &array) && "Read should fail");
+    assert(!FileIoRead("nonexistent.txt", &array) && "Read should fail");
 
     // Permission denied (create a file and make it unreadable)
     const char *path = "no_perms.txt";
     create_test_file(path, "test");
     chmod(path, 0000); // Remove all permissions
 
-    assert(!FileIORead(path, &array) && "Read should fail (permissions)");
+    assert(!FileIoRead(path, &array) && "Read should fail (permissions)");
     chmod(path, 0644); // Restore permissions
     unlink(path);
 }
@@ -99,7 +99,7 @@ static void test_large_file() {
 
     // Test reading
     Array arr = {0};
-    assert(FileIORead(path, &arr) && "Large read failed");
+    assert(FileIoRead(path, &arr) && "Large read failed");
     assert(arr.size == size && "Incorrect large file length");
     Array_Free(&arr);
 

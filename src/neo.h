@@ -1,8 +1,14 @@
 #pragma once
 
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <termios.h>
+#include <signal.h>
 #include <time.h>
 
 // ============================================================================
@@ -149,8 +155,11 @@ enum Key {
     HOME_KEY,
     END_KEY,
     PAGE_UP,
-    PAGE_DOWN
+    PAGE_DOWN,
+    RESIZE_EVENT
 };
+
+extern volatile sig_atomic_t windowResized;
 
 // Encapsulates terminal state
 typedef struct Terminal {

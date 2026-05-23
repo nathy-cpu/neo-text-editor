@@ -73,6 +73,13 @@ void Tab_ProcessKeypress(Tab* tab)
         exit(0);
         break;
 
+    case RESIZE_EVENT:
+        Terminal_GetWindowSize(&tab->editor->screenRows, &tab->editor->screenColumns);
+        if (tab->editor->screenRows > 2)
+            tab->editor->screenRows -= 2;
+        break;
+
+
     case HOME_KEY:
         tab->cursorX = 0;
         break;

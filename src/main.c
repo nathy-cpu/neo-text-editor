@@ -9,8 +9,11 @@ static void CleanupTerminal(void) { Terminal_Restore(&terminal); }
 
 void SignalHandler(int signalNumber)
 {
-    (void)signalNumber;
-    exit(0); // atexit(CleanupTerminal) will fire
+    if (signalNumber == SIGWINCH) {
+        windowResized = 1;
+    } else {
+        exit(0); // atexit(CleanupTerminal) will fire
+    }
 }
 
 int main(int argc, char* argv[])
@@ -18,6 +21,12 @@ int main(int argc, char* argv[])
     // Set up signal handlers
     signal(SIGINT, SignalHandler);
     signal(SIGTERM, SignalHandler);
+
+    struct sigaction sa;
+    sa.sa_handler = SignalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0; // Explicitly NO SA_RESTART so read() is interrupted by SIGWINCH
+    sigaction(SIGWINCH, &sa, NULL);
 
     // Initialize terminal
     if (!Terminal_EnableRawMode(&terminal)) {

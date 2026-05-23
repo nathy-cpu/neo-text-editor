@@ -9,6 +9,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+volatile sig_atomic_t windowResized = 0;
+
 bool Terminal_EnableRawMode(Terminal* terminal)
 {
     struct termios rawTermios;
@@ -66,11 +68,20 @@ int ReadKey(void)
     int readSize;
     char input;
     while ((readSize = read(STDIN_FILENO, &input, 1)) != 1) {
-        if (readSize == -1 && errno != EAGAIN) {
-            write(STDOUT_FILENO, "\x1b[2J", 4);
-            write(STDOUT_FILENO, "\x1b[H", 3);
-            perror("read");
-            exit(1);
+        if (readSize == -1) {
+            if (errno == EINTR) {
+                if (windowResized) {
+                    windowResized = 0;
+                    return RESIZE_EVENT;
+                }
+                continue;
+            }
+            if (errno != EAGAIN) {
+                write(STDOUT_FILENO, "\x1b[2J", 4);
+                write(STDOUT_FILENO, "\x1b[H", 3);
+                perror("read");
+                exit(1);
+            }
         }
     }
 
