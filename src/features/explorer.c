@@ -25,9 +25,15 @@ static int CompareExplorerItems(const void* a, const void* b)
 
 void Explorer_ReadDir(App* app, const char* path)
 {
-    DIR* dir = opendir(path);
-    if (!dir)
+    char* resolvedPath = realpath(path, NULL);
+    if (!resolvedPath)
         return;
+
+    DIR* dir = opendir(resolvedPath);
+    if (!dir) {
+        free(resolvedPath);
+        return;
+    }
 
     // Clear existing items
     for (size_t i = 0; i < Array_Size(&app->explorerItems); i++) {
@@ -41,8 +47,11 @@ void Explorer_ReadDir(App* app, const char* path)
         if (strcmp(entry->d_name, ".") == 0)
             continue;
 
+        if (strcmp(entry->d_name, "..") == 0 && strcmp(resolvedPath, "/") == 0)
+            continue; // Cannot go up from root
+
         char fullpath[1024];
-        snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entry->d_name);
+        snprintf(fullpath, sizeof(fullpath), "%s/%s", resolvedPath, entry->d_name);
 
         struct stat st;
         if (stat(fullpath, &st) == -1)
@@ -66,7 +75,9 @@ void Explorer_ReadDir(App* app, const char* path)
     qsort(app->explorerItems.data, Array_Size(&app->explorerItems), sizeof(char*), CompareExplorerItems);
 
     app->explorerSelectedIndex = 0;
-    strncpy(app->currentExplorerPath, path, sizeof(app->currentExplorerPath) - 1);
+    strncpy(app->currentExplorerPath, resolvedPath, sizeof(app->currentExplorerPath) - 1);
+    app->currentExplorerPath[sizeof(app->currentExplorerPath) - 1] = '\0';
+    free(resolvedPath);
 }
 
 void Explorer_Draw(App* app, Array* screenBuffer)
@@ -157,15 +168,13 @@ void Explorer_ProcessInput(App* app, int input)
 
         char newPath[1024];
         if (strcmp(selected, "../") == 0) {
-            // Basic parent dir resolution
+            // Parent dir resolution on absolute path
             char* lastSlash = strrchr(app->currentExplorerPath, '/');
             if (lastSlash && lastSlash != app->currentExplorerPath) {
                 *lastSlash = '\0';
                 snprintf(newPath, sizeof(newPath), "%s", app->currentExplorerPath);
-            } else if (lastSlash == app->currentExplorerPath) {
-                snprintf(newPath, sizeof(newPath), "/");
             } else {
-                snprintf(newPath, sizeof(newPath), ".");
+                snprintf(newPath, sizeof(newPath), "/");
             }
             Explorer_ReadDir(app, newPath);
         } else if (selected[strlen(selected) - 1] == '/') {

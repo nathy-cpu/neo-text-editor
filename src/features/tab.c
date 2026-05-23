@@ -74,6 +74,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
     size_t contentSize = fileContent.size;
     size_t lineStart = 0;
     size_t lineNumber = 0;
+    Line* currentLine = tab->buffer->firstLine; // Initial empty line
 
     for (size_t i = 0; i < contentSize; i++) {
         if (content[i] == '\n' || i == contentSize - 1) {
@@ -82,18 +83,13 @@ void Tab_LoadFile(Tab* tab, const char* path)
                 lineLength++; // Include the last character if not a newline
             }
 
-            if (lineLength > 0) {
-                Line* line = Buffer_GetLine(tab->buffer, lineNumber);
-                if (line) {
-                    Line_InsertText(line, 0, content + lineStart, lineLength);
-                }
+            if (lineLength > 0 && currentLine) {
+                Line_InsertText(currentLine, 0, content + lineStart, lineLength);
             }
 
             if (content[i] == '\n') {
                 lineNumber++;
-                if (lineNumber >= Buffer_GetLineCount(tab->buffer)) {
-                    Buffer_InsertLine(tab->buffer, lineNumber);
-                }
+                currentLine = Buffer_InsertLine(tab->buffer, lineNumber);
             }
 
             lineStart = i + 1;
