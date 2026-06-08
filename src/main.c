@@ -3,9 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static Terminal terminal = { 0 };
+static Editor editor;
 
-static void CleanupTerminal(void) { Terminal_Restore(&terminal); }
+static void CleanupTerminal(void)
+{
+    Editor_RestoreTerminal(&editor);
+    Editor_Free(&editor);
+}
 
 void SignalHandler(int signalNumber)
 {
@@ -28,44 +32,38 @@ int main(int argc, char* argv[])
     sa.sa_flags = 0; // Explicitly NO SA_RESTART so read() is interrupted by SIGWINCH
     sigaction(SIGWINCH, &sa, NULL);
 
-    // Initialize terminal
-    if (!Terminal_EnableRawMode(&terminal)) {
+    // Initialize application
+    Editor_Init(&editor);
+
+    // Initialize terminal raw mode
+    if (!Editor_InitTerminal(&editor)) {
         fprintf(stderr, "Failed to enable raw mode\n");
         return 1;
     }
     // Register cleanup to run on any exit() — covers Ctrl-Q, signals, and future paths
     atexit(CleanupTerminal);
 
-    // Initialize application
-    App app;
-    App_Init(&app);
-
     // Load files if provided
     if (argc > 1) {
         for (int i = 1; i < argc; i++) {
-            App_AddTab(&app, argv[i]);
+            Editor_AddTab(&editor, argv[i]);
         }
     } else {
-        App_AddTab(&app, NULL);
+        Editor_AddTab(&editor, NULL);
     }
 
-    if (Array_Size(&app.tabs) > 0) {
-        Tab* activeTab = Array_Get(&app.tabs, Tab*, app.activeTabIndex);
+    if (Array_Size(&editor.tabs) > 0) {
         Editor_SetStatusMessage(
-            activeTab->editor, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-W = close tab | Ctrl-N/P = switch tab");
+            &editor, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-W = close tab | Ctrl-N/P = switch tab");
     }
 
     // Main event loop
     while (1) {
-        if (Array_Size(&app.tabs) > 0) {
-            App_RefreshScreen(&app);
+        if (Array_Size(&editor.tabs) > 0) {
+            Editor_RefreshScreen(&editor);
         }
-        App_ProcessKeypress(&app);
+        Editor_ProcessKeypress(&editor);
     }
-
-    // Cleanup
-    App_Free(&app);
-    Terminal_Restore(&terminal);
 
     return 0;
 }

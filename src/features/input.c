@@ -3,8 +3,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-void Tab_MoveCursor(Tab* tab, int key)
+void Editor_MoveCursor(Editor* editor, int key)
 {
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
 
     switch (key) {
@@ -58,8 +61,11 @@ void Tab_GetSelection(Tab* tab, size_t* startX, size_t* startY, size_t* endX, si
     }
 }
 
-void Tab_DeleteSelection(Tab* tab)
+void Editor_DeleteSelection(Editor* editor)
 {
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     if (!tab->hasSelection)
         return;
     size_t startX, startY, endX, endY;
@@ -84,8 +90,11 @@ void Tab_DeleteSelection(Tab* tab)
     tab->isSaved = false;
 }
 
-static void Tab_MoveCursorWord(Tab* tab, int key)
+void Editor_MoveCursorWord(Editor* editor, int key)
 {
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
     if (!row)
         return;
@@ -129,14 +138,17 @@ static void Tab_MoveCursorWord(Tab* tab, int key)
     }
 }
 
-void Tab_ProcessInput(Tab* tab, int input)
+void Editor_ProcessInput(Editor* editor, int input)
 {
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     bool modified = false;
 
     switch (input) {
     case '\r':
         if (tab->hasSelection)
-            Tab_DeleteSelection(tab);
+            Editor_DeleteSelection(editor);
         Buffer_SplitLine(tab->buffer, tab->cursorY, tab->cursorX);
         tab->cursorY++;
         tab->cursorX = 0;
@@ -146,7 +158,7 @@ void Tab_ProcessInput(Tab* tab, int input)
 
     case CTRL_KEY('s'):
         Tab_SaveFile(tab);
-        Editor_SetStatusMessage(tab->editor, "File saved.");
+        Editor_SetStatusMessage(editor, "File saved.");
         break;
 
     case CTRL_KEY('a'):
@@ -159,11 +171,11 @@ void Tab_ProcessInput(Tab* tab, int input)
         break;
 
     case CTRL_KEY('q'):
-        // Handled in App_ProcessKeypress
+        // Handled in Editor_ProcessKeypress
         break;
 
     case RESIZE_EVENT:
-        // Handled in App_ProcessKeypress
+        // Handled in Editor_ProcessKeypress
         break;
 
     case HOME_KEY:
@@ -180,11 +192,11 @@ void Tab_ProcessInput(Tab* tab, int input)
     case CTRL_KEY('h'):
     case DELETE_KEY:
         if (tab->hasSelection) {
-            Tab_DeleteSelection(tab);
+            Editor_DeleteSelection(editor);
             modified = true;
         } else {
             if (input == DELETE_KEY)
-                Tab_MoveCursor(tab, ARROW_RIGHT);
+                Editor_MoveCursor(editor, ARROW_RIGHT);
 
             if (tab->cursorX > 0) {
                 Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
@@ -208,13 +220,13 @@ void Tab_ProcessInput(Tab* tab, int input)
         if (input == PAGE_UP)
             tab->cursorY = tab->rowOffset;
         else if (input == PAGE_DOWN) {
-            tab->cursorY = tab->rowOffset + tab->editor->screenRows - 1;
+            tab->cursorY = tab->rowOffset + editor->screenRows - 1;
             if (tab->cursorY > Buffer_GetLineCount(tab->buffer) - 1)
                 tab->cursorY = Buffer_GetLineCount(tab->buffer) - 1;
         }
 
-        for (size_t i = tab->editor->screenRows; i > 0; i--)
-            Tab_MoveCursor(tab, input == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        for (size_t i = editor->screenRows; i > 0; i--)
+            Editor_MoveCursor(editor, input == PAGE_UP ? ARROW_UP : ARROW_DOWN);
     } break;
 
     case ARROW_UP:
@@ -222,13 +234,13 @@ void Tab_ProcessInput(Tab* tab, int input)
     case ARROW_LEFT:
     case ARROW_RIGHT:
         tab->hasSelection = false;
-        Tab_MoveCursor(tab, input);
+        Editor_MoveCursor(editor, input);
         break;
 
     case CTRL_ARROW_LEFT:
     case CTRL_ARROW_RIGHT:
         tab->hasSelection = false;
-        Tab_MoveCursorWord(tab, input);
+        Editor_MoveCursorWord(editor, input);
         break;
 
     case SHIFT_ARROW_UP:
@@ -241,13 +253,13 @@ void Tab_ProcessInput(Tab* tab, int input)
             tab->selectStartY = tab->cursorY;
         }
         if (input == SHIFT_ARROW_UP)
-            Tab_MoveCursor(tab, ARROW_UP);
+            Editor_MoveCursor(editor, ARROW_UP);
         else if (input == SHIFT_ARROW_DOWN)
-            Tab_MoveCursor(tab, ARROW_DOWN);
+            Editor_MoveCursor(editor, ARROW_DOWN);
         else if (input == SHIFT_ARROW_LEFT)
-            Tab_MoveCursor(tab, ARROW_LEFT);
+            Editor_MoveCursor(editor, ARROW_LEFT);
         else if (input == SHIFT_ARROW_RIGHT)
-            Tab_MoveCursor(tab, ARROW_RIGHT);
+            Editor_MoveCursor(editor, ARROW_RIGHT);
         break;
 
     case CTRL_KEY('l'):
@@ -257,7 +269,7 @@ void Tab_ProcessInput(Tab* tab, int input)
     default:
         if (!iscntrl(input) && input < 128) {
             if (tab->hasSelection) {
-                Tab_DeleteSelection(tab);
+                Editor_DeleteSelection(editor);
             }
             Buffer_InsertChar(tab->buffer, tab->cursorY, tab->cursorX, input);
             tab->cursorX++;
@@ -272,7 +284,7 @@ void Tab_ProcessInput(Tab* tab, int input)
     }
 }
 
-char* Editor_Prompt(App* app, const char* prompt)
+char* Editor_Prompt(Editor* editor, const char* prompt)
 {
     size_t bufsize = 128;
     char* buf = malloc(bufsize);
@@ -280,21 +292,20 @@ char* Editor_Prompt(App* app, const char* prompt)
     buf[0] = '\0';
 
     while (1) {
-        Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
-        Editor_SetStatusMessage(activeTab->editor, prompt, buf);
-        App_RefreshScreen(app);
+        Editor_SetStatusMessage(editor, prompt, buf);
+        Editor_RefreshScreen(editor);
 
         int c = ReadKey();
         if (c == DELETE_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
             if (buflen != 0)
                 buf[--buflen] = '\0';
         } else if (c == '\x1b') {
-            Editor_SetStatusMessage(activeTab->editor, "");
+            Editor_SetStatusMessage(editor, "");
             free(buf);
             return NULL;
         } else if (c == '\r') {
             if (buflen != 0) {
-                Editor_SetStatusMessage(activeTab->editor, "");
+                Editor_SetStatusMessage(editor, "");
                 return buf;
             }
         } else if (!iscntrl(c) && c < 128) {
@@ -308,17 +319,17 @@ char* Editor_Prompt(App* app, const char* prompt)
     }
 }
 
-void App_ProcessKeypress(App* app)
+void Editor_ProcessKeypress(Editor* editor)
 {
-    if (Array_Size(&app->tabs) == 0)
+    if (Array_Size(&editor->tabs) == 0)
         return;
 
-    Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
+    Tab* activeTab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     static bool isQuiting = false;
     int input = ReadKey();
 
-    if (app->isExplorerActive && input != RESIZE_EVENT) {
-        Explorer_ProcessInput(app, input);
+    if (editor->isExplorerActive && input != RESIZE_EVENT) {
+        Editor_ProcessExplorerInput(editor, input);
         return;
     }
 
@@ -326,8 +337,8 @@ void App_ProcessKeypress(App* app)
     case CTRL_KEY('q'): {
         // Check if any tab is unsaved
         bool hasUnsaved = false;
-        for (size_t i = 0; i < Array_Size(&app->tabs); i++) {
-            Tab* t = Array_Get(&app->tabs, Tab*, i);
+        for (size_t i = 0; i < Array_Size(&editor->tabs); i++) {
+            Tab* t = Array_Get(&editor->tabs, Tab*, i);
             if (!t->isSaved) {
                 hasUnsaved = true;
                 break;
@@ -335,8 +346,7 @@ void App_ProcessKeypress(App* app)
         }
 
         if (hasUnsaved && !isQuiting) {
-            Editor_SetStatusMessage(
-                activeTab->editor, "Some files have unsaved changes! Press Ctrl-Q again to quit anyways.");
+            Editor_SetStatusMessage(editor, "Some files have unsaved changes! Press Ctrl-Q again to quit anyways.");
             isQuiting = true;
             return;
         }
@@ -345,68 +355,61 @@ void App_ProcessKeypress(App* app)
     } break;
 
     case RESIZE_EVENT:
-        App_UpdateGeometry(app);
+        Editor_UpdateGeometry(editor);
         break;
 
     case CTRL_KEY('t'):
-        App_AddTab(app, NULL); // New empty tab
+        Editor_AddTab(editor, NULL); // New empty tab
         break;
 
     case ALT_S: {
-        char* filename = Editor_Prompt(app, "Save as: %s");
+        char* filename = Editor_Prompt(editor, "Save as: %s");
         if (filename) {
             free(activeTab->filename);
-            activeTab->filename = filename; // filename is already allocated by malloc
+            activeTab->filename = filename;
             Tab_SaveFile(activeTab);
-            Editor_SetStatusMessage(activeTab->editor, "Saved as %s", activeTab->filename);
+            Editor_SetStatusMessage(editor, "Saved as %s", activeTab->filename);
         } else {
-            Editor_SetStatusMessage(activeTab->editor, "Save aborted.");
+            Editor_SetStatusMessage(editor, "Save aborted.");
         }
     } break;
 
     case CTRL_KEY('e'): {
-        app->isExplorerActive = true;
-        // Start explorer in current directory, or tab's directory if we want.
-        // For simplicity, just use "."
-        Explorer_ReadDir(app, ".");
+        editor->isExplorerActive = true;
+        Editor_ReadDir(editor, ".");
     } break;
 
     case CTRL_KEY('w'): {
         if (!activeTab->isSaved && !isQuiting) {
-            Editor_SetStatusMessage(
-                activeTab->editor, "File has unsaved changes! Press Ctrl-W again to close anyways.");
+            Editor_SetStatusMessage(editor, "File has unsaved changes! Press Ctrl-W again to close anyways.");
             isQuiting = true;
             return;
         }
-        App_CloseTab(app);
+        Editor_CloseTab(editor);
     } break;
 
     case CTRL_KEY('n'):
-        if (Array_Size(&app->tabs) > 0) {
-            app->activeTabIndex = (app->activeTabIndex + 1) % Array_Size(&app->tabs);
+        if (Array_Size(&editor->tabs) > 0) {
+            editor->activeTabIndex = (editor->activeTabIndex + 1) % Array_Size(&editor->tabs);
         }
         break;
 
     case CTRL_KEY('p'):
-        if (Array_Size(&app->tabs) > 0) {
-            if (app->activeTabIndex == 0) {
-                app->activeTabIndex = Array_Size(&app->tabs) - 1;
+        if (Array_Size(&editor->tabs) > 0) {
+            if (editor->activeTabIndex == 0) {
+                editor->activeTabIndex = Array_Size(&editor->tabs) - 1;
             } else {
-                app->activeTabIndex--;
+                editor->activeTabIndex--;
             }
         }
         break;
 
-    case '\x1b': { // ESC sequence for Alt or other keys
-        // We might need to read more chars if it's an escape sequence
-        // This is a naive implementation since we read one key at a time, but ReadKey usually handles it.
-        // Wait, ReadKey returns single keys or enums like ARROW_LEFT.
-        // If it's literally ESC, pass to tab.
-        Tab_ProcessInput(activeTab, input);
+    case '\x1b': {
+        Editor_ProcessInput(editor, input);
     } break;
 
     default:
-        Tab_ProcessInput(activeTab, input);
+        Editor_ProcessInput(editor, input);
         break;
     }
 

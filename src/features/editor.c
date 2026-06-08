@@ -1,7 +1,9 @@
 #include "../neo.h"
+#include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -25,17 +27,117 @@ static bool IsSelected(Tab* tab, size_t row, size_t col)
 
 void Editor_Init(Editor* editor)
 {
-    editor->screenRows = 0;
-    editor->screenColumns = 0;
-    editor->statusMessage[0] = '\0';
-    editor->statusMessageTime = 0;
-    Terminal_GetWindowSize(&editor->screenRows, &editor->screenColumns);
-    // Reserve 1 row for status bar (top) + 1 row for message bar (bottom)
-    if (editor->screenRows > 2)
-        editor->screenRows -= 2;
+    assert(editor != NULL);
+    memset(editor, 0, sizeof(Editor));
+    Array_Init(&editor->tabs, sizeof(Tab*), 4, alignof(void*));
+    editor->activeTabIndex = 0;
+    editor->isExplorerActive = false;
+    Array_Init(&editor->explorerItems, sizeof(char*), 16, alignof(void*));
+    editor->explorerSelectedIndex = 0;
+    editor->currentExplorerPath[0] = '.';
+    editor->currentExplorerPath[1] = '\0';
 }
 
-void Editor_Free(Editor* editor) { (void)editor; }
+void Editor_Free(Editor* editor)
+{
+    if (!editor)
+        return;
+
+    for (size_t i = 0; i < Array_Size(&editor->tabs); i++) {
+        Tab* tab = Array_Get(&editor->tabs, Tab*, i);
+        Tab_Free(tab);
+        free(tab);
+    }
+    Array_Free(&editor->tabs);
+
+    for (size_t i = 0; i < Array_Size(&editor->explorerItems); i++) {
+        char* item = Array_Get(&editor->explorerItems, char*, i);
+        free(item);
+    }
+    Array_Free(&editor->explorerItems);
+}
+
+bool Editor_InitTerminal(Editor* editor)
+{
+    assert(editor != NULL);
+    return Terminal_EnableRawMode(&editor->terminal);
+}
+
+void Editor_RestoreTerminal(Editor* editor)
+{
+    if (editor) {
+        Terminal_Restore(&editor->terminal);
+    }
+}
+
+void Editor_AddTab(Editor* editor, const char* filename)
+{
+    assert(editor != NULL);
+
+    Tab* newTab = malloc(sizeof(Tab));
+    if (!newTab)
+        return;
+
+    Tab_Init(newTab);
+
+    if (filename) {
+        Tab_LoadFile(newTab, filename);
+    }
+
+    Array_Append(&editor->tabs, &newTab, 1);
+    editor->activeTabIndex = Array_Size(&editor->tabs) - 1;
+    Editor_UpdateGeometry(editor);
+}
+
+void Editor_CloseTab(Editor* editor)
+{
+    assert(editor != NULL);
+
+    size_t numTabs = Array_Size(&editor->tabs);
+    if (numTabs == 0)
+        return;
+
+    Tab* activeTab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+
+    Tab_Free(activeTab);
+    free(activeTab);
+
+    // Remove from array (shift remaining elements)
+    for (size_t i = editor->activeTabIndex; i < numTabs - 1; i++) {
+        Tab* nextTab = Array_Get(&editor->tabs, Tab*, i + 1);
+        void* dest = Array_RawAt(&editor->tabs, i);
+        memcpy(dest, &nextTab, sizeof(Tab*));
+    }
+
+    editor->tabs.size--;
+
+    if (editor->tabs.size == 0) {
+        // No tabs left, quit application
+        Editor_RestoreTerminal(editor);
+        exit(0);
+    }
+
+    // Adjust active index
+    if (editor->activeTabIndex >= editor->tabs.size) {
+        editor->activeTabIndex = editor->tabs.size - 1;
+    }
+    Editor_UpdateGeometry(editor);
+}
+
+void Editor_UpdateGeometry(Editor* editor)
+{
+    size_t rows = 0;
+    size_t cols = 0;
+    if (!Terminal_GetWindowSize(&rows, &cols))
+        return;
+
+    editor->screenColumns = cols;
+
+    size_t numTabs = Array_Size(&editor->tabs);
+    size_t reservedRows = (numTabs > 1) ? 3 : 2; // +1 for tabs bar if numTabs > 1
+
+    editor->screenRows = (rows > reservedRows) ? (rows - reservedRows) : 0;
+}
 
 void Editor_SetStatusMessage(Editor* editor, const char* formatString, ...)
 {
@@ -64,7 +166,7 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
     Array_Append(screenBuffer, "\x1b[m", 3);
 }
 
-void Tab_Scroll(Tab* tab)
+void Editor_ScrollTab(Editor* editor, Tab* tab)
 {
     // Compute visual render column from raw cursor byte-position
     tab->renderX = 0;
@@ -77,31 +179,35 @@ void Tab_Scroll(Tab* tab)
     if (tab->cursorY < tab->rowOffset)
         tab->rowOffset = tab->cursorY;
 
-    if (tab->cursorY >= tab->rowOffset + tab->editor->screenRows)
-        tab->rowOffset = tab->cursorY - tab->editor->screenRows + 1;
+    if (tab->cursorY >= tab->rowOffset + editor->screenRows)
+        tab->rowOffset = tab->cursorY - editor->screenRows + 1;
 
     if (tab->renderX < tab->columnOffset)
         tab->columnOffset = tab->renderX;
 
-    if (tab->renderX >= tab->columnOffset + tab->editor->screenColumns)
-        tab->columnOffset = tab->renderX - tab->editor->screenColumns + 1;
+    if (tab->renderX >= tab->columnOffset + editor->screenColumns)
+        tab->columnOffset = tab->renderX - editor->screenColumns + 1;
 }
 
-void Tab_DrawRows(Tab* tab, Array* screenBuffer)
+void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
 {
+    size_t numTabs = Array_Size(&editor->tabs);
+    if (numTabs == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
 
-    for (size_t i = 0; i < tab->editor->screenRows; i++) {
+    for (size_t i = 0; i < editor->screenRows; i++) {
         size_t fileRow = i + tab->rowOffset;
         if (fileRow >= totalLines) {
-            if (totalLines == 0 && i == tab->editor->screenRows / 3) {
+            if (totalLines == 0 && i == editor->screenRows / 3) {
                 char welcome[50];
                 int welcomeLength = snprintf(welcome, sizeof(welcome), "Neo Text Editor");
 
-                if (welcomeLength > (int)tab->editor->screenColumns)
-                    welcomeLength = tab->editor->screenColumns;
+                if (welcomeLength > (int)editor->screenColumns)
+                    welcomeLength = editor->screenColumns;
 
-                int padding = (tab->editor->screenColumns - welcomeLength) / 2;
+                int padding = (editor->screenColumns - welcomeLength) / 2;
                 if (padding > 0) {
                     Array_Append(screenBuffer, ">", 1);
                     padding--;
@@ -128,8 +234,8 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                 ssize_t length = logicalSize - tab->columnOffset;
                 if (length < 0)
                     length = 0;
-                if (length > (ssize_t)tab->editor->screenColumns)
-                    length = tab->editor->screenColumns;
+                if (length > (ssize_t)editor->screenColumns)
+                    length = editor->screenColumns;
 
                 if (length > 0) {
                     char* textData = (char*)textSlice.data + tab->columnOffset;
@@ -183,12 +289,12 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
                         Array_Append(screenBuffer, "\x1b[39m", 5);
                     }
 
-                    if (length < (ssize_t)tab->editor->screenColumns && IsSelected(tab, fileRow, logicalSize)) {
+                    if (length < (ssize_t)editor->screenColumns && IsSelected(tab, fileRow, logicalSize)) {
                         Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
                     }
                 } else if (IsSelected(tab, fileRow, logicalSize)) {
                     // For empty lines that are selected
-                    if (tab->editor->screenColumns > 0) {
+                    if (editor->screenColumns > 0) {
                         Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
                     }
                 }
@@ -200,8 +306,13 @@ void Tab_DrawRows(Tab* tab, Array* screenBuffer)
     }
 }
 
-void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer)
+void Editor_DrawStatusBar(Editor* editor, Array* screenBuffer)
 {
+    size_t numTabs = Array_Size(&editor->tabs);
+    if (numTabs == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+
     Array_Append(screenBuffer, "\x1b[7m", 4);
 
     char* filename = (tab->filename == NULL) ? "[No File Opened]" : tab->filename;
@@ -214,13 +325,13 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer)
 
     int cursorSize = snprintf(cursor, sizeof(cursor), "%zu:%zu", tab->cursorY + 1, tab->cursorX + 1);
 
-    if (statusSize > (int)tab->editor->screenColumns)
-        statusSize = tab->editor->screenColumns;
+    if (statusSize > (int)editor->screenColumns)
+        statusSize = editor->screenColumns;
 
     Array_Append(screenBuffer, status, statusSize);
 
-    for (int i = statusSize; i < (int)tab->editor->screenColumns; i++) {
-        if (tab->editor->screenColumns - i == (size_t)cursorSize) {
+    for (int i = statusSize; i < (int)editor->screenColumns; i++) {
+        if (editor->screenColumns - i == (size_t)cursorSize) {
             Array_Append(screenBuffer, cursor, cursorSize);
             break;
         } else
@@ -229,4 +340,118 @@ void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer)
 
     Array_Append(screenBuffer, "\x1b[m", 3);
     Array_Append(screenBuffer, "\r\n", 2);
+}
+
+static void Editor_DrawTabsBar(Editor* editor, Array* screenBuffer)
+{
+    size_t numTabs = Array_Size(&editor->tabs);
+    if (numTabs <= 1)
+        return;
+
+    size_t cols = editor->screenColumns;
+    if (cols == 0)
+        return;
+
+    size_t blockWidth = cols / numTabs;
+    size_t extraCols = cols % numTabs;
+
+    for (size_t i = 0; i < numTabs; i++) {
+        Tab* tab = Array_Get(&editor->tabs, Tab*, i);
+        size_t currentBlockWidth = blockWidth + (i < extraCols ? 1 : 0);
+
+        if (i == editor->activeTabIndex) {
+            Array_Append(screenBuffer, "\x1b[7m", 4); // Highlight
+        } else {
+            Array_Append(screenBuffer, "\x1b[m", 3); // Normal
+        }
+
+        const char* name = tab->filename ? tab->filename : "[No Name]";
+        size_t nameLen = strlen(name);
+        char displayBuf[256];
+        size_t displayLen = 0;
+
+        if (nameLen <= currentBlockWidth) {
+            // Fits entirely, render the full path centered or left aligned
+            displayLen = nameLen;
+            memcpy(displayBuf, name, displayLen);
+        } else {
+            // Check if basename fits
+            const char* basename = strrchr(name, '/');
+            basename = basename ? basename + 1 : name;
+            size_t baseLen = strlen(basename);
+
+            if (baseLen <= currentBlockWidth) {
+                displayLen = baseLen;
+                memcpy(displayBuf, basename, displayLen);
+            } else {
+                // Truncate basename
+                displayLen = currentBlockWidth;
+                memcpy(displayBuf, basename, displayLen);
+                if (displayLen > 0) {
+                    displayBuf[displayLen - 1] = '~';
+                }
+            }
+        }
+
+        // Write filename
+        if (displayLen > 0) {
+            // Let's just left align and pad with spaces for now
+            Array_Append(screenBuffer, displayBuf, displayLen);
+        }
+
+        // Pad with spaces
+        for (size_t p = displayLen; p < currentBlockWidth; p++) {
+            Array_Append(screenBuffer, " ", 1);
+        }
+    }
+
+    Array_Append(screenBuffer, "\x1b[m", 3); // Reset
+    Array_Append(screenBuffer, "\r\n", 2);
+}
+
+void Editor_RefreshScreen(Editor* editor)
+{
+    size_t numTabs = Array_Size(&editor->tabs);
+    if (numTabs == 0)
+        return;
+
+    Tab* activeTab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    Editor_ScrollTab(editor, activeTab);
+
+    Array screenBuffer;
+    Array_InitChar(&screenBuffer, 4096);
+
+    // Hide cursor, move to top-left
+    Array_Append(&screenBuffer, "\x1b[?25l", 6);
+    Array_Append(&screenBuffer, "\x1b[H", 3);
+
+    if (editor->isExplorerActive) {
+        Editor_DrawExplorer(editor, &screenBuffer);
+    } else {
+        // 1. Tabs bar
+        if (numTabs > 1) {
+            Editor_DrawTabsBar(editor, &screenBuffer);
+        }
+
+        // 2. Status bar
+        Editor_DrawStatusBar(editor, &screenBuffer);
+
+        // 3. Text rows (viewport)
+        Editor_DrawTabRows(editor, &screenBuffer);
+
+        // 4. Message bar
+        Editor_DrawMessageBar(editor, &screenBuffer);
+
+        // Position cursor
+        size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
+            (activeTab->renderX - activeTab->columnOffset) + 1);
+
+        Array_Append(&screenBuffer, buffer, strlen(buffer));
+        Array_Append(&screenBuffer, "\x1b[?25h", 6);
+    }
+
+    write(STDOUT_FILENO, screenBuffer.data, screenBuffer.size);
+    Array_Free(&screenBuffer);
 }

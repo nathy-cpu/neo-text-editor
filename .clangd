@@ -18,4 +18,4 @@ CompileFlags:
 Diagnostics:
   ClangTidy:
     Add: [clang-analyzer-*]
-    Remove: [clang-analyzer-cplusplus*, clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling]
+    Remove: [clang-analyzer-cplusplus*]

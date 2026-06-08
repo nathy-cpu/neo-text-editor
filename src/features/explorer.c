@@ -54,7 +54,7 @@ static void FormatSize(off_t size, bool isDir, char* buf, size_t bufSize)
     }
 }
 
-void Explorer_ReadDir(App* app, const char* path)
+void Editor_ReadDir(Editor* editor, const char* path)
 {
     char* resolvedPath = realpath(path, NULL);
     if (!resolvedPath)
@@ -67,12 +67,12 @@ void Explorer_ReadDir(App* app, const char* path)
     }
 
     // Clear existing items
-    for (size_t i = 0; i < Array_Size(&app->explorerItems); i++) {
-        ExplorerItem* item = Array_Get(&app->explorerItems, ExplorerItem*, i);
+    for (size_t i = 0; i < Array_Size(&editor->explorerItems); i++) {
+        ExplorerItem* item = Array_Get(&editor->explorerItems, ExplorerItem*, i);
         free(item->name);
         free(item);
     }
-    Array_Clear(&app->explorerItems);
+    Array_Clear(&editor->explorerItems);
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
@@ -105,20 +105,20 @@ void Explorer_ReadDir(App* app, const char* path)
         item->size = st.st_size;
         item->mtime = st.st_mtime;
 
-        Array_Append(&app->explorerItems, &item, 1);
+        Array_Append(&editor->explorerItems, &item, 1);
     }
     closedir(dir);
 
     // Sort items
-    qsort(app->explorerItems.data, Array_Size(&app->explorerItems), sizeof(ExplorerItem*), CompareExplorerItems);
+    qsort(editor->explorerItems.data, Array_Size(&editor->explorerItems), sizeof(ExplorerItem*), CompareExplorerItems);
 
-    app->explorerSelectedIndex = 0;
-    strncpy(app->currentExplorerPath, resolvedPath, sizeof(app->currentExplorerPath) - 1);
-    app->currentExplorerPath[sizeof(app->currentExplorerPath) - 1] = '\0';
+    editor->explorerSelectedIndex = 0;
+    strncpy(editor->currentExplorerPath, resolvedPath, sizeof(editor->currentExplorerPath) - 1);
+    editor->currentExplorerPath[sizeof(editor->currentExplorerPath) - 1] = '\0';
     free(resolvedPath);
 }
 
-void Explorer_Draw(App* app, Array* screenBuffer)
+void Editor_DrawExplorer(Editor* editor, Array* screenBuffer)
 {
     size_t rows = 0;
     size_t cols = 0;
@@ -127,7 +127,7 @@ void Explorer_Draw(App* app, Array* screenBuffer)
     // Header
     Array_Append(screenBuffer, "\x1b[7m", 4);
     char header[256];
-    int headerLen = snprintf(header, sizeof(header), " EXPLORER: %s ", app->currentExplorerPath);
+    int headerLen = snprintf(header, sizeof(header), " EXPLORER: %s ", editor->currentExplorerPath);
     if (headerLen > (int)cols)
         headerLen = cols;
     Array_Append(screenBuffer, header, headerLen);
@@ -139,22 +139,22 @@ void Explorer_Draw(App* app, Array* screenBuffer)
 
     // Items
     size_t displayRows = rows > 1 ? rows - 1 : 0;
-    size_t numItems = Array_Size(&app->explorerItems);
+    size_t numItems = Array_Size(&editor->explorerItems);
     size_t startIdx = 0;
 
     // Scroll logic
-    if (app->explorerSelectedIndex >= displayRows) {
-        startIdx = app->explorerSelectedIndex - displayRows + 1;
+    if (editor->explorerSelectedIndex >= displayRows) {
+        startIdx = editor->explorerSelectedIndex - displayRows + 1;
     }
 
     for (size_t i = 0; i < displayRows; i++) {
         size_t itemIdx = startIdx + i;
         if (itemIdx < numItems) {
-            if (itemIdx == app->explorerSelectedIndex) {
+            if (itemIdx == editor->explorerSelectedIndex) {
                 Array_Append(screenBuffer, "\x1b[7m", 4);
             }
 
-            ExplorerItem* item = Array_Get(&app->explorerItems, ExplorerItem*, itemIdx);
+            ExplorerItem* item = Array_Get(&editor->explorerItems, ExplorerItem*, itemIdx);
 
             char modeStr[16];
             FormatMode(item->mode, modeStr);
@@ -174,7 +174,7 @@ void Explorer_Draw(App* app, Array* screenBuffer)
                 len = cols;
             Array_Append(screenBuffer, displayLine, len);
 
-            if (itemIdx == app->explorerSelectedIndex) {
+            if (itemIdx == editor->explorerSelectedIndex) {
                 for (int p = len; p < (int)cols; p++) {
                     Array_Append(screenBuffer, " ", 1);
                 }
@@ -193,67 +193,67 @@ void Explorer_Draw(App* app, Array* screenBuffer)
     }
 }
 
-void Explorer_ProcessInput(App* app, int input)
+void Editor_ProcessExplorerInput(Editor* editor, int input)
 {
-    size_t numItems = Array_Size(&app->explorerItems);
+    size_t numItems = Array_Size(&editor->explorerItems);
 
     switch (input) {
     case ARROW_UP:
-        if (app->explorerSelectedIndex > 0) {
-            app->explorerSelectedIndex--;
+        if (editor->explorerSelectedIndex > 0) {
+            editor->explorerSelectedIndex--;
         }
         break;
     case ARROW_DOWN:
-        if (app->explorerSelectedIndex < numItems - 1) {
-            app->explorerSelectedIndex++;
+        if (editor->explorerSelectedIndex < numItems - 1) {
+            editor->explorerSelectedIndex++;
         }
         break;
     case '\x1b': // ESC
     case CTRL_KEY('e'):
     case CTRL_KEY('q'):
-        app->isExplorerActive = false;
+        editor->isExplorerActive = false;
         break;
     case '\r': {
         if (numItems == 0)
             return;
-        ExplorerItem* selectedItem = Array_Get(&app->explorerItems, ExplorerItem*, app->explorerSelectedIndex);
+        ExplorerItem* selectedItem = Array_Get(&editor->explorerItems, ExplorerItem*, editor->explorerSelectedIndex);
         char* selected = selectedItem->name;
 
         char newPath[1024];
         if (strcmp(selected, "../") == 0) {
             // Parent dir resolution on absolute path
-            char* lastSlash = strrchr(app->currentExplorerPath, '/');
-            if (lastSlash && lastSlash != app->currentExplorerPath) {
+            char* lastSlash = strrchr(editor->currentExplorerPath, '/');
+            if (lastSlash && lastSlash != editor->currentExplorerPath) {
                 *lastSlash = '\0';
-                snprintf(newPath, sizeof(newPath), "%s", app->currentExplorerPath);
+                snprintf(newPath, sizeof(newPath), "%s", editor->currentExplorerPath);
             } else {
                 snprintf(newPath, sizeof(newPath), "/");
             }
-            Explorer_ReadDir(app, newPath);
+            Editor_ReadDir(editor, newPath);
         } else if (selected[strlen(selected) - 1] == '/') {
             // It's a directory
-            if (strcmp(app->currentExplorerPath, "/") == 0) {
+            if (strcmp(editor->currentExplorerPath, "/") == 0) {
                 snprintf(newPath, sizeof(newPath), "/%s", selected);
             } else {
-                snprintf(newPath, sizeof(newPath), "%s/%s", app->currentExplorerPath, selected);
+                snprintf(newPath, sizeof(newPath), "%s/%s", editor->currentExplorerPath, selected);
             }
             // Remove trailing slash for ReadDir if needed, but opendir handles it
             newPath[strlen(newPath) - 1] = '\0';
-            Explorer_ReadDir(app, newPath);
+            Editor_ReadDir(editor, newPath);
         } else {
             // It's a file
-            if (strcmp(app->currentExplorerPath, "/") == 0) {
+            if (strcmp(editor->currentExplorerPath, "/") == 0) {
                 snprintf(newPath, sizeof(newPath), "/%s", selected);
             } else {
-                snprintf(newPath, sizeof(newPath), "%s/%s", app->currentExplorerPath, selected);
+                snprintf(newPath, sizeof(newPath), "%s/%s", editor->currentExplorerPath, selected);
             }
-            Tab* activeTab = Array_Get(&app->tabs, Tab*, app->activeTabIndex);
+            Tab* activeTab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
             if (activeTab->filename == NULL && activeTab->isSaved) {
                 Tab_LoadFile(activeTab, newPath);
             } else {
-                App_AddTab(app, newPath);
+                Editor_AddTab(editor, newPath);
             }
-            app->isExplorerActive = false;
+            editor->isExplorerActive = false;
         }
         break;
     }

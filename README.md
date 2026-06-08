@@ -38,6 +38,7 @@ neo [filename]
 Neo requires `gcc`, `make`, and `lua5.4` (for future plugin support) to build.
 
 ### Debug Build
+
 To build the editor with AddressSanitizer active for safe development:
 ```bash
 make build
@@ -45,12 +46,14 @@ make build
 The executable will be located at `./bin/neo`.
 
 ### Release Build
+
 To build the editor for performance:
 ```bash
 make release
 ```
 
 ### Installation
+
 To install the release build system-wide:
 ```bash
 sudo make install
@@ -67,7 +70,10 @@ The codebase is heavily documented. If you are developing features, ensure your 
 Currently, Neo is built using linux-specific headers. As such, it will only build on linux.
 
 ## TODO
-- Implement `Ctrl+C` and `Ctrl+V` clipboard integration 
+
+- Implement line numbering
+- Implement `Ctrl+C` and `Ctrl+V` clipboard integration
+- Implement find and replace (Ctrl+F, Ctrl+H) using regex
 - Implement proper syntax highlighting for popular programming and scripting languages
 - Add a persistent configuration file (`~/.config/neo/init.lua`).
 - Build a Lua plugin API to allow users to write custom commands.

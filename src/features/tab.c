@@ -17,12 +17,6 @@ void Tab_Init(Tab* tab)
         return;
     }
 
-    // Editor state
-    tab->editor = malloc(sizeof(Editor));
-    if (tab->editor) {
-        Editor_Init(tab->editor);
-    }
-
     tab->syntax = NULL;
 
     // Cursor state
@@ -46,10 +40,6 @@ void Tab_Free(Tab* tab)
         return;
 
     Buffer_Free(tab->buffer);
-    if (tab->editor) {
-        Editor_Free(tab->editor);
-        free(tab->editor);
-    }
     free(tab->filename); // Safe even if NULL
 }
 

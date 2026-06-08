@@ -559,22 +559,41 @@ typedef struct {
 } Syntax;
 
 // ============================================================================
-// EDITOR FEATURES
+// EDITOR FEATURES & APP STATE
 // ============================================================================
 
 typedef struct {
+    char* name;
+    bool isDir;
+    mode_t mode;
+    off_t size;
+    time_t mtime;
+} ExplorerItem;
+
+typedef struct {
+    // Terminal state
+    Terminal terminal;
     size_t screenRows;
     size_t screenColumns;
+
+    // Status message state
     char statusMessage[200];
     time_t statusMessageTime;
+
+    // Tabs state
+    Array tabs; // Array of Tab*
+    size_t activeTabIndex;
+
+    // Explorer State
+    bool isExplorerActive;
+    Array explorerItems; // Array of dynamically allocated ExplorerItem pointers (ExplorerItem*)
+    size_t explorerSelectedIndex;
+    char currentExplorerPath[512];
 } Editor;
 
 typedef struct {
     // Text buffer
     Buffer* buffer;
-
-    // Editor state
-    Editor* editor;
 
     // Syntax Highlighting
     Syntax* syntax;
@@ -599,16 +618,60 @@ typedef struct {
 } Tab;
 
 /**
- * @brief Initializes a new Editor state.
+ * @brief Initializes the global Editor application state.
  * @param editor Pointer to the Editor.
  */
 void Editor_Init(Editor* editor);
 
 /**
- * @brief Frees the resources associated with an Editor state.
+ * @brief Frees the Editor application state and all of its tabs.
  * @param editor Pointer to the Editor.
  */
 void Editor_Free(Editor* editor);
+
+/**
+ * @brief Enables raw mode for the terminal.
+ * @param editor Pointer to the Editor.
+ * @return True on success, false on failure.
+ */
+bool Editor_InitTerminal(Editor* editor);
+
+/**
+ * @brief Restores original terminal settings.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_RestoreTerminal(Editor* editor);
+
+/**
+ * @brief Opens a new tab, optionally loading a file into it.
+ * @param editor Pointer to the Editor.
+ * @param filename File path to load, or NULL for an empty buffer.
+ */
+void Editor_AddTab(Editor* editor, const char* filename);
+
+/**
+ * @brief Closes the currently active tab.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_CloseTab(Editor* editor);
+
+/**
+ * @brief Processes the next keypress for the active tab or explorer.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_ProcessKeypress(Editor* editor);
+
+/**
+ * @brief Recalculates screen dimensions and distributes them across tabs.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_UpdateGeometry(Editor* editor);
+
+/**
+ * @brief Re-renders the entire terminal screen.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_RefreshScreen(Editor* editor);
 
 /**
  * @brief Sets a formatted status message to be displayed in the message bar.
@@ -625,96 +688,52 @@ void Editor_SetStatusMessage(Editor* editor, const char* fstring, ...);
  */
 void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer);
 
-// ============================================================================
-// APP STATE
-// ============================================================================
-
-typedef struct {
-    char* name;
-    bool isDir;
-    mode_t mode;
-    off_t size;
-    time_t mtime;
-} ExplorerItem;
-
-typedef struct {
-    Array tabs;
-    size_t activeTabIndex;
-
-    // Explorer State
-    bool isExplorerActive;
-    Array explorerItems; // Array of dynamically allocated ExplorerItem pointers (ExplorerItem*)
-    size_t explorerSelectedIndex;
-    char currentExplorerPath[512];
-} App;
+/**
+ * @brief Renders the visible rows of the active tab to the screen.
+ * @param editor Pointer to the Editor.
+ * @param screenBuffer Render buffer.
+ */
+void Editor_DrawTabRows(Editor* editor, Array* screenBuffer);
 
 /**
- * @brief Initializes the global App state.
- * @param app Pointer to the App.
+ * @brief Renders the status bar (filename, line count, position) for the active tab.
+ * @param editor Pointer to the Editor.
+ * @param screenBuffer Render buffer.
  */
-void App_Init(App* app);
+void Editor_DrawStatusBar(Editor* editor, Array* screenBuffer);
 
 /**
- * @brief Frees the App state and all of its tabs.
- * @param app Pointer to the App.
+ * @brief Prompts the user for input via the message bar.
+ * @param editor Pointer to the Editor.
+ * @param prompt Format string to display.
+ * @return Dynamically allocated string with the user's input.
  */
-void App_Free(App* app);
-
-/**
- * @brief Opens a new tab, optionally loading a file into it.
- * @param app Pointer to the App.
- * @param filename File path to load, or NULL for an empty buffer.
- */
-void App_AddTab(App* app, const char* filename);
-
-/**
- * @brief Closes the currently active tab.
- * @param app Pointer to the App.
- */
-void App_CloseTab(App* app);
-
-/**
- * @brief Processes the next keypress for the active tab or explorer.
- * @param app Pointer to the App.
- */
-void App_ProcessKeypress(App* app);
-
-/**
- * @brief Recalculates screen dimensions and distributes them across tabs.
- * @param app Pointer to the App.
- */
-void App_UpdateGeometry(App* app);
-
-/**
- * @brief Re-renders the entire terminal screen.
- * @param app Pointer to the App.
- */
-void App_RefreshScreen(App* app);
+char* Editor_Prompt(Editor* editor, const char* prompt);
 
 // ============================================================================
-// EXPLORER FUNCTIONS
+// EXPLORER FUNCTIONS (Editor namespace acting on Editor)
 // ============================================================================
 
 /**
  * @brief Reads a directory and populates the ExplorerItems list.
- * @param app Pointer to the App.
+ * @param editor Pointer to the Editor.
  * @param path Path to the directory to read.
  */
-void Explorer_ReadDir(App* app, const char* path);
+void Editor_ReadDir(Editor* editor, const char* path);
 
 /**
  * @brief Renders the File Explorer interface.
- * @param app Pointer to the App.
+ * @param editor Pointer to the Editor.
  * @param screenBuffer The render buffer to append ANSI sequences to.
  */
-void Explorer_Draw(App* app, Array* screenBuffer);
+void Editor_DrawExplorer(Editor* editor, Array* screenBuffer);
 
 /**
  * @brief Processes a keypress while the File Explorer is active.
- * @param app Pointer to the App.
+ * @param editor Pointer to the Editor.
  * @param input The keypress code.
  */
-void Explorer_ProcessInput(App* app, int input);
+void Editor_ProcessExplorerInput(Editor* editor, int input);
 
 // ============================================================================
 // TAB FUNCTIONS
@@ -764,47 +783,12 @@ void Tab_UpdateSyntax(Tab* tab);
  */
 char* GetSyntaxColor(HighlightType highlight);
 
-// ============================================================================
-// TERMINAL RENDERING
-// ============================================================================
-
 /**
  * @brief Calculates scroll offsets to ensure the cursor remains visible.
+ * @param editor Pointer to the Editor.
  * @param tab Pointer to the Tab.
  */
-void Tab_Scroll(Tab* tab);
-
-/**
- * @brief Renders the visible rows of the text buffer to the screen.
- * @param tab Pointer to the Tab.
- * @param screenBuffer Render buffer.
- */
-void Tab_DrawRows(Tab* tab, Array* screenBuffer);
-
-/**
- * @brief Renders the status bar (filename, line count, position).
- * @param tab Pointer to the Tab.
- * @param screenBuffer Render buffer.
- */
-void Tab_DrawStatusBar(Tab* tab, Array* screenBuffer);
-
-// ============================================================================
-// KEYBOARD INPUT
-// ============================================================================
-
-/**
- * @brief Moves the cursor within the current tab buffer based on arrow key input.
- * @param tab Pointer to the Tab.
- * @param key The arrow key pressed.
- */
-void Tab_MoveCursor(Tab* tab, int key);
-
-/**
- * @brief Processes a standard input character or editor command for the active tab.
- * @param tab Pointer to the Tab.
- * @param input The keypress code.
- */
-void Tab_ProcessInput(Tab* tab, int input);
+void Editor_ScrollTab(Editor* editor, Tab* tab);
 
 /**
  * @brief Gets the exact start and end coordinates of the active text selection.
@@ -816,10 +800,33 @@ void Tab_ProcessInput(Tab* tab, int input);
  */
 void Tab_GetSelection(Tab* tab, size_t* startX, size_t* startY, size_t* endX, size_t* endY);
 
+// ============================================================================
+// TEXT EDITING OPERATIONS (Editor namespace acting on Editor)
+// ============================================================================
+
 /**
- * @brief Prompts the user for input via the message bar.
- * @param app Pointer to the App.
- * @param prompt Format string to display.
- * @return Dynamically allocated string with the user's input.
+ * @brief Moves the cursor within the current active tab buffer based on arrow key input.
+ * @param editor Pointer to the Editor.
+ * @param key The arrow key pressed.
  */
-char* Editor_Prompt(App* app, const char* prompt);
+void Editor_MoveCursor(Editor* editor, int key);
+
+/**
+ * @brief Moves the cursor word-by-word.
+ * @param editor Pointer to the Editor.
+ * @param key The arrow key pressed.
+ */
+void Editor_MoveCursorWord(Editor* editor, int key);
+
+/**
+ * @brief Deletes the currently selected text.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_DeleteSelection(Editor* editor);
+
+/**
+ * @brief Processes input character or deletion/insertion in the active tab buffer.
+ * @param editor Pointer to the Editor.
+ * @param input The keypress/character.
+ */
+void Editor_ProcessInput(Editor* editor, int input);
