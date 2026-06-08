@@ -278,12 +278,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
 
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
     if (totalLines == 0) {
-        VisualRow vr = {
-            .lineIndex = 0,
-            .startCol = 0,
-            .length = 0,
-            .isWrapped = false
-        };
+        VisualRow vr = { .lineIndex = 0, .startCol = 0, .length = 0, .isWrapped = false };
         Array_Append(&tab->visualRows, &vr, 1);
         return;
     }
@@ -299,23 +294,13 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
 
         if (!tab->config->wrapLines) {
             // Unwrapped mode: one visual row per line
-            VisualRow vr = {
-                .lineIndex = i,
-                .startCol = 0,
-                .length = size,
-                .isWrapped = false
-            };
+            VisualRow vr = { .lineIndex = i, .startCol = 0, .length = size, .isWrapped = false };
             Array_Append(&tab->visualRows, &vr, 1);
             continue;
         }
 
         if (size == 0 || usableColumns == 0) {
-            VisualRow vr = {
-                .lineIndex = i,
-                .startCol = 0,
-                .length = 0,
-                .isWrapped = false
-            };
+            VisualRow vr = { .lineIndex = i, .startCol = 0, .length = 0, .isWrapped = false };
             Array_Append(&tab->visualRows, &vr, 1);
             continue;
         }
@@ -336,12 +321,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
                     col++;
                 }
                 size_t len = col - startCol;
-                VisualRow vr = {
-                    .lineIndex = i,
-                    .startCol = startCol,
-                    .length = len,
-                    .isWrapped = isWrapped
-                };
+                VisualRow vr = { .lineIndex = i, .startCol = startCol, .length = len, .isWrapped = isWrapped };
                 Array_Append(&tab->visualRows, &vr, 1);
                 startCol = col;
                 rx = 0;
@@ -354,12 +334,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         }
 
         if (col >= startCol) {
-            VisualRow vr = {
-                .lineIndex = i,
-                .startCol = startCol,
-                .length = col - startCol,
-                .isWrapped = isWrapped
-            };
+            VisualRow vr = { .lineIndex = i, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
             Array_Append(&tab->visualRows, &vr, 1);
         }
     }
@@ -469,7 +444,8 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     if (tab->config->showLineNumbers) {
                         if (!vr->isWrapped) {
                             char gutterBuf[32];
-                            int gutterLen = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, vr->lineIndex + 1);
+                            int gutterLen
+                                = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, vr->lineIndex + 1);
                             Array_Append(screenBuffer, gutterBuf, gutterLen);
                         } else {
                             for (size_t d = 0; d < digits + 3; d++) {
@@ -529,14 +505,13 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                                 Array_Append(screenBuffer, "\x1b[27m", 5);
                                 if (currentColor != HIGHLIGHT_NORMAL) {
                                     char colorBuffer[16];
-                                    int colorLength = snprintf(
-                                        colorBuffer, sizeof(colorBuffer), "\x1b[%sm", GetSyntaxColor(tab->config, currentColor));
+                                    int colorLength = snprintf(colorBuffer, sizeof(colorBuffer), "\x1b[%sm",
+                                        GetSyntaxColor(tab->config, currentColor));
                                     Array_Append(screenBuffer, colorBuffer, colorLength);
                                 }
                             } else {
-                                HighlightType highlight = (vr->startCol + j < styleSlice.size)
-                                    ? styles[j]
-                                    : HIGHLIGHT_NORMAL;
+                                HighlightType highlight
+                                    = (vr->startCol + j < styleSlice.size) ? styles[j] : HIGHLIGHT_NORMAL;
                                 if (highlight != currentColor) {
                                     if (currentColor != HIGHLIGHT_NORMAL)
                                         Array_Append(screenBuffer, "\x1b[39m", 5);
@@ -602,9 +577,10 @@ void Editor_DrawStatusBar(Editor* editor, Array* screenBuffer)
 
     char status[140], cursor[50];
 
-    char* saveStatus = tab->isSaved ? "" : "[UNSAVED]";
-    int statusSize = snprintf(
-        status, sizeof(status), "%s  %.50s ~ %zu lines", saveStatus, filename, Buffer_GetLineCount(tab->buffer));
+    char* readOnlyStatus = tab->buffer->isReadOnly ? "[READ-ONLY] " : "";
+    char* saveStatus = tab->isSaved ? "" : "[UNSAVED] ";
+    int statusSize = snprintf(status, sizeof(status), "%s%s%.50s ~ %zu lines", readOnlyStatus, saveStatus, filename,
+        Buffer_GetLineCount(tab->buffer));
 
     int cursorSize = snprintf(cursor, sizeof(cursor), "%zu:%zu", tab->cursorY + 1, tab->cursorX + 1);
 
@@ -730,7 +706,8 @@ void Editor_RefreshScreen(Editor* editor)
         size_t cursorVRowIdx = activeTab->config->wrapLines ? Tab_GetCursorVRowIdx(activeTab) : activeTab->cursorY;
         size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
-        size_t visualCursorX = activeTab->config->wrapLines ? activeTab->renderX : (activeTab->renderX - activeTab->columnOffset);
+        size_t visualCursorX
+            = activeTab->config->wrapLines ? activeTab->renderX : (activeTab->renderX - activeTab->columnOffset);
         snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (cursorVRowIdx - activeTab->rowOffset) + cursorRowOffset,
             visualCursorX + 1 + gutterWidth);
 

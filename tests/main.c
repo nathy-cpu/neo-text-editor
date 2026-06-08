@@ -7,6 +7,7 @@
 #include "test_line.c"
 #include "test_buffer.c"
 #include "test_config.c"
+#include "test_args.c"
 
 int main(void) {
     // Call terminal tests
@@ -16,6 +17,15 @@ int main(void) {
     test_Terminal_Restore();
     test_Terminal_ClearScreen();
     printf("All terminal tests passed!\n\r");
+    
+    // Call CLI args tests
+    printf("Running CLI args tests...\n\r");
+    test_args_basic();
+    test_args_enablers();
+    test_args_jumps_forward();
+    test_args_jumps_backward();
+    test_args_help_version();
+    printf("All CLI args tests passed!\n\r");
     
     // Call gap buffer tests
     printf("Running gap buffer tests...\n\r");

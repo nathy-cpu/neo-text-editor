@@ -1,9 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../neo.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -32,21 +32,22 @@ static char** CloneStringArray(char** sourceStringArray)
 static char* defaultCFileExtensions[] = { ".c", ".h", NULL };
 static char* defaultCppFileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
 
-static char* defaultCKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue", "default", "do",
-    "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr", "register",
-    "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
-    "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
+static char* defaultCKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
+    "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
+    "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
+    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
 
-static char* defaultCTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", NULL };
+static char* defaultCTypes[]
+    = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", NULL };
 
-static char* defaultCppKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue", "default",
-    "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr", "register",
-    "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
-    "typeof", "typeof_unqual", "union", "void", "volatile", "while", "class", "delete", "new", "namespace", "try",
-    "catch", "throw", "public", "private", "protected", "virtual", "template", "typename", NULL };
+static char* defaultCppKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue",
+    "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr",
+    "register", "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
+    "typedef", "typeof", "typeof_unqual", "union", "void", "volatile", "while", "class", "delete", "new", "namespace",
+    "try", "catch", "throw", "public", "private", "protected", "virtual", "template", "typename", NULL };
 
-static char* defaultCppTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t",
-    "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
+static char* defaultCppTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool",
+    "size_t", "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
 
 /**
  * @brief Initializes editor configurations to their default settings.
@@ -83,27 +84,23 @@ void Config_InitDefaults(Config* config)
     Array_Init(&config->syntaxDatabase, sizeof(Syntax), 4, alignof(Syntax));
 
     // Default C syntax rules
-    Syntax cSyntax = {
-        .fileType = strdup("C"),
+    Syntax cSyntax = { .fileType = strdup("C"),
         .fileMatch = CloneStringArray(defaultCFileExtensions),
         .keywords = CloneStringArray(defaultCKeywords),
         .types = CloneStringArray(defaultCTypes),
         .singleLineCommentStart = strdup("//"),
         .multiLineCommentStart = strdup("/*"),
-        .multiLineCommentEnd = strdup("*/")
-    };
+        .multiLineCommentEnd = strdup("*/") };
     Array_Append(&config->syntaxDatabase, &cSyntax, 1);
 
     // Default C++ syntax rules
-    Syntax cppSyntax = {
-        .fileType = strdup("C++"),
+    Syntax cppSyntax = { .fileType = strdup("C++"),
         .fileMatch = CloneStringArray(defaultCppFileExtensions),
         .keywords = CloneStringArray(defaultCppKeywords),
         .types = CloneStringArray(defaultCppTypes),
         .singleLineCommentStart = strdup("//"),
         .multiLineCommentStart = strdup("/*"),
-        .multiLineCommentEnd = strdup("*/")
-    };
+        .multiLineCommentEnd = strdup("*/") };
     Array_Append(&config->syntaxDatabase, &cppSyntax, 1);
 }
 
@@ -382,14 +379,22 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     // Parse syntax colors
     char* newSyntaxColors[9];
     newSyntaxColors[HIGHLIGHT_NORMAL] = NULL;
-    newSyntaxColors[HIGHLIGHT_NUMBER] = GetLuaTableColor(luaState, "colors", "number", config->syntaxColors[HIGHLIGHT_NUMBER]);
-    newSyntaxColors[HIGHLIGHT_MATCH] = GetLuaTableColor(luaState, "colors", "match", config->syntaxColors[HIGHLIGHT_MATCH]);
-    newSyntaxColors[HIGHLIGHT_STRING] = GetLuaTableColor(luaState, "colors", "string", config->syntaxColors[HIGHLIGHT_STRING]);
-    newSyntaxColors[HIGHLIGHT_CHARACTER] = GetLuaTableColor(luaState, "colors", "character", config->syntaxColors[HIGHLIGHT_CHARACTER]);
-    newSyntaxColors[HIGHLIGHT_COMMENT] = GetLuaTableColor(luaState, "colors", "comment", config->syntaxColors[HIGHLIGHT_COMMENT]);
-    newSyntaxColors[HIGHLIGHT_KEYWORD] = GetLuaTableColor(luaState, "colors", "keyword", config->syntaxColors[HIGHLIGHT_KEYWORD]);
-    newSyntaxColors[HIGHLIGHT_TYPE] = GetLuaTableColor(luaState, "colors", "type", config->syntaxColors[HIGHLIGHT_TYPE]);
-    newSyntaxColors[HIGHLIGHT_SYMBOL] = GetLuaTableColor(luaState, "colors", "symbol", config->syntaxColors[HIGHLIGHT_SYMBOL]);
+    newSyntaxColors[HIGHLIGHT_NUMBER]
+        = GetLuaTableColor(luaState, "colors", "number", config->syntaxColors[HIGHLIGHT_NUMBER]);
+    newSyntaxColors[HIGHLIGHT_MATCH]
+        = GetLuaTableColor(luaState, "colors", "match", config->syntaxColors[HIGHLIGHT_MATCH]);
+    newSyntaxColors[HIGHLIGHT_STRING]
+        = GetLuaTableColor(luaState, "colors", "string", config->syntaxColors[HIGHLIGHT_STRING]);
+    newSyntaxColors[HIGHLIGHT_CHARACTER]
+        = GetLuaTableColor(luaState, "colors", "character", config->syntaxColors[HIGHLIGHT_CHARACTER]);
+    newSyntaxColors[HIGHLIGHT_COMMENT]
+        = GetLuaTableColor(luaState, "colors", "comment", config->syntaxColors[HIGHLIGHT_COMMENT]);
+    newSyntaxColors[HIGHLIGHT_KEYWORD]
+        = GetLuaTableColor(luaState, "colors", "keyword", config->syntaxColors[HIGHLIGHT_KEYWORD]);
+    newSyntaxColors[HIGHLIGHT_TYPE]
+        = GetLuaTableColor(luaState, "colors", "type", config->syntaxColors[HIGHLIGHT_TYPE]);
+    newSyntaxColors[HIGHLIGHT_SYMBOL]
+        = GetLuaTableColor(luaState, "colors", "symbol", config->syntaxColors[HIGHLIGHT_SYMBOL]);
 
     for (int index = 0; index < 9; index++) {
         if (newSyntaxColors[index]) {
@@ -417,23 +422,23 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
             if (lua_istable(luaState, -1)) {
                 Syntax syntax = { 0 };
                 syntax.fileType = GetLuaTableString(luaState, -1, "name");
-                
+
                 lua_getfield(luaState, -1, "extensions");
                 syntax.fileMatch = GetLuaStringArray(luaState, -1);
                 lua_pop(luaState, 1);
-                
+
                 lua_getfield(luaState, -1, "keywords");
                 syntax.keywords = GetLuaStringArray(luaState, -1);
                 lua_pop(luaState, 1);
-                
+
                 lua_getfield(luaState, -1, "types");
                 syntax.types = GetLuaStringArray(luaState, -1);
                 lua_pop(luaState, 1);
-                
+
                 syntax.singleLineCommentStart = GetLuaTableString(luaState, -1, "single_line_comment");
                 syntax.multiLineCommentStart = GetLuaTableString(luaState, -1, "multi_line_comment_start");
                 syntax.multiLineCommentEnd = GetLuaTableString(luaState, -1, "multi_line_comment_end");
-                
+
                 if (syntax.fileType && syntax.fileMatch) {
                     bool isLanguageReplaced = false;
                     for (size_t dbIndex = 0; dbIndex < Array_Size(&config->syntaxDatabase); dbIndex++) {

@@ -13,9 +13,9 @@
 #include <termios.h>
 #include <time.h>
 
+#include <lua5.4/lauxlib.h>
 #include <lua5.4/lua.h>
 #include <lua5.4/lualib.h>
-#include <lua5.4/lauxlib.h>
 
 // ============================================================================
 // CORE DATA STRUCTURES
@@ -582,8 +582,8 @@ typedef struct {
     bool syntaxEnabled;
     int statusTimeout;
     char* syntaxColors[9]; // Map of HighlightType enum
-    Array syntaxDatabase;  // Dynamic Array of Syntax
-    
+    Array syntaxDatabase; // Dynamic Array of Syntax
+
     // Keybindings
     int keySave;
     int keyQuit;
@@ -621,9 +621,9 @@ typedef struct {
 
 typedef struct {
     size_t lineIndex; // 0-based logical line index
-    size_t startCol;  // byte index in logical line
-    size_t length;    // number of bytes in this segment
-    bool isWrapped;   // true if this is a wrapped segment
+    size_t startCol; // byte index in logical line
+    size_t length; // number of bytes in this segment
+    bool isWrapped; // true if this is a wrapped segment
 } VisualRow;
 
 typedef struct {
@@ -937,3 +937,50 @@ void Editor_DeleteSelection(Editor* editor);
  * @param input The keypress/character.
  */
 void Editor_ProcessInput(Editor* editor, int input);
+
+// ============================================================================
+// CLI ARGUMENT HANDLING
+// ============================================================================
+
+typedef struct {
+    const char* configPath;
+    int overrideTabSize;
+    int overrideShowLineNumbers; // -1: no override, 0: false, 1: true
+    int overrideWrapLines; // -1: no override, 0: false, 1: true
+    int overrideSyntaxEnabled; // -1: no override, 0: false, 1: true
+    bool readOnlyMode;
+
+    char** files;
+    int* fileLines;
+    int* fileColumns;
+    int fileCount;
+
+    bool helpRequested;
+    bool versionRequested;
+} CliOptions;
+
+/**
+ * @brief Parses command line arguments.
+ * @param options Pointer to the CliOptions struct to populate.
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @return true on success, false if parsing fails or invalid options.
+ */
+bool CliOptions_Parse(CliOptions* options, int argc, char* argv[]);
+
+/**
+ * @brief Frees any resources allocated inside a CliOptions struct.
+ * @param options Pointer to the CliOptions struct.
+ */
+void CliOptions_Free(CliOptions* options);
+
+/**
+ * @brief Prints usage and help screen.
+ * @param progName The program name (argv[0]).
+ */
+void PrintHelp(const char* progName);
+
+/**
+ * @brief Prints program version information.
+ */
+void PrintVersion(void);
