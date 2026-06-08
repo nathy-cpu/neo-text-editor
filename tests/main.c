@@ -6,6 +6,7 @@
 #include "test_slice.c"
 #include "test_line.c"
 #include "test_buffer.c"
+#include "test_config.c"
 
 int main(void) {
     // Call terminal tests
@@ -34,6 +35,11 @@ int main(void) {
     test_line_basic();
     test_line_render_x();
     printf("All line tests passed!\n\r");
+
+    printf("Running config tests...\n\r");
+    test_config_defaults();
+    test_config_lua_load();
+    printf("All config tests passed!\n\r");
 
     printf("Running buffer tests...\n\r");
     test_buffer_basic();

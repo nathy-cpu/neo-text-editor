@@ -13,6 +13,10 @@
 #include <termios.h>
 #include <time.h>
 
+#include <lua5.4/lua.h>
+#include <lua5.4/lualib.h>
+#include <lua5.4/lauxlib.h>
+
 // ============================================================================
 // CORE DATA STRUCTURES
 // ============================================================================
@@ -306,9 +310,10 @@ Slice Line_GetText(Line* line);
  * @brief Converts a logical byte position to a visual render column, accounting for tab stops.
  * @param line Pointer to the line.
  * @param cursorX Logical byte index.
+ * @param tabSize The tab stop size configuration.
  * @return Visual render column index.
  */
-size_t Line_GetRenderX(Line* line, size_t cursorX);
+size_t Line_GetRenderX(Line* line, size_t cursorX, size_t tabSize);
 
 /**
  * @brief Creates a new empty text Buffer.
@@ -571,6 +576,26 @@ typedef struct {
 } ExplorerItem;
 
 typedef struct {
+    int tabSize;
+    bool showLineNumbers;
+    bool wrapLines;
+    bool syntaxEnabled;
+    int statusTimeout;
+    char* syntaxColors[9]; // Map of HighlightType enum
+    Array syntaxDatabase;  // Dynamic Array of Syntax
+    
+    // Keybindings
+    int keySave;
+    int keyQuit;
+    int keyNewTab;
+    int keyCloseTab;
+    int keyExplorer;
+    int keyNextTab;
+    int keyPrevTab;
+    int keySaveAs;
+} Config;
+
+typedef struct {
     // Terminal state
     Terminal terminal;
     size_t screenRows;
@@ -589,6 +614,9 @@ typedef struct {
     Array explorerItems; // Array of dynamically allocated ExplorerItem pointers (ExplorerItem*)
     size_t explorerSelectedIndex;
     char currentExplorerPath[512];
+
+    // Configuration
+    Config config;
 } Editor;
 
 typedef struct {
@@ -625,6 +653,9 @@ typedef struct {
 
     // Visual wrapping state
     Array visualRows; // Array of VisualRow
+
+    // Pointer to active configuration
+    Config* config;
 } Tab;
 
 /**
@@ -788,10 +819,31 @@ void Tab_UpdateSyntax(Tab* tab);
 
 /**
  * @brief Retrieves the ANSI color code for a specific highlight type.
- * @param highlight The highlight enum type.
+ * @param config Pointer to the Config object.
+ * @param highlightType The highlight enum type.
  * @return An ANSI escape sequence color string.
  */
-char* GetSyntaxColor(HighlightType highlight);
+char* GetSyntaxColor(const Config* config, HighlightType highlightType);
+
+/**
+ * @brief Loads the Lua configuration file from disk.
+ * @param editor Pointer to the Editor instance.
+ * @param configFilePath File path to load.
+ * @return True if configuration loaded successfully, false otherwise.
+ */
+bool Editor_LoadConfig(Editor* editor, const char* configFilePath);
+
+/**
+ * @brief Initializes a Config object with default settings.
+ * @param config Pointer to the Config instance.
+ */
+void Config_InitDefaults(Config* config);
+
+/**
+ * @brief Frees all dynamic memory associated with a Config object.
+ * @param config Pointer to the Config instance.
+ */
+void Config_Free(Config* config);
 
 /**
  * @brief Computes the number of digits required for line numbers.

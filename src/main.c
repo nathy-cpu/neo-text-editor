@@ -35,6 +35,9 @@ int main(int argc, char* argv[])
     // Initialize application
     Editor_Init(&editor);
 
+    // Load configuration
+    Editor_LoadConfig(&editor, "config.lua");
+
     // Initialize terminal raw mode
     if (!Editor_InitTerminal(&editor)) {
         fprintf(stderr, "Failed to enable raw mode\n");
@@ -52,9 +55,9 @@ int main(int argc, char* argv[])
         Editor_AddTab(&editor, NULL);
     }
 
-    if (Array_Size(&editor.tabs) > 0) {
+    if (Array_Size(&editor.tabs) > 0 && editor.statusMessage[0] == '\0') {
         Editor_SetStatusMessage(
-            &editor, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-W = close tab | Ctrl-N/P = switch tab");
+            &editor, "HELP: Configurable keybindings active. Press Ctrl-Q to quit.");
     }
 
     // Main event loop

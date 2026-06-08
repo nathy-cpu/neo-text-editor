@@ -153,48 +153,47 @@ void Editor_ProcessInput(Editor* editor, int input)
     Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     bool modified = false;
 
-    switch (input) {
-    case '\r':
-        if (tab->hasSelection)
-            Editor_DeleteSelection(editor);
-        Buffer_SplitLine(tab->buffer, tab->cursorY, tab->cursorX);
-        tab->cursorY++;
-        tab->cursorX = 0;
-        tab->isSaved = false;
-        modified = true;
-        break;
-
-    case CTRL_KEY('s'):
+    if (input == editor->config.keySave) {
         Tab_SaveFile(tab);
         Editor_SetStatusMessage(editor, "File saved.");
-        break;
+    } else {
+        switch (input) {
+        case '\r':
+            if (tab->hasSelection)
+                Editor_DeleteSelection(editor);
+            Buffer_SplitLine(tab->buffer, tab->cursorY, tab->cursorX);
+            tab->cursorY++;
+            tab->cursorX = 0;
+            tab->isSaved = false;
+            modified = true;
+            break;
 
-    case CTRL_KEY('a'):
-        tab->selectStartX = 0;
-        tab->selectStartY = 0;
-        tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
-        Line* lastRow = Buffer_GetLine(tab->buffer, tab->cursorY);
-        tab->cursorX = lastRow ? GapBuffer_Size(&lastRow->text) : 0;
-        tab->hasSelection = true;
-        break;
+        case CTRL_KEY('a'):
+            tab->selectStartX = 0;
+            tab->selectStartY = 0;
+            tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
+            Line* lastRow = Buffer_GetLine(tab->buffer, tab->cursorY);
+            tab->cursorX = lastRow ? GapBuffer_Size(&lastRow->text) : 0;
+            tab->hasSelection = true;
+            break;
 
-    case CTRL_KEY('q'):
-        // Handled in Editor_ProcessKeypress
-        break;
+        case CTRL_KEY('q'):
+            // Handled in Editor_ProcessKeypress
+            break;
 
-    case RESIZE_EVENT:
-        // Handled in Editor_ProcessKeypress
-        break;
+        case RESIZE_EVENT:
+            // Handled in Editor_ProcessKeypress
+            break;
 
-    case HOME_KEY:
-        tab->cursorX = 0;
-        break;
+        case HOME_KEY:
+            tab->cursorX = 0;
+            break;
 
-    case END_KEY: {
-        Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
-        if (row)
-            tab->cursorX = GapBuffer_Size(&row->text);
-    } break;
+        case END_KEY: {
+            Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
+            if (row)
+                tab->cursorX = GapBuffer_Size(&row->text);
+        } break;
 
     case BACKSPACE:
     case CTRL_KEY('h'):
@@ -286,6 +285,7 @@ void Editor_ProcessInput(Editor* editor, int input)
         }
         break;
     }
+    }
 
     if (modified) {
         Tab_UpdateSyntax(tab);
@@ -341,8 +341,7 @@ void Editor_ProcessKeypress(Editor* editor)
         return;
     }
 
-    switch (input) {
-    case CTRL_KEY('q'): {
+    if (input == editor->config.keyQuit) {
         // Check if any tab is unsaved
         bool hasUnsaved = false;
         for (size_t i = 0; i < Array_Size(&editor->tabs); i++) {
@@ -354,23 +353,17 @@ void Editor_ProcessKeypress(Editor* editor)
         }
 
         if (hasUnsaved && !isQuiting) {
-            Editor_SetStatusMessage(editor, "Some files have unsaved changes! Press Ctrl-Q again to quit anyways.");
+            Editor_SetStatusMessage(editor, "Some files have unsaved changes! Press Quit key again to quit anyway.");
             isQuiting = true;
             return;
         }
         Terminal_ClearScreen((Terminal*)NULL);
         exit(0);
-    } break;
-
-    case RESIZE_EVENT:
+    } else if (input == RESIZE_EVENT) {
         Editor_UpdateGeometry(editor);
-        break;
-
-    case CTRL_KEY('t'):
-        Editor_AddTab(editor, NULL); // New empty tab
-        break;
-
-    case ALT_S: {
+    } else if (input == editor->config.keyNewTab) {
+        Editor_AddTab(editor, NULL);
+    } else if (input == editor->config.keySaveAs) {
         char* filename = Editor_Prompt(editor, "Save as: %s");
         if (filename) {
             free(activeTab->filename);
@@ -380,29 +373,21 @@ void Editor_ProcessKeypress(Editor* editor)
         } else {
             Editor_SetStatusMessage(editor, "Save aborted.");
         }
-    } break;
-
-    case CTRL_KEY('e'): {
+    } else if (input == editor->config.keyExplorer) {
         editor->isExplorerActive = true;
         Editor_ReadDir(editor, ".");
-    } break;
-
-    case CTRL_KEY('w'): {
+    } else if (input == editor->config.keyCloseTab) {
         if (!activeTab->isSaved && !isQuiting) {
-            Editor_SetStatusMessage(editor, "File has unsaved changes! Press Ctrl-W again to close anyways.");
+            Editor_SetStatusMessage(editor, "File has unsaved changes! Press Close Tab key again to close anyway.");
             isQuiting = true;
             return;
         }
         Editor_CloseTab(editor);
-    } break;
-
-    case CTRL_KEY('n'):
+    } else if (input == editor->config.keyNextTab) {
         if (Array_Size(&editor->tabs) > 0) {
             editor->activeTabIndex = (editor->activeTabIndex + 1) % Array_Size(&editor->tabs);
         }
-        break;
-
-    case CTRL_KEY('p'):
+    } else if (input == editor->config.keyPrevTab) {
         if (Array_Size(&editor->tabs) > 0) {
             if (editor->activeTabIndex == 0) {
                 editor->activeTabIndex = Array_Size(&editor->tabs) - 1;
@@ -410,18 +395,11 @@ void Editor_ProcessKeypress(Editor* editor)
                 editor->activeTabIndex--;
             }
         }
-        break;
-
-    case '\x1b': {
+    } else {
         Editor_ProcessInput(editor, input);
-    } break;
-
-    default:
-        Editor_ProcessInput(editor, input);
-        break;
     }
 
-    if (input != CTRL_KEY('q') && input != CTRL_KEY('w')) {
+    if (input != editor->config.keyQuit && input != editor->config.keyCloseTab) {
         isQuiting = false;
     }
 }

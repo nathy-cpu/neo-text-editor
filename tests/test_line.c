@@ -44,13 +44,13 @@ static void test_line_render_x(void)
     Line_InsertText(line, 0, "a\tbc\td", 6);
     
     // TAB_STOP is 4
-    assert(Line_GetRenderX(line, 0) == 0); // 'a'
-    assert(Line_GetRenderX(line, 1) == 1); // '\t'
-    assert(Line_GetRenderX(line, 2) == 4); // 'b'
-    assert(Line_GetRenderX(line, 3) == 5); // 'c'
-    assert(Line_GetRenderX(line, 4) == 6); // '\t'
-    assert(Line_GetRenderX(line, 5) == 8); // 'd'
-    assert(Line_GetRenderX(line, 6) == 9); // end
+    assert(Line_GetRenderX(line, 0, 4) == 0); // 'a'
+    assert(Line_GetRenderX(line, 1, 4) == 1); // '\t'
+    assert(Line_GetRenderX(line, 2, 4) == 4); // 'b'
+    assert(Line_GetRenderX(line, 3, 4) == 5); // 'c'
+    assert(Line_GetRenderX(line, 4, 4) == 6); // '\t'
+    assert(Line_GetRenderX(line, 5, 4) == 8); // 'd'
+    assert(Line_GetRenderX(line, 6, 4) == 9); // end
     
     Line_Free(line);
 }

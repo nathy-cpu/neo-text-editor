@@ -4,33 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-char* cFileExtensions[] = { ".c", ".h", NULL };
-char* cppFileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
-
-char* cKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue", "default", "do",
-    "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr", "register",
-    "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
-    "typeof", "typeof_unqual", "union", "void", "volatile", "while", NULL };
-
-char* cTypes[]
-    = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t", "ssize_t", NULL };
-
-char* cppKeywords[] = { "alignas", "alignof", "auto", "break", "case", "const", "constexpr", "continue", "default",
-    "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "nullptr", "register",
-    "restrict", "return", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
-    "typeof", "typeof_unqual", "union", "void", "volatile", "while", "class", "delete", "new", "namespace", "try",
-    "catch", "throw", "public", "private", "protected", "virtual", "template", "typename", NULL };
-
-char* cppTypes[] = { "int", "long", "short", "double", "float", "char", "unsigned", "signed", "bool", "size_t",
-    "ssize_t", "char8_t", "char16_t", "char32_t", "wchar_t", NULL };
-
-Syntax syntaxDatabase[] = { { "C", cFileExtensions, cKeywords, cTypes, "//", "/*", "*/" },
-    { "C++", cppFileExtensions, cppKeywords, cppTypes, "//", "/*", "*/" },
-    { NULL, NULL, NULL, NULL, NULL, NULL, NULL } };
-
-char* GetSyntaxColor(HighlightType highlight)
+char* GetSyntaxColor(const Config* config, HighlightType highlightType)
 {
-    switch (highlight) {
+    if (config && highlightType >= 0 && highlightType < 9 && config->syntaxColors[highlightType]) {
+        return config->syntaxColors[highlightType];
+    }
+    switch (highlightType) {
     case HIGHLIGHT_NORMAL:
         return NULL;
     case HIGHLIGHT_NUMBER:
@@ -198,8 +177,20 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
 
 void Tab_UpdateSyntax(Tab* tab)
 {
-    if (tab->syntax == NULL)
+    if (!tab->config || !tab->config->syntaxEnabled || tab->syntax == NULL) {
+        // Clear syntax styles for all lines
+        for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
+            Line* line = Buffer_GetLine(tab->buffer, i);
+            if (line) {
+                GapBuffer_Clear(&line->styles);
+                size_t length = GapBuffer_Size(&line->text);
+                for (size_t j = 0; j < length; j++) {
+                    GapBuffer_InsertChar(&line->styles, j, HIGHLIGHT_NORMAL);
+                }
+            }
+        }
         return;
+    }
     bool inMultiLineComment = false;
     for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
         Line* line = Buffer_GetLine(tab->buffer, i);
@@ -212,13 +203,13 @@ void Tab_UpdateSyntax(Tab* tab)
 void Tab_SetSyntaxHighlight(Tab* tab)
 {
     tab->syntax = NULL;
-    if (tab->filename == NULL)
+    if (!tab->config || !tab->config->syntaxEnabled || tab->filename == NULL)
         return;
 
     char* ext = strrchr(tab->filename, '.');
 
-    for (unsigned int j = 0; syntaxDatabase[j].fileType != NULL; j++) {
-        Syntax* syn = &syntaxDatabase[j];
+    for (size_t j = 0; j < Array_Size(&tab->config->syntaxDatabase); j++) {
+        Syntax* syn = (Syntax*)Array_At(&tab->config->syntaxDatabase, j);
         for (unsigned int i = 0; syn->fileMatch[i] != NULL; i++) {
             bool isExt = (syn->fileMatch[i][0] == '.');
             if ((isExt && ext && !strcmp(ext, syn->fileMatch[i]))

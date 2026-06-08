@@ -36,6 +36,8 @@ void Editor_Init(Editor* editor)
     editor->explorerSelectedIndex = 0;
     editor->currentExplorerPath[0] = '.';
     editor->currentExplorerPath[1] = '\0';
+
+    Config_InitDefaults(&editor->config);
 }
 
 void Editor_Free(Editor* editor)
@@ -55,6 +57,8 @@ void Editor_Free(Editor* editor)
         free(item);
     }
     Array_Free(&editor->explorerItems);
+
+    Config_Free(&editor->config);
 }
 
 bool Editor_InitTerminal(Editor* editor)
@@ -79,6 +83,7 @@ void Editor_AddTab(Editor* editor, const char* filename)
         return;
 
     Tab_Init(newTab);
+    newTab->config = &editor->config;
 
     if (filename) {
         Tab_LoadFile(newTab, filename);
@@ -152,7 +157,10 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
 {
     Array_Append(screenBuffer, "\x1b[7m", 4);
 
-    int messageSize = strlen(editor->statusMessage);
+    int messageSize = 0;
+    if (time(NULL) - editor->statusMessageTime <= editor->config.statusTimeout) {
+        messageSize = strlen(editor->statusMessage);
+    }
     if (messageSize > (int)editor->screenColumns)
         messageSize = editor->screenColumns;
 
@@ -168,8 +176,8 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
 
 size_t Tab_GetGutterDigits(const Tab* tab)
 {
-    if (!tab || !tab->buffer)
-        return 3;
+    if (!tab || !tab->buffer || !tab->config || !tab->config->showLineNumbers)
+        return 0;
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
     if (totalLines == 0)
         totalLines = 1;
@@ -181,7 +189,12 @@ size_t Tab_GetGutterDigits(const Tab* tab)
     return (digits < 3) ? 3 : digits;
 }
 
-size_t Tab_GetGutterWidth(const Tab* tab) { return Tab_GetGutterDigits(tab) + 3; }
+size_t Tab_GetGutterWidth(const Tab* tab)
+{
+    if (!tab->config || !tab->config->showLineNumbers)
+        return 0;
+    return Tab_GetGutterDigits(tab) + 3;
+}
 
 size_t Tab_GetCursorVRowIdx(const Tab* tab)
 {
@@ -215,8 +228,8 @@ size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
     if (!line)
         return 0;
 
-    size_t rx = Line_GetRenderX(line, tab->cursorX);
-    size_t startRx = Line_GetRenderX(line, vr->startCol);
+    size_t rx = Line_GetRenderX(line, tab->cursorX, tab->config->tabSize);
+    size_t startRx = Line_GetRenderX(line, vr->startCol, tab->config->tabSize);
     return (rx >= startRx) ? (rx - startRx) : 0;
 }
 
@@ -234,7 +247,7 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
         return;
     }
 
-    size_t startRx = Line_GetRenderX(line, vr->startCol);
+    size_t startRx = Line_GetRenderX(line, vr->startCol, tab->config->tabSize);
     size_t targetRx = startRx + targetVisualCol;
 
     Slice text = GapBuffer_ToSlice(&line->text);
@@ -244,7 +257,7 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
     while (col < vr->startCol + vr->length) {
         size_t charWidth = 1;
         if (((const char*)text.data)[col] == '\t') {
-            charWidth = TAB_STOP - (rx % TAB_STOP);
+            charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
         }
         if (rx + charWidth / 2 >= targetRx) {
             break;
@@ -284,6 +297,18 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         size_t size = text.size;
         const char* str = (const char*)text.data;
 
+        if (!tab->config->wrapLines) {
+            // Unwrapped mode: one visual row per line
+            VisualRow vr = {
+                .lineIndex = i,
+                .startCol = 0,
+                .length = size,
+                .isWrapped = false
+            };
+            Array_Append(&tab->visualRows, &vr, 1);
+            continue;
+        }
+
         if (size == 0 || usableColumns == 0) {
             VisualRow vr = {
                 .lineIndex = i,
@@ -303,7 +328,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         while (col < size) {
             size_t charWidth = 1;
             if (str[col] == '\t') {
-                charWidth = TAB_STOP - (rx % TAB_STOP);
+                charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
             }
 
             if (rx + charWidth > usableColumns) {
@@ -349,7 +374,7 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     Tab_UpdateVisualRows(editor, tab, usableColumns);
 
     // 2. Find the visual row index of the cursor
-    size_t cursorVRowIdx = Tab_GetCursorVRowIdx(tab);
+    size_t cursorVRowIdx = tab->config->wrapLines ? Tab_GetCursorVRowIdx(tab) : tab->cursorY;
 
     // 3. Adjust vertical scroll rowOffset
     if (cursorVRowIdx < tab->rowOffset) {
@@ -359,11 +384,24 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
         tab->rowOffset = cursorVRowIdx - editor->screenRows + 1;
     }
 
-    // 4. Horizontal scroll is disabled when wrapping
-    tab->columnOffset = 0;
+    if (tab->config->wrapLines) {
+        // Horizontal scroll is disabled when wrapping
+        tab->columnOffset = 0;
+        // Visual column position on this visual row segment
+        tab->renderX = Tab_GetCursorVisualCol(tab, cursorVRowIdx);
+    } else {
+        // Calculate renderX for the line up to cursorX
+        Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
+        tab->renderX = line ? Line_GetRenderX(line, tab->cursorX, tab->config->tabSize) : 0;
 
-    // 5. Visual column position on this visual row segment
-    tab->renderX = Tab_GetCursorVisualCol(tab, cursorVRowIdx);
+        // Adjust horizontal scroll columnOffset
+        if (tab->renderX < tab->columnOffset) {
+            tab->columnOffset = tab->renderX;
+        }
+        if (tab->renderX >= tab->columnOffset + usableColumns) {
+            tab->columnOffset = tab->renderX - usableColumns + 1;
+        }
+    }
 }
 
 void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
@@ -422,20 +460,21 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
             VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, vrowIdx);
             Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
             if (line) {
-                // Ensure gaps are moved to the end so we can read contiguous data
                 Slice textSlice = GapBuffer_ToSlice(&line->text);
                 Slice styleSlice = GapBuffer_ToSlice(&line->styles);
 
                 // Draw styled gutter
                 if (usableColumns > 0) {
                     Array_Append(screenBuffer, "\x1b[90m", 5);
-                    if (!vr->isWrapped) {
-                        char gutterBuf[32];
-                        int gutterLen = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, vr->lineIndex + 1);
-                        Array_Append(screenBuffer, gutterBuf, gutterLen);
-                    } else {
-                        for (size_t d = 0; d < digits + 3; d++) {
-                            Array_Append(screenBuffer, " ", 1);
+                    if (tab->config->showLineNumbers) {
+                        if (!vr->isWrapped) {
+                            char gutterBuf[32];
+                            int gutterLen = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, vr->lineIndex + 1);
+                            Array_Append(screenBuffer, gutterBuf, gutterLen);
+                        } else {
+                            for (size_t d = 0; d < digits + 3; d++) {
+                                Array_Append(screenBuffer, " ", 1);
+                            }
                         }
                     }
                     Array_Append(screenBuffer, "\x1b[m", 3);
@@ -448,47 +487,75 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     char* styles = (char*)styleSlice.data + vr->startCol;
                     HighlightType currentColor = HIGHLIGHT_NORMAL;
 
-                    for (size_t j = 0; j < length; j++) {
-                        bool isSelected = IsSelected(tab, vr->lineIndex, vr->startCol + j);
-                        if (isSelected)
-                            Array_Append(screenBuffer, "\x1b[7m", 4);
+                    size_t rx = 0; // visual column position on this visual row (before offsetting)
 
+                    for (size_t j = 0; j < length; j++) {
+                        size_t charWidth = 1;
                         if (textData[j] == '\t') {
-                            size_t renderX = Line_GetRenderX(line, vr->startCol + j);
-                            int spaces = TAB_STOP - (renderX % TAB_STOP);
-                            while (spaces-- > 0)
-                                Array_Append(screenBuffer, " ", 1);
-                        } else if (iscntrl(textData[j])) {
-                            char symbol = (textData[j] <= 26) ? '@' + textData[j] : '?';
-                            Array_Append(screenBuffer, "\x1b[7m", 4);
-                            Array_Append(screenBuffer, &symbol, 1);
-                            Array_Append(screenBuffer, "\x1b[27m", 5);
-                            if (currentColor != HIGHLIGHT_NORMAL) {
-                                char colorBuffer[16];
-                                int colorLength = snprintf(
-                                    colorBuffer, sizeof(colorBuffer), "\x1b[%sm", GetSyntaxColor(currentColor));
-                                Array_Append(screenBuffer, colorBuffer, colorLength);
-                            }
-                        } else {
-                            HighlightType highlight = (vr->startCol + j < styleSlice.size)
-                                ? styles[j]
-                                : HIGHLIGHT_NORMAL;
-                            if (highlight != currentColor) {
-                                if (currentColor != HIGHLIGHT_NORMAL)
-                                    Array_Append(screenBuffer, "\x1b[39m", 5);
-                                if (highlight != HIGHLIGHT_NORMAL) {
-                                    char* color = GetSyntaxColor(highlight);
-                                    char colorBuffer[16];
-                                    int colorLength = snprintf(colorBuffer, sizeof(colorBuffer), "\x1b[%sm", color);
-                                    Array_Append(screenBuffer, colorBuffer, colorLength);
-                                }
-                                currentColor = highlight;
-                            }
-                            Array_Append(screenBuffer, &textData[j], 1);
+                            charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
                         }
 
-                        if (isSelected)
-                            Array_Append(screenBuffer, "\x1b[27m", 5);
+                        bool isVisible = true;
+                        if (!tab->config->wrapLines) {
+                            if (rx + charWidth <= tab->columnOffset) {
+                                isVisible = false;
+                            }
+                            if (rx >= tab->columnOffset + usableColumns) {
+                                isVisible = false;
+                            }
+                        }
+
+                        if (isVisible) {
+                            bool isSelected = IsSelected(tab, vr->lineIndex, vr->startCol + j);
+                            if (isSelected)
+                                Array_Append(screenBuffer, "\x1b[7m", 4);
+
+                            if (textData[j] == '\t') {
+                                if (!tab->config->wrapLines) {
+                                    for (size_t s = 0; s < charWidth; s++) {
+                                        if (rx + s >= tab->columnOffset && rx + s < tab->columnOffset + usableColumns) {
+                                            Array_Append(screenBuffer, " ", 1);
+                                        }
+                                    }
+                                } else {
+                                    for (size_t s = 0; s < charWidth; s++) {
+                                        Array_Append(screenBuffer, " ", 1);
+                                    }
+                                }
+                            } else if (iscntrl(textData[j])) {
+                                char symbol = (textData[j] <= 26) ? '@' + textData[j] : '?';
+                                Array_Append(screenBuffer, "\x1b[7m", 4);
+                                Array_Append(screenBuffer, &symbol, 1);
+                                Array_Append(screenBuffer, "\x1b[27m", 5);
+                                if (currentColor != HIGHLIGHT_NORMAL) {
+                                    char colorBuffer[16];
+                                    int colorLength = snprintf(
+                                        colorBuffer, sizeof(colorBuffer), "\x1b[%sm", GetSyntaxColor(tab->config, currentColor));
+                                    Array_Append(screenBuffer, colorBuffer, colorLength);
+                                }
+                            } else {
+                                HighlightType highlight = (vr->startCol + j < styleSlice.size)
+                                    ? styles[j]
+                                    : HIGHLIGHT_NORMAL;
+                                if (highlight != currentColor) {
+                                    if (currentColor != HIGHLIGHT_NORMAL)
+                                        Array_Append(screenBuffer, "\x1b[39m", 5);
+                                    if (highlight != HIGHLIGHT_NORMAL) {
+                                        char* color = GetSyntaxColor(tab->config, highlight);
+                                        char colorBuffer[16];
+                                        int colorLength = snprintf(colorBuffer, sizeof(colorBuffer), "\x1b[%sm", color);
+                                        Array_Append(screenBuffer, colorBuffer, colorLength);
+                                    }
+                                    currentColor = highlight;
+                                }
+                                Array_Append(screenBuffer, &textData[j], 1);
+                            }
+
+                            if (isSelected)
+                                Array_Append(screenBuffer, "\x1b[27m", 5);
+                        }
+
+                        rx += charWidth;
                     }
                     if (currentColor != HIGHLIGHT_NORMAL) {
                         Array_Append(screenBuffer, "\x1b[39m", 5);
@@ -497,7 +564,13 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     size_t logicalSize = GapBuffer_Size(&line->text);
                     if (vr->startCol + vr->length == logicalSize) {
                         if (IsSelected(tab, vr->lineIndex, logicalSize)) {
-                            Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                            if (!tab->config->wrapLines) {
+                                if (rx >= tab->columnOffset && rx < tab->columnOffset + usableColumns) {
+                                    Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                                }
+                            } else {
+                                Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                            }
                         }
                     }
                 } else {
@@ -654,11 +727,12 @@ void Editor_RefreshScreen(Editor* editor)
 
         // Position cursor
         size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
-        size_t cursorVRowIdx = Tab_GetCursorVRowIdx(activeTab);
+        size_t cursorVRowIdx = activeTab->config->wrapLines ? Tab_GetCursorVRowIdx(activeTab) : activeTab->cursorY;
         size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
+        size_t visualCursorX = activeTab->config->wrapLines ? activeTab->renderX : (activeTab->renderX - activeTab->columnOffset);
         snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (cursorVRowIdx - activeTab->rowOffset) + cursorRowOffset,
-            activeTab->renderX + 1 + gutterWidth);
+            visualCursorX + 1 + gutterWidth);
 
         Array_Append(&screenBuffer, buffer, strlen(buffer));
         Array_Append(&screenBuffer, "\x1b[?25h", 6);

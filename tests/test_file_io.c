@@ -5,8 +5,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// Helper: Create a temporary test file
-static void create_test_file(const char *path, const char *content) {
+/**
+ * @brief Helper function to create a temporary test file with contents.
+ * @param path Path to the file.
+ * @param content The text content to write.
+ */
+static void CreateTestFile(const char *path, const char *content) {
     FILE *file = fopen(path, "w");
     assert(file && "Failed to create test file");
     fputs(content, file);
@@ -17,7 +21,7 @@ static void create_test_file(const char *path, const char *content) {
 static void test_read_write() {
     const char *path = "testfile.txt";
     const char *content = "Hello, world!";
-    create_test_file(path, content);
+    CreateTestFile(path, content);
 
     // Test FileIoRead
     Array arr1 = {0};
@@ -45,7 +49,7 @@ static void test_read_write() {
 static void test_mmap() {
     const char *path = "mmap_test.txt";
     const char *content = "Memory-mapped file test";
-    create_test_file(path, content);
+    CreateTestFile(path, content);
 
     MappedFile file = FileIoMmap(path);
     assert(file.fileDescriptor != -1 && "MMap failed");
@@ -64,7 +68,7 @@ static void test_errors() {
 
     // Permission denied (create a file and make it unreadable)
     const char *path = "no_perms.txt";
-    create_test_file(path, "test");
+    CreateTestFile(path, "test");
     chmod(path, 0000); // Remove all permissions
 
     assert(!FileIoRead(path, &array) && "Read should fail (permissions)");

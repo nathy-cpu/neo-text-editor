@@ -5,10 +5,32 @@
 #include <stdlib.h>
 #include <string.h>
 
+static Config defaultTestConfig;
+static bool defaultTestConfigInitialized = false;
+
+static void InitDefaultTestConfig(void)
+{
+    if (defaultTestConfigInitialized)
+        return;
+    defaultTestConfig.tabSize = 4;
+    defaultTestConfig.showLineNumbers = true;
+    defaultTestConfig.wrapLines = true;
+    defaultTestConfig.syntaxEnabled = true;
+    defaultTestConfig.statusTimeout = 5;
+    for (int i = 0; i < 9; i++) {
+        defaultTestConfig.syntaxColors[i] = NULL;
+    }
+    // Set database to empty array representation
+    memset(&defaultTestConfig.syntaxDatabase, 0, sizeof(Array));
+    defaultTestConfigInitialized = true;
+}
+
 // Initialize tab with default values
 void Tab_Init(Tab* tab)
 {
     assert(tab != NULL);
+
+    InitDefaultTestConfig();
 
     // Initialize buffer
     tab->buffer = Buffer_New();
@@ -34,6 +56,8 @@ void Tab_Init(Tab* tab)
 
     // Visual wrapping state
     Array_InitStruct(&tab->visualRows, VisualRow, 16);
+
+    tab->config = &defaultTestConfig;
 }
 
 // Free all resources
