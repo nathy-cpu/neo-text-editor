@@ -38,6 +38,7 @@ int main(void) {
     printf("Running buffer tests...\n\r");
     test_buffer_basic();
     test_buffer_lines();
+    test_tab_gutter();
     printf("All buffer tests passed!\n\r");
 
     // Call other tests here as needed

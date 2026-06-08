@@ -166,6 +166,23 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
     Array_Append(screenBuffer, "\x1b[m", 3);
 }
 
+size_t Tab_GetGutterDigits(const Tab* tab)
+{
+    if (!tab || !tab->buffer)
+        return 3;
+    size_t totalLines = Buffer_GetLineCount(tab->buffer);
+    if (totalLines == 0)
+        totalLines = 1;
+    size_t digits = 0;
+    while (totalLines > 0) {
+        digits++;
+        totalLines /= 10;
+    }
+    return (digits < 3) ? 3 : digits;
+}
+
+size_t Tab_GetGutterWidth(const Tab* tab) { return Tab_GetGutterDigits(tab) + 3; }
+
 void Editor_ScrollTab(Editor* editor, Tab* tab)
 {
     // Compute visual render column from raw cursor byte-position
@@ -185,8 +202,15 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     if (tab->renderX < tab->columnOffset)
         tab->columnOffset = tab->renderX;
 
-    if (tab->renderX >= tab->columnOffset + editor->screenColumns)
-        tab->columnOffset = tab->renderX - editor->screenColumns + 1;
+    size_t gutterWidth = Tab_GetGutterWidth(tab);
+    size_t usableColumns = (editor->screenColumns > gutterWidth) ? (editor->screenColumns - gutterWidth) : 0;
+
+    if (usableColumns > 0) {
+        if (tab->renderX >= tab->columnOffset + usableColumns)
+            tab->columnOffset = tab->renderX - usableColumns + 1;
+    } else {
+        tab->columnOffset = 0;
+    }
 }
 
 void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
@@ -196,6 +220,9 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
         return;
     Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
+    size_t gutterWidth = Tab_GetGutterWidth(tab);
+    size_t digits = Tab_GetGutterDigits(tab);
+    size_t usableColumns = (editor->screenColumns > gutterWidth) ? (editor->screenColumns - gutterWidth) : 0;
 
     for (size_t i = 0; i < editor->screenRows; i++) {
         size_t fileRow = i + tab->rowOffset;
@@ -204,12 +231,20 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                 char welcome[50];
                 int welcomeLength = snprintf(welcome, sizeof(welcome), "Neo Text Editor");
 
-                if (welcomeLength > (int)editor->screenColumns)
-                    welcomeLength = editor->screenColumns;
+                if (usableColumns > 0) {
+                    Array_Append(screenBuffer, "\x1b[90m", 5);
+                    for (size_t d = 0; d < gutterWidth; d++) {
+                        Array_Append(screenBuffer, " ", 1);
+                    }
+                    Array_Append(screenBuffer, "\x1b[m", 3);
+                }
 
-                int padding = (editor->screenColumns - welcomeLength) / 2;
+                if (welcomeLength > (int)usableColumns)
+                    welcomeLength = usableColumns;
+
+                int padding = (usableColumns - welcomeLength) / 2;
                 if (padding > 0) {
-                    Array_Append(screenBuffer, ">", 1);
+                    Array_Append(screenBuffer, "~", 1);
                     padding--;
                 }
                 while (padding) {
@@ -218,8 +253,18 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                 }
 
                 Array_Append(screenBuffer, welcome, welcomeLength);
-            } else
-                Array_Append(screenBuffer, ">", 1);
+            } else {
+                if (usableColumns > 0) {
+                    Array_Append(screenBuffer, "\x1b[90m", 5);
+                    for (size_t d = 0; d < gutterWidth; d++) {
+                        Array_Append(screenBuffer, " ", 1);
+                    }
+                    Array_Append(screenBuffer, "~", 1);
+                    Array_Append(screenBuffer, "\x1b[m", 3);
+                } else {
+                    Array_Append(screenBuffer, "~", 1);
+                }
+            }
         } else {
             Line* line = Buffer_GetLine(tab->buffer, fileRow);
             if (line) {
@@ -230,12 +275,21 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                 // GapBuffer_Size gives the actual logical size of the gap buffer
                 size_t logicalSize = GapBuffer_Size(&line->text);
 
+                // Draw styled gutter
+                if (usableColumns > 0) {
+                    char gutterBuf[32];
+                    int gutterLen = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, fileRow + 1);
+                    Array_Append(screenBuffer, "\x1b[90m", 5);
+                    Array_Append(screenBuffer, gutterBuf, gutterLen);
+                    Array_Append(screenBuffer, "\x1b[m", 3);
+                }
+
                 // Handle column offset (horizontal scrolling)
                 ssize_t length = logicalSize - tab->columnOffset;
                 if (length < 0)
                     length = 0;
-                if (length > (ssize_t)editor->screenColumns)
-                    length = editor->screenColumns;
+                if (length > (ssize_t)usableColumns)
+                    length = usableColumns;
 
                 if (length > 0) {
                     char* textData = (char*)textSlice.data + tab->columnOffset;
@@ -289,12 +343,12 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                         Array_Append(screenBuffer, "\x1b[39m", 5);
                     }
 
-                    if (length < (ssize_t)editor->screenColumns && IsSelected(tab, fileRow, logicalSize)) {
+                    if (length < (ssize_t)usableColumns && IsSelected(tab, fileRow, logicalSize)) {
                         Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
                     }
                 } else if (IsSelected(tab, fileRow, logicalSize)) {
                     // For empty lines that are selected
-                    if (editor->screenColumns > 0) {
+                    if (usableColumns > 0) {
                         Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
                     }
                 }
@@ -444,9 +498,10 @@ void Editor_RefreshScreen(Editor* editor)
 
         // Position cursor
         size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
+        size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
         snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
-            (activeTab->renderX - activeTab->columnOffset) + 1);
+            (activeTab->renderX - activeTab->columnOffset) + 1 + gutterWidth);
 
         Array_Append(&screenBuffer, buffer, strlen(buffer));
         Array_Append(&screenBuffer, "\x1b[?25h", 6);

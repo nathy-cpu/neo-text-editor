@@ -56,3 +56,45 @@ static void test_buffer_lines(void)
     
     Buffer_Free(buffer);
 }
+
+static void test_tab_gutter(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+    
+    // Initial buffer has 1 line
+    assert(Tab_GetGutterDigits(&tab) == 3);
+    assert(Tab_GetGutterWidth(&tab) == 6);
+    
+    // Add lines up to 9
+    for (size_t i = 1; i < 9; i++) {
+        Buffer_InsertLine(tab.buffer, i);
+    }
+    assert(Buffer_GetLineCount(tab.buffer) == 9);
+    assert(Tab_GetGutterDigits(&tab) == 3);
+    assert(Tab_GetGutterWidth(&tab) == 6);
+
+    // Add 1 more line (10 lines total)
+    Buffer_InsertLine(tab.buffer, 9);
+    assert(Buffer_GetLineCount(tab.buffer) == 10);
+    assert(Tab_GetGutterDigits(&tab) == 3);
+    assert(Tab_GetGutterWidth(&tab) == 6);
+
+    // Add lines up to 100
+    for (size_t i = 10; i < 100; i++) {
+        Buffer_InsertLine(tab.buffer, i);
+    }
+    assert(Buffer_GetLineCount(tab.buffer) == 100);
+    assert(Tab_GetGutterDigits(&tab) == 3);
+    assert(Tab_GetGutterWidth(&tab) == 6);
+
+    // Add lines up to 1000
+    for (size_t i = 100; i < 1000; i++) {
+        Buffer_InsertLine(tab.buffer, i);
+    }
+    assert(Buffer_GetLineCount(tab.buffer) == 1000);
+    assert(Tab_GetGutterDigits(&tab) == 4); // 1000 is 4 digits
+    assert(Tab_GetGutterWidth(&tab) == 7);
+
+    Tab_Free(&tab);
+}

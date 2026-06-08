@@ -784,6 +784,20 @@ void Tab_UpdateSyntax(Tab* tab);
 char* GetSyntaxColor(HighlightType highlight);
 
 /**
+ * @brief Computes the number of digits required for line numbers.
+ * @param tab Pointer to the Tab.
+ * @return Number of digits (minimum 3).
+ */
+size_t Tab_GetGutterDigits(const Tab* tab);
+
+/**
+ * @brief Computes the total visual width of the line number gutter.
+ * @param tab Pointer to the Tab.
+ * @return Visual column width.
+ */
+size_t Tab_GetGutterWidth(const Tab* tab);
+
+/**
  * @brief Calculates scroll offsets to ensure the cursor remains visible.
  * @param editor Pointer to the Editor.
  * @param tab Pointer to the Tab.
