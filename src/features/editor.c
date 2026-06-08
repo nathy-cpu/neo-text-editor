@@ -183,34 +183,187 @@ size_t Tab_GetGutterDigits(const Tab* tab)
 
 size_t Tab_GetGutterWidth(const Tab* tab) { return Tab_GetGutterDigits(tab) + 3; }
 
-void Editor_ScrollTab(Editor* editor, Tab* tab)
+size_t Tab_GetCursorVRowIdx(const Tab* tab)
 {
-    // Compute visual render column from raw cursor byte-position
-    tab->renderX = 0;
-    if (tab->cursorY < Buffer_GetLineCount(tab->buffer)) {
-        Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
-        if (line)
-            tab->renderX = Line_GetRenderX(line, tab->cursorX);
+    size_t totalVRows = Array_Size(&tab->visualRows);
+    if (totalVRows == 0)
+        return 0;
+
+    size_t bestIdx = 0;
+    for (size_t i = 0; i < totalVRows; i++) {
+        VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
+        if (vr->lineIndex == tab->cursorY) {
+            if (tab->cursorX >= vr->startCol && tab->cursorX < vr->startCol + vr->length) {
+                return i;
+            }
+            if (tab->cursorX == vr->startCol + vr->length) {
+                bestIdx = i;
+            }
+        }
+    }
+    return bestIdx;
+}
+
+size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
+{
+    size_t totalVRows = Array_Size(&tab->visualRows);
+    if (vrowIdx >= totalVRows)
+        return 0;
+
+    VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, vrowIdx);
+    Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
+    if (!line)
+        return 0;
+
+    size_t rx = Line_GetRenderX(line, tab->cursorX);
+    size_t startRx = Line_GetRenderX(line, vr->startCol);
+    return (rx >= startRx) ? (rx - startRx) : 0;
+}
+
+void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCol)
+{
+    size_t totalVRows = Array_Size(&tab->visualRows);
+    if (targetVRowIdx >= totalVRows)
+        return;
+
+    VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, targetVRowIdx);
+    tab->cursorY = vr->lineIndex;
+    Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
+    if (!line) {
+        tab->cursorX = 0;
+        return;
     }
 
-    if (tab->cursorY < tab->rowOffset)
-        tab->rowOffset = tab->cursorY;
+    size_t startRx = Line_GetRenderX(line, vr->startCol);
+    size_t targetRx = startRx + targetVisualCol;
 
-    if (tab->cursorY >= tab->rowOffset + editor->screenRows)
-        tab->rowOffset = tab->cursorY - editor->screenRows + 1;
+    Slice text = GapBuffer_ToSlice(&line->text);
+    size_t col = vr->startCol;
+    size_t rx = startRx;
 
-    if (tab->renderX < tab->columnOffset)
-        tab->columnOffset = tab->renderX;
+    while (col < vr->startCol + vr->length) {
+        size_t charWidth = 1;
+        if (((const char*)text.data)[col] == '\t') {
+            charWidth = TAB_STOP - (rx % TAB_STOP);
+        }
+        if (rx + charWidth / 2 >= targetRx) {
+            break;
+        }
+        if (rx + charWidth > targetRx) {
+            break;
+        }
+        rx += charWidth;
+        col++;
+    }
+    tab->cursorX = col;
+}
 
+void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
+{
+    (void)editor;
+    Array_Clear(&tab->visualRows);
+
+    size_t totalLines = Buffer_GetLineCount(tab->buffer);
+    if (totalLines == 0) {
+        VisualRow vr = {
+            .lineIndex = 0,
+            .startCol = 0,
+            .length = 0,
+            .isWrapped = false
+        };
+        Array_Append(&tab->visualRows, &vr, 1);
+        return;
+    }
+
+    for (size_t i = 0; i < totalLines; i++) {
+        Line* line = Buffer_GetLine(tab->buffer, i);
+        if (!line)
+            continue;
+
+        Slice text = GapBuffer_ToSlice(&line->text);
+        size_t size = text.size;
+        const char* str = (const char*)text.data;
+
+        if (size == 0 || usableColumns == 0) {
+            VisualRow vr = {
+                .lineIndex = i,
+                .startCol = 0,
+                .length = 0,
+                .isWrapped = false
+            };
+            Array_Append(&tab->visualRows, &vr, 1);
+            continue;
+        }
+
+        size_t startCol = 0;
+        size_t col = 0;
+        size_t rx = 0;
+        bool isWrapped = false;
+
+        while (col < size) {
+            size_t charWidth = 1;
+            if (str[col] == '\t') {
+                charWidth = TAB_STOP - (rx % TAB_STOP);
+            }
+
+            if (rx + charWidth > usableColumns) {
+                if (col == startCol) {
+                    col++;
+                }
+                size_t len = col - startCol;
+                VisualRow vr = {
+                    .lineIndex = i,
+                    .startCol = startCol,
+                    .length = len,
+                    .isWrapped = isWrapped
+                };
+                Array_Append(&tab->visualRows, &vr, 1);
+                startCol = col;
+                rx = 0;
+                isWrapped = true;
+                continue;
+            }
+
+            rx += charWidth;
+            col++;
+        }
+
+        if (col >= startCol) {
+            VisualRow vr = {
+                .lineIndex = i,
+                .startCol = startCol,
+                .length = col - startCol,
+                .isWrapped = isWrapped
+            };
+            Array_Append(&tab->visualRows, &vr, 1);
+        }
+    }
+}
+
+void Editor_ScrollTab(Editor* editor, Tab* tab)
+{
     size_t gutterWidth = Tab_GetGutterWidth(tab);
     size_t usableColumns = (editor->screenColumns > gutterWidth) ? (editor->screenColumns - gutterWidth) : 0;
 
-    if (usableColumns > 0) {
-        if (tab->renderX >= tab->columnOffset + usableColumns)
-            tab->columnOffset = tab->renderX - usableColumns + 1;
-    } else {
-        tab->columnOffset = 0;
+    // 1. Update wrapping segments
+    Tab_UpdateVisualRows(editor, tab, usableColumns);
+
+    // 2. Find the visual row index of the cursor
+    size_t cursorVRowIdx = Tab_GetCursorVRowIdx(tab);
+
+    // 3. Adjust vertical scroll rowOffset
+    if (cursorVRowIdx < tab->rowOffset) {
+        tab->rowOffset = cursorVRowIdx;
     }
+    if (cursorVRowIdx >= tab->rowOffset + editor->screenRows) {
+        tab->rowOffset = cursorVRowIdx - editor->screenRows + 1;
+    }
+
+    // 4. Horizontal scroll is disabled when wrapping
+    tab->columnOffset = 0;
+
+    // 5. Visual column position on this visual row segment
+    tab->renderX = Tab_GetCursorVisualCol(tab, cursorVRowIdx);
 }
 
 void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
@@ -219,15 +372,15 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
     if (numTabs == 0)
         return;
     Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
-    size_t totalLines = Buffer_GetLineCount(tab->buffer);
     size_t gutterWidth = Tab_GetGutterWidth(tab);
     size_t digits = Tab_GetGutterDigits(tab);
     size_t usableColumns = (editor->screenColumns > gutterWidth) ? (editor->screenColumns - gutterWidth) : 0;
+    size_t totalVRows = Array_Size(&tab->visualRows);
 
     for (size_t i = 0; i < editor->screenRows; i++) {
-        size_t fileRow = i + tab->rowOffset;
-        if (fileRow >= totalLines) {
-            if (totalLines == 0 && i == editor->screenRows / 3) {
+        size_t vrowIdx = i + tab->rowOffset;
+        if (vrowIdx >= totalVRows) {
+            if (totalVRows <= 1 && i == editor->screenRows / 3) {
                 char welcome[50];
                 int welcomeLength = snprintf(welcome, sizeof(welcome), "Neo Text Editor");
 
@@ -266,44 +419,42 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                 }
             }
         } else {
-            Line* line = Buffer_GetLine(tab->buffer, fileRow);
+            VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, vrowIdx);
+            Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
             if (line) {
                 // Ensure gaps are moved to the end so we can read contiguous data
                 Slice textSlice = GapBuffer_ToSlice(&line->text);
                 Slice styleSlice = GapBuffer_ToSlice(&line->styles);
 
-                // GapBuffer_Size gives the actual logical size of the gap buffer
-                size_t logicalSize = GapBuffer_Size(&line->text);
-
                 // Draw styled gutter
                 if (usableColumns > 0) {
-                    char gutterBuf[32];
-                    int gutterLen = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, fileRow + 1);
                     Array_Append(screenBuffer, "\x1b[90m", 5);
-                    Array_Append(screenBuffer, gutterBuf, gutterLen);
+                    if (!vr->isWrapped) {
+                        char gutterBuf[32];
+                        int gutterLen = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, vr->lineIndex + 1);
+                        Array_Append(screenBuffer, gutterBuf, gutterLen);
+                    } else {
+                        for (size_t d = 0; d < digits + 3; d++) {
+                            Array_Append(screenBuffer, " ", 1);
+                        }
+                    }
                     Array_Append(screenBuffer, "\x1b[m", 3);
                 }
 
-                // Handle column offset (horizontal scrolling)
-                ssize_t length = logicalSize - tab->columnOffset;
-                if (length < 0)
-                    length = 0;
-                if (length > (ssize_t)usableColumns)
-                    length = usableColumns;
+                size_t length = vr->length;
 
                 if (length > 0) {
-                    char* textData = (char*)textSlice.data + tab->columnOffset;
-                    char* styles = (char*)styleSlice.data + tab->columnOffset;
+                    char* textData = (char*)textSlice.data + vr->startCol;
+                    char* styles = (char*)styleSlice.data + vr->startCol;
                     HighlightType currentColor = HIGHLIGHT_NORMAL;
 
-                    for (ssize_t j = 0; j < length; j++) {
-                        bool isSelected = IsSelected(tab, fileRow, tab->columnOffset + j);
+                    for (size_t j = 0; j < length; j++) {
+                        bool isSelected = IsSelected(tab, vr->lineIndex, vr->startCol + j);
                         if (isSelected)
                             Array_Append(screenBuffer, "\x1b[7m", 4);
 
                         if (textData[j] == '\t') {
-                            // Expand to next TAB_STOP boundary
-                            size_t renderX = Line_GetRenderX(line, tab->columnOffset + j);
+                            size_t renderX = Line_GetRenderX(line, vr->startCol + j);
                             int spaces = TAB_STOP - (renderX % TAB_STOP);
                             while (spaces-- > 0)
                                 Array_Append(screenBuffer, " ", 1);
@@ -319,7 +470,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                                 Array_Append(screenBuffer, colorBuffer, colorLength);
                             }
                         } else {
-                            HighlightType highlight = (j < (ssize_t)styleSlice.size - (ssize_t)tab->columnOffset)
+                            HighlightType highlight = (vr->startCol + j < styleSlice.size)
                                 ? styles[j]
                                 : HIGHLIGHT_NORMAL;
                             if (highlight != currentColor) {
@@ -343,13 +494,18 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                         Array_Append(screenBuffer, "\x1b[39m", 5);
                     }
 
-                    if (length < (ssize_t)usableColumns && IsSelected(tab, fileRow, logicalSize)) {
-                        Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                    size_t logicalSize = GapBuffer_Size(&line->text);
+                    if (vr->startCol + vr->length == logicalSize) {
+                        if (IsSelected(tab, vr->lineIndex, logicalSize)) {
+                            Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                        }
                     }
-                } else if (IsSelected(tab, fileRow, logicalSize)) {
-                    // For empty lines that are selected
-                    if (usableColumns > 0) {
-                        Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                } else {
+                    size_t logicalSize = GapBuffer_Size(&line->text);
+                    if (IsSelected(tab, vr->lineIndex, logicalSize)) {
+                        if (usableColumns > 0) {
+                            Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
+                        }
                     }
                 }
             }
@@ -498,10 +654,11 @@ void Editor_RefreshScreen(Editor* editor)
 
         // Position cursor
         size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
+        size_t cursorVRowIdx = Tab_GetCursorVRowIdx(activeTab);
         size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (activeTab->cursorY - activeTab->rowOffset) + cursorRowOffset,
-            (activeTab->renderX - activeTab->columnOffset) + 1 + gutterWidth);
+        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (cursorVRowIdx - activeTab->rowOffset) + cursorRowOffset,
+            activeTab->renderX + 1 + gutterWidth);
 
         Array_Append(&screenBuffer, buffer, strlen(buffer));
         Array_Append(&screenBuffer, "\x1b[?25h", 6);

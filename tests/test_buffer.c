@@ -98,3 +98,68 @@ static void test_tab_gutter(void)
 
     Tab_Free(&tab);
 }
+
+static void test_tab_wrapping(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+    
+    // Add text to the first line
+    Line* line = Buffer_GetLine(tab.buffer, 0);
+    // Insert "abcdef" (length 6)
+    Line_InsertText(line, 0, "abcdef", 6);
+    
+    // Usable columns: 3
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, 3);
+    
+    // Expecting 2 visual rows: "abc" and "def"
+    size_t size = Array_Size(&tab.visualRows);
+    assert(size == 2);
+    
+    VisualRow* vr0 = (VisualRow*)Array_At(&tab.visualRows, 0);
+    assert(vr0->lineIndex == 0);
+    assert(vr0->startCol == 0);
+    assert(vr0->length == 3);
+    assert(vr0->isWrapped == false);
+
+    VisualRow* vr1 = (VisualRow*)Array_At(&tab.visualRows, 1);
+    assert(vr1->lineIndex == 0);
+    assert(vr1->startCol == 3);
+    assert(vr1->length == 3);
+    assert(vr1->isWrapped == true);
+    
+    // Verify mapping from logical cursor to visual row
+    tab.cursorY = 0;
+    tab.cursorX = 0;
+    assert(Tab_GetCursorVRowIdx(&tab) == 0);
+    assert(Tab_GetCursorVisualCol(&tab, 0) == 0);
+
+    tab.cursorX = 2;
+    assert(Tab_GetCursorVRowIdx(&tab) == 0);
+    assert(Tab_GetCursorVisualCol(&tab, 0) == 2);
+
+    tab.cursorX = 3;
+    assert(Tab_GetCursorVRowIdx(&tab) == 1);
+    assert(Tab_GetCursorVisualCol(&tab, 1) == 0);
+
+    tab.cursorX = 5;
+    assert(Tab_GetCursorVRowIdx(&tab) == 1);
+    assert(Tab_GetCursorVisualCol(&tab, 1) == 2);
+
+    tab.cursorX = 6;
+    assert(Tab_GetCursorVRowIdx(&tab) == 1);
+    assert(Tab_GetCursorVisualCol(&tab, 1) == 3);
+
+    // Test cursor movements setting logical coordinates
+    // Setting visual row 0, col 2 -> cursorX = 2
+    Tab_SetCursorFromVRow(&tab, 0, 2);
+    assert(tab.cursorY == 0);
+    assert(tab.cursorX == 2);
+
+    // Setting visual row 1, col 1 -> cursorX = 4
+    Tab_SetCursorFromVRow(&tab, 1, 1);
+    assert(tab.cursorY == 0);
+    assert(tab.cursorX == 4);
+
+    Tab_Free(&tab);
+}

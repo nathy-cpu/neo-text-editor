@@ -30,14 +30,22 @@ void Editor_MoveCursor(Editor* editor, int key)
             }
         }
         break;
-    case ARROW_UP:
-        if (tab->cursorY != 0)
-            tab->cursorY--;
+    case ARROW_UP: {
+        size_t currentVRowIdx = Tab_GetCursorVRowIdx(tab);
+        if (currentVRowIdx > 0) {
+            size_t targetCol = Tab_GetCursorVisualCol(tab, currentVRowIdx);
+            Tab_SetCursorFromVRow(tab, currentVRowIdx - 1, targetCol);
+        }
         break;
-    case ARROW_DOWN:
-        if (tab->cursorY < Buffer_GetLineCount(tab->buffer) - 1)
-            tab->cursorY++;
+    }
+    case ARROW_DOWN: {
+        size_t currentVRowIdx = Tab_GetCursorVRowIdx(tab);
+        if (currentVRowIdx + 1 < Array_Size(&tab->visualRows)) {
+            size_t targetCol = Tab_GetCursorVisualCol(tab, currentVRowIdx);
+            Tab_SetCursorFromVRow(tab, currentVRowIdx + 1, targetCol);
+        }
         break;
+    }
     }
 
     row = Buffer_GetLine(tab->buffer, tab->cursorY);

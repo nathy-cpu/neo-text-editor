@@ -31,6 +31,9 @@ void Tab_Init(Tab* tab)
     // File state
     tab->filename = NULL;
     tab->isSaved = true;
+
+    // Visual wrapping state
+    Array_InitStruct(&tab->visualRows, VisualRow, 16);
 }
 
 // Free all resources
@@ -41,6 +44,7 @@ void Tab_Free(Tab* tab)
 
     Buffer_Free(tab->buffer);
     free(tab->filename); // Safe even if NULL
+    Array_Free(&tab->visualRows);
 }
 
 // Load file content into tab

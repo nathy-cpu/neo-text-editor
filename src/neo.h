@@ -592,6 +592,13 @@ typedef struct {
 } Editor;
 
 typedef struct {
+    size_t lineIndex; // 0-based logical line index
+    size_t startCol;  // byte index in logical line
+    size_t length;    // number of bytes in this segment
+    bool isWrapped;   // true if this is a wrapped segment
+} VisualRow;
+
+typedef struct {
     // Text buffer
     Buffer* buffer;
 
@@ -615,6 +622,9 @@ typedef struct {
     bool hasSelection;
     size_t selectStartX;
     size_t selectStartY;
+
+    // Visual wrapping state
+    Array visualRows; // Array of VisualRow
 } Tab;
 
 /**
@@ -796,6 +806,37 @@ size_t Tab_GetGutterDigits(const Tab* tab);
  * @return Visual column width.
  */
 size_t Tab_GetGutterWidth(const Tab* tab);
+
+/**
+ * @brief Retrieves the visual row index of the cursor.
+ * @param tab Pointer to the Tab.
+ * @return Visual row index.
+ */
+size_t Tab_GetCursorVRowIdx(const Tab* tab);
+
+/**
+ * @brief Retrieves the visual column offset of the cursor in a specific visual row.
+ * @param tab Pointer to the Tab.
+ * @param vrowIdx Visual row index.
+ * @return Visual column offset.
+ */
+size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx);
+
+/**
+ * @brief Sets the logical cursor position based on visual row and target visual column.
+ * @param tab Pointer to the Tab.
+ * @param targetVRowIdx Target visual row index.
+ * @param targetVisualCol Target visual column offset.
+ */
+void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCol);
+
+/**
+ * @brief Re-evaluates visual wrapping segments for the entire buffer based on width.
+ * @param editor Pointer to the Editor.
+ * @param tab Pointer to the Tab.
+ * @param usableColumns Maximum columns available for rendering text.
+ */
+void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns);
 
 /**
  * @brief Calculates scroll offsets to ensure the cursor remains visible.
