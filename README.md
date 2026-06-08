@@ -74,5 +74,4 @@ Currently, Neo is built using linux-specific headers. As such, it will only buil
 - Implement `Ctrl+C` and `Ctrl+V` clipboard integration
 - Implement find and replace (Ctrl+F, Ctrl+H) using regex
 - Implement proper syntax highlighting for popular programming and scripting languages
-- Add a persistent configuration file (`~/.config/neo/init.lua`).
 - Build a Lua plugin API to allow users to write custom commands.
