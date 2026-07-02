@@ -686,6 +686,8 @@ void Editor_RefreshScreen(Editor* editor)
 
     if (editor->isExplorerActive) {
         Editor_DrawExplorer(editor, &screenBuffer);
+    } else if (editor->isLogsActive) {
+        Editor_DrawLogs(editor, &screenBuffer);
     } else {
         // 1. Tabs bar
         if (numTabs > 1) {

@@ -593,6 +593,14 @@ typedef struct {
     int keyNextTab;
     int keyPrevTab;
     int keySaveAs;
+    int keyLogs;
+
+    // Logging Configuration
+    char* logFile;
+    char* logLevelStr;
+    bool logToFile;
+    bool logToUi;
+    int logMaxMessages;
 } Config;
 
 typedef struct {
@@ -614,6 +622,10 @@ typedef struct {
     Array explorerItems; // Array of dynamically allocated ExplorerItem pointers (ExplorerItem*)
     size_t explorerSelectedIndex;
     char currentExplorerPath[512];
+
+    // Logs State
+    bool isLogsActive;
+    size_t logsSelectedIndex;
 
     // Configuration
     Config config;
@@ -950,6 +962,13 @@ typedef struct {
     int overrideSyntaxEnabled; // -1: no override, 0: false, 1: true
     bool readOnlyMode;
 
+    // Logging Overrides
+    const char* overrideLogFile;
+    const char* overrideLogLevel;
+    int overrideLogToFile; // -1: no override, 0: false, 1: true
+    int overrideLogToUi;   // -1: no override, 0: false, 1: true
+    int overrideLogMaxMessages;
+
     char** files;
     int* fileLines;
     int* fileColumns;
@@ -984,3 +1003,82 @@ void PrintHelp(const char* progName);
  * @brief Prints program version information.
  */
 void PrintVersion(void);
+
+// ============================================================================
+// LOGGING SYSTEM
+// ============================================================================
+
+typedef enum {
+    LOG_LEVEL_DEBUG = 0,
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARN,
+    LOG_LEVEL_ERROR,
+    LOG_LEVEL_FATAL
+} LogLevel;
+
+/**
+ * @brief Initializes the logging system.
+ * @param logFile Path to the log file.
+ * @param level Logging level threshold.
+ * @param logToFile True to enable writing to the log file.
+ * @param logToUi True to enable keeping logs in memory for the UI.
+ * @param maxMessages Maximum number of messages to store in memory.
+ */
+void Logger_Init(const char* logFile, LogLevel level, bool logToFile, bool logToUi, int maxMessages);
+
+/**
+ * @brief Reconfigures the logging system.
+ * @param logFile Path to the log file.
+ * @param level Logging level threshold.
+ * @param logToFile True to enable writing to the log file.
+ * @param logToUi True to enable keeping logs in memory for the UI.
+ * @param maxMessages Maximum number of messages to store in memory.
+ */
+void Logger_Configure(const char* logFile, LogLevel level, bool logToFile, bool logToUi, int maxMessages);
+
+/**
+ * @brief Frees resources allocated by the logging system.
+ */
+void Logger_Free(void);
+
+/**
+ * @brief Logs a formatted message.
+ * @param level Severity level.
+ * @param file Source file name.
+ * @param line Source line number.
+ * @param format Format string.
+ */
+void Logger_Log(LogLevel level, const char* file, int line, const char* format, ...);
+
+/**
+ * @brief Returns the in-memory array of log messages (Array of char*).
+ * @return Pointer to the log messages Array.
+ */
+Array* Logger_GetMessages(void);
+
+/**
+ * @brief Parses a string log level to its LogLevel enum value.
+ * @param levelStr String representations.
+ * @param defaultLevel Default fallback value.
+ * @return The parsed LogLevel enum.
+ */
+LogLevel Logger_ParseLevel(const char* levelStr, LogLevel defaultLevel);
+
+/**
+ * @brief Converts a LogLevel enum to its string representation.
+ * @param level LogLevel enum value.
+ * @return String representation of the level.
+ */
+const char* Logger_LevelToString(LogLevel level);
+
+// Logging Macros
+#define LOG_DEBUG(...) Logger_Log(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_INFO(...) Logger_Log(LOG_LEVEL_INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_WARN(...) Logger_Log(LOG_LEVEL_WARN, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_ERROR(...) Logger_Log(LOG_LEVEL_ERROR, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_FATAL(...) Logger_Log(LOG_LEVEL_FATAL, __FILE__, __LINE__, __VA_ARGS__)
+
+// UI Logs overlay functions
+void Editor_ToggleLogs(Editor* editor);
+void Editor_DrawLogs(Editor* editor, Array* screenBuffer);
+void Editor_ProcessLogsInput(Editor* editor, int input);

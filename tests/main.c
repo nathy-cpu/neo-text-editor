@@ -8,6 +8,7 @@
 #include "test_buffer.c"
 #include "test_config.c"
 #include "test_args.c"
+#include "test_log.c"
 
 int main(void) {
     // Call terminal tests
@@ -66,5 +67,12 @@ int main(void) {
     test_null_safety();
     test_large_file();
     printf("All file I/O tests passed!\n\r");
+
+    printf("Running logger tests...\n\r");
+    test_log_basic();
+    test_log_file();
+    test_log_reconfigure();
+    printf("All logger tests passed!\n\r");
+
     return 0;
 }

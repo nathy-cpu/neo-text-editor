@@ -359,6 +359,11 @@ void Editor_ProcessKeypress(Editor* editor)
         return;
     }
 
+    if (editor->isLogsActive && input != RESIZE_EVENT) {
+        Editor_ProcessLogsInput(editor, input);
+        return;
+    }
+
     if (input == editor->config.keyQuit) {
         // Check if any tab is unsaved
         bool hasUnsaved = false;
@@ -394,6 +399,8 @@ void Editor_ProcessKeypress(Editor* editor)
     } else if (input == editor->config.keyExplorer) {
         editor->isExplorerActive = true;
         Editor_ReadDir(editor, ".");
+    } else if (input == editor->config.keyLogs) {
+        Editor_ToggleLogs(editor);
     } else if (input == editor->config.keyCloseTab) {
         if (!activeTab->isSaved && !isQuiting) {
             Editor_SetStatusMessage(editor, "File has unsaved changes! Press Close Tab key again to close anyway.");

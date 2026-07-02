@@ -1,7 +1,9 @@
+#define _POSIX_C_SOURCE 200809L
 #include "neo.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static Editor editor;
 
@@ -9,6 +11,7 @@ static void CleanupTerminal(void)
 {
     Editor_RestoreTerminal(&editor);
     Editor_Free(&editor);
+    Logger_Free();
 }
 
 void SignalHandler(int signalNumber)
@@ -25,6 +28,9 @@ int main(int argc, char* argv[])
     // Set up signal handlers
     signal(SIGINT, SignalHandler);
     signal(SIGTERM, SignalHandler);
+
+    // Initial default logger setup
+    Logger_Init("neo.log", LOG_LEVEL_INFO, false, true, 1000);
 
     struct sigaction sa;
     sa.sa_handler = SignalHandler;
@@ -72,6 +78,31 @@ int main(int argc, char* argv[])
         editor.config.syntaxEnabled = (options.overrideSyntaxEnabled == 1);
     }
 
+    if (options.overrideLogFile) {
+        free(editor.config.logFile);
+        editor.config.logFile = strdup(options.overrideLogFile);
+    }
+    if (options.overrideLogLevel) {
+        free(editor.config.logLevelStr);
+        editor.config.logLevelStr = strdup(options.overrideLogLevel);
+    }
+    if (options.overrideLogToFile != -1) {
+        editor.config.logToFile = (options.overrideLogToFile == 1);
+    }
+    if (options.overrideLogToUi != -1) {
+        editor.config.logToUi = (options.overrideLogToUi == 1);
+    }
+    if (options.overrideLogMaxMessages != -1) {
+        editor.config.logMaxMessages = options.overrideLogMaxMessages;
+    }
+
+    // Reconfigure logger with final options
+    LogLevel level = Logger_ParseLevel(editor.config.logLevelStr, LOG_LEVEL_INFO);
+    Logger_Configure(editor.config.logFile, level, editor.config.logToFile,
+                     editor.config.logToUi, editor.config.logMaxMessages);
+
+    LOG_INFO("Neo Text Editor starting up...");
+
     // Initialize terminal raw mode
     if (!Editor_InitTerminal(&editor)) {
         fprintf(stderr, "Failed to enable raw mode\n");
@@ -85,6 +116,7 @@ int main(int argc, char* argv[])
     if (options.fileCount > 0) {
         for (int i = 0; i < options.fileCount; i++) {
             Editor_AddTab(&editor, options.files[i]);
+            LOG_INFO("Opened file: %s", options.files[i]);
             Tab* tab = Array_Get(&editor.tabs, Tab*, i);
             if (options.readOnlyMode) {
                 tab->buffer->isReadOnly = true;

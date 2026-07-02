@@ -4,6 +4,13 @@ wrap_lines = false
 syntax_enabled = true
 status_timeout = 3
 
+-- Logging Configuration
+log_file = "neo.log"
+log_level = "INFO"
+log_to_file = false
+log_to_ui = true
+log_max_messages = 1000
+
 colors = {
     keyword = "35",
     type = "36",
@@ -18,7 +25,8 @@ keybindings = {
     close_tab = "ctrl-w",
     next_tab = "ctrl-n",
     prev_tab = "ctrl-p",
-    save_as = "alt-s"
+    save_as = "alt-s",
+    show_logs = "ctrl-l"
 }
 
 languages = {

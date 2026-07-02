@@ -18,6 +18,13 @@ void PrintHelp(const char* progName)
     printf("  -s, --no-syntax          Disable syntax highlighting (overrides config)\n");
     printf("  --syntax                 Enable syntax highlighting (overrides config)\n");
     printf("  -r, --read-only          Open files in read-only mode\n");
+    printf("  --log-file <path>        Set log file path (overrides config)\n");
+    printf("  --log-level <level>      Set log level (DEBUG, INFO, WARN, ERROR, FATAL)\n");
+    printf("  --log-to-file            Enable logging to file\n");
+    printf("  --no-log-to-file         Disable logging to file\n");
+    printf("  --log-to-ui              Enable log viewer overlay in UI\n");
+    printf("  --no-log-to-ui           Disable log viewer overlay in UI\n");
+    printf("  --log-max-messages <num> Set maximum log message buffer size\n");
     printf("  -h, --help               Display this help message and exit\n");
     printf("  -v, --version            Display version information and exit\n");
     printf("  +<line>[:<col>]          Jump to specific line and column (e.g. +45:10)\n");
@@ -36,6 +43,11 @@ bool CliOptions_Parse(CliOptions* options, int argc, char* argv[])
     options->overrideWrapLines = -1;
     options->overrideSyntaxEnabled = -1;
     options->readOnlyMode = false;
+    options->overrideLogFile = NULL;
+    options->overrideLogLevel = NULL;
+    options->overrideLogToFile = -1;
+    options->overrideLogToUi = -1;
+    options->overrideLogMaxMessages = -1;
     options->files = malloc(argc * sizeof(char*));
     options->fileLines = malloc(argc * sizeof(int));
     options->fileColumns = malloc(argc * sizeof(int));
@@ -97,6 +109,39 @@ bool CliOptions_Parse(CliOptions* options, int argc, char* argv[])
             options->overrideSyntaxEnabled = 1;
         } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--read-only") == 0) {
             options->readOnlyMode = true;
+        } else if (strcmp(argv[i], "--log-file") == 0) {
+            if (i + 1 < argc) {
+                options->overrideLogFile = argv[++i];
+            } else {
+                fprintf(stderr, "Error: --log-file requires a path argument\n");
+                return false;
+            }
+        } else if (strcmp(argv[i], "--log-level") == 0) {
+            if (i + 1 < argc) {
+                options->overrideLogLevel = argv[++i];
+            } else {
+                fprintf(stderr, "Error: --log-level requires a level argument (DEBUG, INFO, WARN, ERROR, FATAL)\n");
+                return false;
+            }
+        } else if (strcmp(argv[i], "--log-to-file") == 0) {
+            options->overrideLogToFile = 1;
+        } else if (strcmp(argv[i], "--no-log-to-file") == 0) {
+            options->overrideLogToFile = 0;
+        } else if (strcmp(argv[i], "--log-to-ui") == 0) {
+            options->overrideLogToUi = 1;
+        } else if (strcmp(argv[i], "--no-log-to-ui") == 0) {
+            options->overrideLogToUi = 0;
+        } else if (strcmp(argv[i], "--log-max-messages") == 0) {
+            if (i + 1 < argc) {
+                options->overrideLogMaxMessages = atoi(argv[++i]);
+                if (options->overrideLogMaxMessages <= 0) {
+                    fprintf(stderr, "Error: Invalid log max messages '%s'\n", argv[i]);
+                    return false;
+                }
+            } else {
+                fprintf(stderr, "Error: --log-max-messages requires an integer argument\n");
+                return false;
+            }
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             options->helpRequested = true;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {

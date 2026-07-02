@@ -29,6 +29,10 @@ static char** CloneStringArray(char** sourceStringArray)
     return destinationStringArray;
 }
 
+static char* defaultLogFileExtensions[] = { ".log", "*logs*", NULL };
+static char* defaultLogKeywords[] = { "ERROR", "FATAL", "CRITICAL", "WARN", "WARNING", NULL };
+static char* defaultLogTypes[] = { "INFO", "DEBUG", "TRACE", NULL };
+
 static char* defaultCFileExtensions[] = { ".c", ".h", NULL };
 static char* defaultCppFileExtensions[] = { ".cpp", ".hpp", ".cc", ".h", NULL };
 
@@ -79,6 +83,13 @@ void Config_InitDefaults(Config* config)
     config->keyNextTab = CTRL_KEY('n');
     config->keyPrevTab = CTRL_KEY('p');
     config->keySaveAs = ALT_S;
+    config->keyLogs = CTRL_KEY('l');
+
+    config->logFile = strdup("neo.log");
+    config->logLevelStr = strdup("INFO");
+    config->logToFile = false;
+    config->logToUi = true;
+    config->logMaxMessages = 1000;
 
     // Initialize syntax database
     Array_Init(&config->syntaxDatabase, sizeof(Syntax), 4, alignof(Syntax));
@@ -102,6 +113,16 @@ void Config_InitDefaults(Config* config)
         .multiLineCommentStart = strdup("/*"),
         .multiLineCommentEnd = strdup("*/") };
     Array_Append(&config->syntaxDatabase, &cppSyntax, 1);
+
+    // Default Log syntax rules
+    Syntax logSyntax = { .fileType = strdup("Log"),
+        .fileMatch = CloneStringArray(defaultLogFileExtensions),
+        .keywords = CloneStringArray(defaultLogKeywords),
+        .types = CloneStringArray(defaultLogTypes),
+        .singleLineCommentStart = NULL,
+        .multiLineCommentStart = NULL,
+        .multiLineCommentEnd = NULL };
+    Array_Append(&config->syntaxDatabase, &logSyntax, 1);
 }
 
 /**
@@ -147,6 +168,11 @@ void Config_Free(Config* config)
         Syntax_Free(syntax);
     }
     Array_Free(&config->syntaxDatabase);
+
+    free(config->logFile);
+    config->logFile = NULL;
+    free(config->logLevelStr);
+    config->logLevelStr = NULL;
 }
 
 /**
@@ -275,6 +301,26 @@ static bool GetLuaBool(lua_State* luaState, const char* variableName, bool defau
 }
 
 /**
+ * @brief Retrieves a global string variable from the Lua state.
+ * @param luaState Pointer to the Lua state.
+ * @param variableName Name of the global variable.
+ * @param defaultStringValue Default value to return if not found/invalid.
+ * @return Dynamically allocated copy of the string, or default/NULL.
+ */
+static char* GetLuaString(lua_State* luaState, const char* variableName, const char* defaultStringValue)
+{
+    lua_getglobal(luaState, variableName);
+    char* stringValue = NULL;
+    if (lua_isstring(luaState, -1)) {
+        stringValue = strdup(lua_tostring(luaState, -1));
+    } else if (defaultStringValue) {
+        stringValue = strdup(defaultStringValue);
+    }
+    lua_pop(luaState, 1);
+    return stringValue;
+}
+
+/**
  * @brief Retrieves a keybinding value from a Lua table.
  * @param luaState Pointer to the Lua state.
  * @param tableName Name of the global keybindings table.
@@ -376,6 +422,20 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->syntaxEnabled = GetLuaBool(luaState, "syntax_enabled", config->syntaxEnabled);
     config->statusTimeout = GetLuaInt(luaState, "status_timeout", config->statusTimeout);
 
+    char* newLogFile = GetLuaString(luaState, "log_file", config->logFile);
+    if (newLogFile) {
+        free(config->logFile);
+        config->logFile = newLogFile;
+    }
+    char* newLogLevel = GetLuaString(luaState, "log_level", config->logLevelStr);
+    if (newLogLevel) {
+        free(config->logLevelStr);
+        config->logLevelStr = newLogLevel;
+    }
+    config->logToFile = GetLuaBool(luaState, "log_to_file", config->logToFile);
+    config->logToUi = GetLuaBool(luaState, "log_to_ui", config->logToUi);
+    config->logMaxMessages = GetLuaInt(luaState, "log_max_messages", config->logMaxMessages);
+
     // Parse syntax colors
     char* newSyntaxColors[9];
     newSyntaxColors[HIGHLIGHT_NORMAL] = NULL;
@@ -412,6 +472,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->keyNextTab = GetLuaTableKeybinding(luaState, "keybindings", "next_tab", config->keyNextTab);
     config->keyPrevTab = GetLuaTableKeybinding(luaState, "keybindings", "prev_tab", config->keyPrevTab);
     config->keySaveAs = GetLuaTableKeybinding(luaState, "keybindings", "save_as", config->keySaveAs);
+    config->keyLogs = GetLuaTableKeybinding(luaState, "keybindings", "show_logs", config->keyLogs);
 
     // Parse languages
     lua_getglobal(luaState, "languages");
