@@ -13,14 +13,19 @@ volatile sig_atomic_t windowResized = 0;
 
 bool Terminal_EnableRawMode(Terminal* terminal)
 {
+    LOG_INFO("Enabling raw mode on terminal.");
     struct termios rawTermios;
 
     if (terminal->rawModeEnabled)
         return true;
-    if (!isatty(STDIN_FILENO))
+    if (!isatty(STDIN_FILENO)) {
+        LOG_ERROR("STDIN is not a TTY; raw mode cannot be enabled.");
         return false;
-    if (tcgetattr(STDIN_FILENO, &terminal->originalTermios) == -1)
+    }
+    if (tcgetattr(STDIN_FILENO, &terminal->originalTermios) == -1) {
+        LOG_ERROR("Failed to get terminal attributes (tcgetattr failed).");
         return false;
+    }
     terminal->termiosSaved = true;
 
     rawTermios = terminal->originalTermios;
@@ -31,8 +36,10 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     rawTermios.c_cc[VMIN] = 0;
     rawTermios.c_cc[VTIME] = 1;
 
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &rawTermios) < 0)
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &rawTermios) < 0) {
+        LOG_ERROR("Failed to set terminal attributes (tcsetattr failed).");
         return false;
+    }
     terminal->rawModeEnabled = true;
 
     // Set cursor to blinking vertical bar
@@ -44,6 +51,7 @@ bool Terminal_EnableRawMode(Terminal* terminal)
 bool Terminal_DisableRawMode(Terminal* terminal)
 {
     if (terminal->rawModeEnabled && terminal->termiosSaved) {
+        LOG_INFO("Disabling raw mode on terminal.");
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->originalTermios);
         terminal->rawModeEnabled = false;
     }

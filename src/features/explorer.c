@@ -56,12 +56,16 @@ static void FormatSize(off_t size, bool isDir, char* buf, size_t bufSize)
 
 void Editor_ReadDir(Editor* editor, const char* path)
 {
+    LOG_INFO("Explorer reading directory: %s", path);
     char* resolvedPath = realpath(path, NULL);
-    if (!resolvedPath)
+    if (!resolvedPath) {
+        LOG_ERROR("Explorer failed to resolve path: %s", path);
         return;
+    }
 
     DIR* dir = opendir(resolvedPath);
     if (!dir) {
+        LOG_ERROR("Explorer failed to open directory: %s", resolvedPath);
         free(resolvedPath);
         return;
     }
@@ -218,6 +222,7 @@ void Editor_ProcessExplorerInput(Editor* editor, int input)
             return;
         ExplorerItem* selectedItem = Array_Get(&editor->explorerItems, ExplorerItem*, editor->explorerSelectedIndex);
         char* selected = selectedItem->name;
+        LOG_DEBUG("Explorer selected item: %s", selected);
 
         char newPath[1024];
         if (strcmp(selected, "../") == 0) {

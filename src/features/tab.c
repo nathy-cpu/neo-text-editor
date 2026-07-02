@@ -79,6 +79,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
     Array fileContent = { 0 };
 
     if (!FileIoRead(path, &fileContent)) {
+        LOG_ERROR("Failed to load file into tab: %s", path);
         Array_Free(&fileContent);
         return; // Silent fail (caller can check filename)
     }
@@ -125,18 +126,25 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->cursorX = tab->cursorY = 0;
     tab->rowOffset = tab->columnOffset = 0;
 
+    LOG_INFO("Loaded tab content from file: %s (lines: %zu)", path, Buffer_GetLineCount(tab->buffer));
+
     Array_Free(&fileContent);
 }
 
 // Save tab content to file
 void Tab_SaveFile(Tab* tab)
 {
-    if (!tab || !tab->filename)
+    if (!tab || !tab->filename) {
+        LOG_ERROR("Cannot save tab: tab or filename is NULL");
         return;
+    }
 
     Slice content = Buffer_ToSlice(tab->buffer);
     if (FileIoWrite(tab->filename, content)) {
         tab->isSaved = true;
+        LOG_INFO("Saved tab content to file: %s", tab->filename);
+    } else {
+        LOG_ERROR("Failed to save tab content to file: %s", tab->filename);
     }
     free((void*)content.data);
 }

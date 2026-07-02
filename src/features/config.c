@@ -378,6 +378,7 @@ static char* GetLuaTableColor(lua_State* luaState, const char* tableName, const 
  */
 bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
 {
+    LOG_INFO("Loading editor configuration from: %s", configFilePath);
     char resolvedConfigPath[1024];
     struct stat fileStat;
 
@@ -392,6 +393,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
             snprintf(resolvedConfigPath, sizeof(resolvedConfigPath), "%s/.config/neo/config.lua", homeDir);
             if (stat(resolvedConfigPath, &fileStat) != 0) {
                 // Config file not found, use defaults
+                LOG_WARN("Config file not found in home directory: %s", resolvedConfigPath);
                 return false;
             }
         } else {
@@ -401,6 +403,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
 
     lua_State* luaState = luaL_newstate();
     if (!luaState) {
+        LOG_ERROR("Failed to create Lua state for configuration parsing.");
         Editor_SetStatusMessage(editor, "Error: Failed to create Lua state for configuration.");
         return false;
     }
@@ -408,6 +411,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
 
     if (luaL_dofile(luaState, resolvedConfigPath) != LUA_OK) {
         const char* errorMessage = lua_tostring(luaState, -1);
+        LOG_ERROR("Lua config file execution failed: %s", errorMessage);
         Editor_SetStatusMessage(editor, "Lua Config Error: %.100s", errorMessage);
         lua_close(luaState);
         return false;
@@ -524,5 +528,6 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     lua_pop(luaState, 1);
 
     lua_close(luaState);
+    LOG_INFO("Successfully loaded config file: %s", resolvedConfigPath);
     return true;
 }

@@ -353,6 +353,7 @@ void Editor_ProcessKeypress(Editor* editor)
     Tab* activeTab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     static bool isQuiting = false;
     int input = ReadKey();
+    LOG_DEBUG("Editor received keypress: %d (char: '%c')", input, (input >= 32 && input < 127) ? (char)input : ' ');
 
     if (editor->isExplorerActive && input != RESIZE_EVENT) {
         Editor_ProcessExplorerInput(editor, input);
@@ -365,6 +366,7 @@ void Editor_ProcessKeypress(Editor* editor)
     }
 
     if (input == editor->config.keyQuit) {
+        LOG_INFO("Quit key pressed. Exiting editor.");
         // Check if any tab is unsaved
         bool hasUnsaved = false;
         for (size_t i = 0; i < Array_Size(&editor->tabs); i++) {
@@ -385,6 +387,7 @@ void Editor_ProcessKeypress(Editor* editor)
     } else if (input == RESIZE_EVENT) {
         Editor_UpdateGeometry(editor);
     } else if (input == editor->config.keyNewTab) {
+        LOG_INFO("Creating new editor tab.");
         Editor_AddTab(editor, NULL);
     } else if (input == editor->config.keySaveAs) {
         char* filename = Editor_Prompt(editor, "Save as: %s");
@@ -397,11 +400,13 @@ void Editor_ProcessKeypress(Editor* editor)
             Editor_SetStatusMessage(editor, "Save aborted.");
         }
     } else if (input == editor->config.keyExplorer) {
+        LOG_INFO("Toggling explorer view.");
         editor->isExplorerActive = true;
         Editor_ReadDir(editor, ".");
     } else if (input == editor->config.keyLogs) {
         Editor_ToggleLogs(editor);
     } else if (input == editor->config.keyCloseTab) {
+        LOG_INFO("Closing current active tab.");
         if (!activeTab->isSaved && !isQuiting) {
             Editor_SetStatusMessage(editor, "File has unsaved changes! Press Close Tab key again to close anyway.");
             isQuiting = true;
@@ -411,6 +416,7 @@ void Editor_ProcessKeypress(Editor* editor)
     } else if (input == editor->config.keyNextTab) {
         if (Array_Size(&editor->tabs) > 0) {
             editor->activeTabIndex = (editor->activeTabIndex + 1) % Array_Size(&editor->tabs);
+            LOG_INFO("Switched to next tab (index: %zu)", editor->activeTabIndex);
         }
     } else if (input == editor->config.keyPrevTab) {
         if (Array_Size(&editor->tabs) > 0) {
@@ -419,6 +425,7 @@ void Editor_ProcessKeypress(Editor* editor)
             } else {
                 editor->activeTabIndex--;
             }
+            LOG_INFO("Switched to previous tab (index: %zu)", editor->activeTabIndex);
         }
     } else {
         Editor_ProcessInput(editor, input);
