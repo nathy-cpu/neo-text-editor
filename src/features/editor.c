@@ -411,7 +411,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
 
                 int padding = (usableColumns - welcomeLength) / 2;
                 if (padding > 0) {
-                    Array_Append(screenBuffer, "~", 1);
+                    Array_Append(screenBuffer, "\x1b[90m~\x1b[m", 9);
                     padding--;
                 }
                 while (padding) {
@@ -419,7 +419,9 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     padding--;
                 }
 
+                Array_Append(screenBuffer, "\x1b[90m", 5);
                 Array_Append(screenBuffer, welcome, welcomeLength);
+                Array_Append(screenBuffer, "\x1b[m", 3);
             } else {
                 if (usableColumns > 0) {
                     Array_Append(screenBuffer, "\x1b[90m", 5);
