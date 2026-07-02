@@ -53,7 +53,8 @@ void Editor_Free(Editor* editor)
     Array_Free(&editor->tabs);
 
     for (size_t i = 0; i < Array_Size(&editor->explorerItems); i++) {
-        char* item = Array_Get(&editor->explorerItems, char*, i);
+        ExplorerItem* item = Array_Get(&editor->explorerItems, ExplorerItem*, i);
+        free(item->name);
         free(item);
     }
     Array_Free(&editor->explorerItems);
