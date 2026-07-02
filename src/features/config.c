@@ -85,6 +85,7 @@ void Config_InitDefaults(Config* config)
     config->keySaveAs = ALT_S;
     config->keyLogs = CTRL_KEY('l');
     config->keyToggleFold = CTRL_KEY('f');
+    config->keyToggleAllFolds = ALT_F;
 
     config->logFile = strdup("neo.log");
     config->logLevelStr = strdup("INFO");
@@ -215,6 +216,8 @@ static int ParseKeybinding(const char* keybindingString, int defaultKeyValue)
         char characterCode = tolower(keybindingString[4]);
         if (characterCode == 's')
             return ALT_S;
+        if (characterCode == 'f')
+            return ALT_F;
     }
 
     return defaultKeyValue;
@@ -479,6 +482,8 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->keySaveAs = GetLuaTableKeybinding(luaState, "keybindings", "save_as", config->keySaveAs);
     config->keyLogs = GetLuaTableKeybinding(luaState, "keybindings", "show_logs", config->keyLogs);
     config->keyToggleFold = GetLuaTableKeybinding(luaState, "keybindings", "toggle_fold", config->keyToggleFold);
+    config->keyToggleAllFolds
+        = GetLuaTableKeybinding(luaState, "keybindings", "toggle_all_folds", config->keyToggleAllFolds);
 
     // Parse languages
     lua_getglobal(luaState, "languages");

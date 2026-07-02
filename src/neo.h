@@ -424,6 +424,7 @@ enum Key {
     PAGE_DOWN,
     RESIZE_EVENT,
     ALT_S,
+    ALT_F,
     CTRL_ARROW_LEFT,
     CTRL_ARROW_RIGHT,
     SHIFT_ARROW_UP,
@@ -595,6 +596,7 @@ typedef struct {
     int keySaveAs;
     int keyLogs;
     int keyToggleFold;
+    int keyToggleAllFolds;
 
     // Logging Configuration
     char* logFile;
@@ -956,6 +958,12 @@ void Editor_ProcessInput(Editor* editor, int input);
  * @param editor Pointer to the Editor.
  */
 void Editor_ToggleFold(Editor* editor);
+
+/**
+ * @brief Toggles folding state for all foldable blocks in the file.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_ToggleAllFolds(Editor* editor);
 
 /**
  * @brief Checks if a line is foldable based on indentation levels.

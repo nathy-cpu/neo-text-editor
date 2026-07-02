@@ -58,6 +58,7 @@ int main(void) {
     test_tab_gutter();
     test_tab_wrapping();
     test_tab_folding();
+    test_editor_toggle_all_folds();
     printf("All buffer tests passed!\n\r");
 
     // Call other tests here as needed

@@ -168,6 +168,8 @@ void Editor_ProcessInput(Editor* editor, int input)
         }
     } else if (input == editor->config.keyToggleFold) {
         Editor_ToggleFold(editor);
+    } else if (input == editor->config.keyToggleAllFolds) {
+        Editor_ToggleAllFolds(editor);
     } else {
         switch (input) {
         case '\r':
@@ -459,4 +461,33 @@ void Editor_ToggleFold(Editor* editor)
     } else {
         Editor_SetStatusMessage(editor, "Line is not foldable (no indented block below it)");
     }
+}
+
+void Editor_ToggleAllFolds(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    size_t totalLines = Buffer_GetLineCount(tab->buffer);
+
+    // Find if there is at least one unfolded foldable line
+    bool anyUnfolded = false;
+    for (size_t i = 0; i < totalLines; i++) {
+        Line* line = Buffer_GetLine(tab->buffer, i);
+        if (line && !line->isFolded && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
+            anyUnfolded = true;
+            break;
+        }
+    }
+
+    // If there is any unfolded foldable line, fold all. Otherwise, unfold all.
+    for (size_t i = 0; i < totalLines; i++) {
+        Line* line = Buffer_GetLine(tab->buffer, i);
+        if (line && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
+            line->isFolded = anyUnfolded;
+        }
+    }
+
+    LOG_INFO("Toggled all folds to %s", anyUnfolded ? "folded" : "unfolded");
+    Editor_ScrollTab(editor, tab);
 }

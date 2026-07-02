@@ -106,6 +106,9 @@ int ReadKey(void)
         if (sequence[0] == 's' || sequence[0] == 'S') {
             return ALT_S;
         }
+        if (sequence[0] == 'f' || sequence[0] == 'F') {
+            return ALT_F;
+        }
 
         if (read(STDIN_FILENO, &sequence[1], 1) != 1)
             return '\x1b';

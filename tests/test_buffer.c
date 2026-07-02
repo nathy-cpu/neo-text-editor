@@ -236,3 +236,56 @@ static void test_tab_folding(void)
     Tab_Free(&tab);
 }
 
+static void test_editor_toggle_all_folds(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Line* line0 = Buffer_GetLine(tab->buffer, 0);
+    Line_InsertText(line0, 0, "if (cond) {", 11);
+
+    Buffer_InsertLine(tab->buffer, 1);
+    Line* line1 = Buffer_GetLine(tab->buffer, 1);
+    Line_InsertText(line1, 0, "    foo();", 10);
+
+    Buffer_InsertLine(tab->buffer, 2);
+    Line* line2 = Buffer_GetLine(tab->buffer, 2);
+    Line_InsertText(line2, 0, "    bar();", 10);
+
+    Buffer_InsertLine(tab->buffer, 3);
+    Line* line3 = Buffer_GetLine(tab->buffer, 3);
+    Line_InsertText(line3, 0, "}", 1);
+
+    Buffer_InsertLine(tab->buffer, 4);
+    Line* line4 = Buffer_GetLine(tab->buffer, 4);
+    Line_InsertText(line4, 0, "else {", 6);
+
+    Buffer_InsertLine(tab->buffer, 5);
+    Line* line5 = Buffer_GetLine(tab->buffer, 5);
+    Line_InsertText(line5, 0, "    baz();", 10);
+
+    Buffer_InsertLine(tab->buffer, 6);
+    Line* line6 = Buffer_GetLine(tab->buffer, 6);
+    Line_InsertText(line6, 0, "}", 1);
+
+    assert(Line_IsFoldable(tab->buffer, 0, 4) == true);
+    assert(Line_IsFoldable(tab->buffer, 4, 4) == true);
+    assert(Line_IsFoldable(tab->buffer, 1, 4) == false);
+
+    assert(line0->isFolded == false);
+    assert(line4->isFolded == false);
+
+    Editor_ToggleAllFolds(&editor);
+    assert(line0->isFolded == true);
+    assert(line4->isFolded == true);
+
+    Editor_ToggleAllFolds(&editor);
+    assert(line0->isFolded == false);
+    assert(line4->isFolded == false);
+
+    Editor_Free(&editor);
+}
+
