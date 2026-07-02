@@ -594,6 +594,7 @@ typedef struct {
     int keyPrevTab;
     int keySaveAs;
     int keyLogs;
+    int keyToggleFold;
 
     // Logging Configuration
     char* logFile;
@@ -950,6 +951,60 @@ void Editor_DeleteSelection(Editor* editor);
  */
 void Editor_ProcessInput(Editor* editor, int input);
 
+/**
+ * @brief Toggles folding state for the current line.
+ * @param editor Pointer to the Editor.
+ */
+void Editor_ToggleFold(Editor* editor);
+
+/**
+ * @brief Checks if a line is foldable based on indentation levels.
+ * @param buffer Pointer to the Buffer.
+ * @param lineNumber Index of the line to check.
+ * @param tabSize Tab stop size configuration.
+ * @return True if foldable, false otherwise.
+ */
+bool Line_IsFoldable(const Buffer* buffer, size_t lineNumber, size_t tabSize);
+
+/**
+ * @brief Calculates indentation width of a line, expanding tab stops.
+ * @param line Pointer to the Line.
+ * @param tabSize Tab stop size configuration.
+ * @return The indentation size.
+ */
+size_t Line_GetIndentation(Line* line, size_t tabSize);
+
+/**
+ * @brief Checks if a line consists entirely of whitespace.
+ * @param line Pointer to the Line.
+ * @return True if blank, false otherwise.
+ */
+bool Line_IsBlank(Line* line);
+
+/**
+ * @brief Checks if a logical line index is currently visible on screen.
+ * @param tab Pointer to the Tab.
+ * @param lineIndex Index of the line.
+ * @return True if visible, false otherwise.
+ */
+bool Tab_IsLineVisible(const Tab* tab, size_t lineIndex);
+
+/**
+ * @brief Finds the next visible line index starting from the given line.
+ * @param tab Pointer to the Tab.
+ * @param lineIndex Index of the line.
+ * @return The next visible line index.
+ */
+size_t Tab_NextVisibleLine(const Tab* tab, size_t lineIndex);
+
+/**
+ * @brief Finds the previous visible line index starting from the given line.
+ * @param tab Pointer to the Tab.
+ * @param lineIndex Index of the line.
+ * @return The previous visible line index.
+ */
+size_t Tab_PrevVisibleLine(const Tab* tab, size_t lineIndex);
+
 // ============================================================================
 // CLI ARGUMENT HANDLING
 // ============================================================================
@@ -966,7 +1021,7 @@ typedef struct {
     const char* overrideLogFile;
     const char* overrideLogLevel;
     int overrideLogToFile; // -1: no override, 0: false, 1: true
-    int overrideLogToUi;   // -1: no override, 0: false, 1: true
+    int overrideLogToUi; // -1: no override, 0: false, 1: true
     int overrideLogMaxMessages;
 
     char** files;
@@ -1008,13 +1063,7 @@ void PrintVersion(void);
 // LOGGING SYSTEM
 // ============================================================================
 
-typedef enum {
-    LOG_LEVEL_DEBUG = 0,
-    LOG_LEVEL_INFO,
-    LOG_LEVEL_WARN,
-    LOG_LEVEL_ERROR,
-    LOG_LEVEL_FATAL
-} LogLevel;
+typedef enum { LOG_LEVEL_DEBUG = 0, LOG_LEVEL_INFO, LOG_LEVEL_WARN, LOG_LEVEL_ERROR, LOG_LEVEL_FATAL } LogLevel;
 
 /**
  * @brief Initializes the logging system.

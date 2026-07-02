@@ -98,8 +98,8 @@ int main(int argc, char* argv[])
 
     // Reconfigure logger with final options
     LogLevel level = Logger_ParseLevel(editor.config.logLevelStr, LOG_LEVEL_INFO);
-    Logger_Configure(editor.config.logFile, level, editor.config.logToFile,
-                     editor.config.logToUi, editor.config.logMaxMessages);
+    Logger_Configure(
+        editor.config.logFile, level, editor.config.logToFile, editor.config.logToUi, editor.config.logMaxMessages);
 
     LOG_INFO("Neo Text Editor starting up...");
 

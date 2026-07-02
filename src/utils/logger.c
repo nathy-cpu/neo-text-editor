@@ -190,7 +190,8 @@ void Logger_Log(LogLevel level, const char* file, int line, const char* format, 
     }
 
     char lineBuf[2048];
-    snprintf(lineBuf, sizeof(lineBuf), "%s [%s] [%s:%d] %s", timeBuf, Logger_LevelToString(level), relativeFile, line, msgBuf);
+    snprintf(lineBuf, sizeof(lineBuf), "%s [%s] [%s:%d] %s", timeBuf, Logger_LevelToString(level), relativeFile, line,
+        msgBuf);
 
     // 1. File output
     if (g_logToFile && g_logFile) {
@@ -218,7 +219,4 @@ void Logger_Log(LogLevel level, const char* file, int line, const char* format, 
     s_inLog = false;
 }
 
-Array* Logger_GetMessages(void)
-{
-    return g_logToUi ? &g_logMessages : NULL;
-}
+Array* Logger_GetMessages(void) { return g_logToUi ? &g_logMessages : NULL; }

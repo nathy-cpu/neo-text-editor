@@ -64,7 +64,7 @@ static void test_tab_gutter(void)
     
     // Initial buffer has 1 line
     assert(Tab_GetGutterDigits(&tab) == 3);
-    assert(Tab_GetGutterWidth(&tab) == 6);
+    assert(Tab_GetGutterWidth(&tab) == 7);
     
     // Add lines up to 9
     for (size_t i = 1; i < 9; i++) {
@@ -72,13 +72,13 @@ static void test_tab_gutter(void)
     }
     assert(Buffer_GetLineCount(tab.buffer) == 9);
     assert(Tab_GetGutterDigits(&tab) == 3);
-    assert(Tab_GetGutterWidth(&tab) == 6);
+    assert(Tab_GetGutterWidth(&tab) == 7);
 
     // Add 1 more line (10 lines total)
     Buffer_InsertLine(tab.buffer, 9);
     assert(Buffer_GetLineCount(tab.buffer) == 10);
     assert(Tab_GetGutterDigits(&tab) == 3);
-    assert(Tab_GetGutterWidth(&tab) == 6);
+    assert(Tab_GetGutterWidth(&tab) == 7);
 
     // Add lines up to 100
     for (size_t i = 10; i < 100; i++) {
@@ -86,7 +86,7 @@ static void test_tab_gutter(void)
     }
     assert(Buffer_GetLineCount(tab.buffer) == 100);
     assert(Tab_GetGutterDigits(&tab) == 3);
-    assert(Tab_GetGutterWidth(&tab) == 6);
+    assert(Tab_GetGutterWidth(&tab) == 7);
 
     // Add lines up to 1000
     for (size_t i = 100; i < 1000; i++) {
@@ -94,7 +94,7 @@ static void test_tab_gutter(void)
     }
     assert(Buffer_GetLineCount(tab.buffer) == 1000);
     assert(Tab_GetGutterDigits(&tab) == 4); // 1000 is 4 digits
-    assert(Tab_GetGutterWidth(&tab) == 7);
+    assert(Tab_GetGutterWidth(&tab) == 8);
 
     Tab_Free(&tab);
 }
@@ -163,3 +163,76 @@ static void test_tab_wrapping(void)
 
     Tab_Free(&tab);
 }
+
+static void test_tab_folding(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+
+    Line* line0 = Buffer_GetLine(tab.buffer, 0);
+    Line_InsertText(line0, 0, "if (cond) {", 11);
+
+    Buffer_InsertLine(tab.buffer, 1);
+    Line* line1 = Buffer_GetLine(tab.buffer, 1);
+    Line_InsertText(line1, 0, "    foo();", 10);
+
+    Buffer_InsertLine(tab.buffer, 2);
+    Line* line2 = Buffer_GetLine(tab.buffer, 2);
+    Line_InsertText(line2, 0, "    bar();", 10);
+
+    Buffer_InsertLine(tab.buffer, 3);
+    Line* line3 = Buffer_GetLine(tab.buffer, 3);
+    Line_InsertText(line3, 0, "}", 1);
+
+    Buffer_InsertLine(tab.buffer, 4);
+    Line* line4 = Buffer_GetLine(tab.buffer, 4);
+    Line_InsertText(line4, 0, "", 0);
+
+    Buffer_InsertLine(tab.buffer, 5);
+    Line* line5 = Buffer_GetLine(tab.buffer, 5);
+    Line_InsertText(line5, 0, "else {", 6);
+
+    Buffer_InsertLine(tab.buffer, 6);
+    Line* line6 = Buffer_GetLine(tab.buffer, 6);
+    Line_InsertText(line6, 0, "    baz();", 10);
+
+    Buffer_InsertLine(tab.buffer, 7);
+    Line* line7 = Buffer_GetLine(tab.buffer, 7);
+    Line_InsertText(line7, 0, "}", 1);
+
+    assert(Line_GetIndentation(line0, 4) == 0);
+    assert(Line_GetIndentation(line1, 4) == 4);
+    assert(Line_IsBlank(line4) == true);
+    assert(Line_IsBlank(line0) == false);
+
+    assert(Line_IsFoldable(tab.buffer, 0, 4) == true);
+    assert(Line_IsFoldable(tab.buffer, 1, 4) == false);
+    assert(Line_IsFoldable(tab.buffer, 3, 4) == false);
+
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, 80);
+    assert(Array_Size(&tab.visualRows) == 8);
+
+    for (size_t i = 0; i < 8; i++) {
+        assert(Tab_IsLineVisible(&tab, i) == true);
+    }
+
+    line0->isFolded = true;
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, 80);
+
+    assert(Array_Size(&tab.visualRows) == 6);
+
+    assert(Tab_IsLineVisible(&tab, 0) == true);
+    assert(Tab_IsLineVisible(&tab, 1) == false);
+    assert(Tab_IsLineVisible(&tab, 2) == false);
+    assert(Tab_IsLineVisible(&tab, 3) == true);
+    assert(Tab_IsLineVisible(&tab, 4) == true);
+    assert(Tab_IsLineVisible(&tab, 5) == true);
+    assert(Tab_IsLineVisible(&tab, 6) == true);
+    assert(Tab_IsLineVisible(&tab, 7) == true);
+
+    assert(Tab_NextVisibleLine(&tab, 0) == 3);
+    assert(Tab_PrevVisibleLine(&tab, 3) == 0);
+
+    Tab_Free(&tab);
+}
+

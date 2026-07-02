@@ -42,7 +42,8 @@ bool FileIoRead(const char* path, Array* out)
     close(fileDescriptor);
 
     if (readBytes != fileStat.st_size) {
-        LOG_ERROR("Failed to read complete file: %s (read %zd of %lld bytes)", path, readBytes, (long long)fileStat.st_size);
+        LOG_ERROR(
+            "Failed to read complete file: %s (read %zd of %lld bytes)", path, readBytes, (long long)fileStat.st_size);
         Array_Free(out);
         return false;
     }

@@ -194,7 +194,7 @@ size_t Tab_GetGutterWidth(const Tab* tab)
 {
     if (!tab->config || !tab->config->showLineNumbers)
         return 0;
-    return Tab_GetGutterDigits(tab) + 3;
+    return Tab_GetGutterDigits(tab) + 4;
 }
 
 size_t Tab_GetCursorVRowIdx(const Tab* tab)
@@ -284,10 +284,25 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         return;
     }
 
+    size_t hiddenUntilIndent = SIZE_MAX;
+
     for (size_t i = 0; i < totalLines; i++) {
         Line* line = Buffer_GetLine(tab->buffer, i);
         if (!line)
             continue;
+
+        bool isBlank = Line_IsBlank(line);
+        size_t indent = isBlank ? 0 : Line_GetIndentation(line, tab->config->tabSize);
+
+        if (hiddenUntilIndent != SIZE_MAX) {
+            if (isBlank || indent > hiddenUntilIndent) {
+                // Skip lines in folded block
+                continue;
+            } else {
+                // Folded block ended
+                hiddenUntilIndent = SIZE_MAX;
+            }
+        }
 
         Slice text = GapBuffer_ToSlice(&line->text);
         size_t size = text.size;
@@ -297,46 +312,48 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
             // Unwrapped mode: one visual row per line
             VisualRow vr = { .lineIndex = i, .startCol = 0, .length = size, .isWrapped = false };
             Array_Append(&tab->visualRows, &vr, 1);
-            continue;
-        }
-
-        if (size == 0 || usableColumns == 0) {
+        } else if (size == 0 || usableColumns == 0) {
             VisualRow vr = { .lineIndex = i, .startCol = 0, .length = 0, .isWrapped = false };
             Array_Append(&tab->visualRows, &vr, 1);
-            continue;
-        }
+        } else {
+            size_t startCol = 0;
+            size_t col = 0;
+            size_t rx = 0;
+            bool isWrapped = false;
 
-        size_t startCol = 0;
-        size_t col = 0;
-        size_t rx = 0;
-        bool isWrapped = false;
-
-        while (col < size) {
-            size_t charWidth = 1;
-            if (str[col] == '\t') {
-                charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
-            }
-
-            if (rx + charWidth > usableColumns) {
-                if (col == startCol) {
-                    col++;
+            while (col < size) {
+                size_t charWidth = 1;
+                if (str[col] == '\t') {
+                    charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
                 }
-                size_t len = col - startCol;
-                VisualRow vr = { .lineIndex = i, .startCol = startCol, .length = len, .isWrapped = isWrapped };
-                Array_Append(&tab->visualRows, &vr, 1);
-                startCol = col;
-                rx = 0;
-                isWrapped = true;
-                continue;
+
+                if (rx + charWidth > usableColumns) {
+                    if (col == startCol) {
+                        col++;
+                    }
+                    size_t len = col - startCol;
+                    VisualRow vr = { .lineIndex = i, .startCol = startCol, .length = len, .isWrapped = isWrapped };
+                    Array_Append(&tab->visualRows, &vr, 1);
+                    startCol = col;
+                    rx = 0;
+                    isWrapped = true;
+                    continue;
+                }
+
+                rx += charWidth;
+                col++;
             }
 
-            rx += charWidth;
-            col++;
+            if (col >= startCol) {
+                VisualRow vr
+                    = { .lineIndex = i, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
+                Array_Append(&tab->visualRows, &vr, 1);
+            }
         }
 
-        if (col >= startCol) {
-            VisualRow vr = { .lineIndex = i, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
-            Array_Append(&tab->visualRows, &vr, 1);
+        // Check if we should start hiding next lines
+        if (line->isFolded && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
+            hiddenUntilIndent = indent;
         }
     }
 }
@@ -349,8 +366,25 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     // 1. Update wrapping segments
     Tab_UpdateVisualRows(editor, tab, usableColumns);
 
+    // Snap cursor if it became hidden
+    if (Array_Size(&tab->visualRows) > 0) {
+        bool cursorVisible = false;
+        for (size_t i = 0; i < Array_Size(&tab->visualRows); i++) {
+            VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
+            if (vr->lineIndex == tab->cursorY) {
+                cursorVisible = true;
+                break;
+            }
+        }
+        if (!cursorVisible) {
+            tab->cursorY = Tab_PrevVisibleLine(tab, tab->cursorY);
+            Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
+            tab->cursorX = (row != NULL) ? GapBuffer_Size(&row->text) : 0;
+        }
+    }
+
     // 2. Find the visual row index of the cursor
-    size_t cursorVRowIdx = tab->config->wrapLines ? Tab_GetCursorVRowIdx(tab) : tab->cursorY;
+    size_t cursorVRowIdx = Tab_GetCursorVRowIdx(tab);
 
     // 3. Adjust vertical scroll rowOffset
     if (cursorVRowIdx < tab->rowOffset) {
@@ -446,12 +480,17 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     Array_Append(screenBuffer, "\x1b[90m", 5);
                     if (tab->config->showLineNumbers) {
                         if (!vr->isWrapped) {
+                            bool foldable = Line_IsFoldable(tab->buffer, vr->lineIndex, tab->config->tabSize);
+                            char foldChar = ' ';
+                            if (foldable) {
+                                foldChar = line->isFolded ? '>' : 'v';
+                            }
                             char gutterBuf[32];
-                            int gutterLen
-                                = snprintf(gutterBuf, sizeof(gutterBuf), " %*zu  ", (int)digits, vr->lineIndex + 1);
+                            int gutterLen = snprintf(
+                                gutterBuf, sizeof(gutterBuf), " %*zu %c ", (int)digits, vr->lineIndex + 1, foldChar);
                             Array_Append(screenBuffer, gutterBuf, gutterLen);
                         } else {
-                            for (size_t d = 0; d < digits + 3; d++) {
+                            for (size_t d = 0; d < digits + 4; d++) {
                                 Array_Append(screenBuffer, " ", 1);
                             }
                         }
@@ -537,6 +576,9 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     }
                     if (currentColor != HIGHLIGHT_NORMAL) {
                         Array_Append(screenBuffer, "\x1b[39m", 5);
+                    }
+                    if (line->isFolded) {
+                        Array_Append(screenBuffer, "\x1b[90m [...]\x1b[m", 15);
                     }
 
                     size_t logicalSize = GapBuffer_Size(&line->text);
@@ -708,7 +750,7 @@ void Editor_RefreshScreen(Editor* editor)
 
         // Position cursor
         size_t cursorRowOffset = (numTabs > 1) ? 3 : 2; // Row 1 or 2 is status bar, Tabs bar is Row 1 if >1 tabs
-        size_t cursorVRowIdx = activeTab->config->wrapLines ? Tab_GetCursorVRowIdx(activeTab) : activeTab->cursorY;
+        size_t cursorVRowIdx = Tab_GetCursorVRowIdx(activeTab);
         size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
         size_t visualCursorX
@@ -722,4 +764,89 @@ void Editor_RefreshScreen(Editor* editor)
 
     write(STDOUT_FILENO, screenBuffer.data, screenBuffer.size);
     Array_Free(&screenBuffer);
+}
+
+size_t Line_GetIndentation(Line* line, size_t tabSize)
+{
+    assert(line != NULL);
+    Slice text = GapBuffer_ToSlice(&line->text);
+    size_t indent = 0;
+    for (size_t i = 0; i < text.size; i++) {
+        char c = ((const char*)text.data)[i];
+        if (c == ' ') {
+            indent++;
+        } else if (c == '\t') {
+            indent += tabSize - (indent % tabSize);
+        } else {
+            break;
+        }
+    }
+    return indent;
+}
+
+bool Line_IsBlank(Line* line)
+{
+    assert(line != NULL);
+    Slice text = GapBuffer_ToSlice(&line->text);
+    for (size_t i = 0; i < text.size; i++) {
+        char c = ((const char*)text.data)[i];
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Line_IsFoldable(const Buffer* buffer, size_t lineNumber, size_t tabSize)
+{
+    Line* line = Buffer_GetLine(buffer, lineNumber);
+    if (!line || Line_IsBlank(line))
+        return false;
+
+    size_t currentIndent = Line_GetIndentation(line, tabSize);
+    size_t totalLines = Buffer_GetLineCount(buffer);
+
+    for (size_t i = lineNumber + 1; i < totalLines; i++) {
+        Line* nextLine = Buffer_GetLine(buffer, i);
+        if (nextLine && !Line_IsBlank(nextLine)) {
+            size_t nextIndent = Line_GetIndentation(nextLine, tabSize);
+            return nextIndent > currentIndent;
+        }
+    }
+    return false;
+}
+
+bool Tab_IsLineVisible(const Tab* tab, size_t lineIndex)
+{
+    size_t totalVRows = Array_Size(&tab->visualRows);
+    for (size_t i = 0; i < totalVRows; i++) {
+        VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
+        if (vr->lineIndex == lineIndex) {
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t Tab_NextVisibleLine(const Tab* tab, size_t lineIndex)
+{
+    size_t totalLines = Buffer_GetLineCount(tab->buffer);
+    for (size_t i = lineIndex + 1; i < totalLines; i++) {
+        if (Tab_IsLineVisible(tab, i)) {
+            return i;
+        }
+    }
+    return lineIndex;
+}
+
+size_t Tab_PrevVisibleLine(const Tab* tab, size_t lineIndex)
+{
+    if (lineIndex == 0)
+        return 0;
+    for (size_t i = lineIndex; i > 0; i--) {
+        if (Tab_IsLineVisible(tab, i - 1)) {
+            return i - 1;
+        }
+    }
+    return lineIndex;
 }

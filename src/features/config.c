@@ -84,6 +84,7 @@ void Config_InitDefaults(Config* config)
     config->keyPrevTab = CTRL_KEY('p');
     config->keySaveAs = ALT_S;
     config->keyLogs = CTRL_KEY('l');
+    config->keyToggleFold = CTRL_KEY('f');
 
     config->logFile = strdup("neo.log");
     config->logLevelStr = strdup("INFO");
@@ -477,6 +478,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->keyPrevTab = GetLuaTableKeybinding(luaState, "keybindings", "prev_tab", config->keyPrevTab);
     config->keySaveAs = GetLuaTableKeybinding(luaState, "keybindings", "save_as", config->keySaveAs);
     config->keyLogs = GetLuaTableKeybinding(luaState, "keybindings", "show_logs", config->keyLogs);
+    config->keyToggleFold = GetLuaTableKeybinding(luaState, "keybindings", "toggle_fold", config->keyToggleFold);
 
     // Parse languages
     lua_getglobal(luaState, "languages");

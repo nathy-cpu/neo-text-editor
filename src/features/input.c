@@ -14,18 +14,22 @@ void Editor_MoveCursor(Editor* editor, int key)
     case ARROW_LEFT:
         if (tab->cursorX != 0)
             tab->cursorX--;
-        else if (tab->cursorY > 0) {
-            tab->cursorY--;
-            Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY);
-            tab->cursorX = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+        else {
+            size_t prevVisible = Tab_PrevVisibleLine(tab, tab->cursorY);
+            if (prevVisible < tab->cursorY) {
+                tab->cursorY = prevVisible;
+                Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY);
+                tab->cursorX = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+            }
         }
         break;
     case ARROW_RIGHT:
         if (row != NULL && tab->cursorX < GapBuffer_Size(&row->text))
             tab->cursorX++;
         else if (row != NULL && tab->cursorX == GapBuffer_Size(&row->text)) {
-            if (tab->cursorY < Buffer_GetLineCount(tab->buffer) - 1) {
-                tab->cursorY++;
+            size_t nextVisible = Tab_NextVisibleLine(tab, tab->cursorY);
+            if (nextVisible > tab->cursorY) {
+                tab->cursorY = nextVisible;
                 tab->cursorX = 0;
             }
         }
@@ -162,6 +166,8 @@ void Editor_ProcessInput(Editor* editor, int input)
             Tab_SaveFile(tab);
             Editor_SetStatusMessage(editor, "File saved.");
         }
+    } else if (input == editor->config.keyToggleFold) {
+        Editor_ToggleFold(editor);
     } else {
         switch (input) {
         case '\r':
@@ -433,5 +439,24 @@ void Editor_ProcessKeypress(Editor* editor)
 
     if (input != editor->config.keyQuit && input != editor->config.keyCloseTab) {
         isQuiting = false;
+    }
+}
+
+void Editor_ToggleFold(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    size_t lineIndex = tab->cursorY;
+    Line* line = Buffer_GetLine(tab->buffer, lineIndex);
+    if (!line)
+        return;
+
+    if (Line_IsFoldable(tab->buffer, lineIndex, tab->config->tabSize)) {
+        line->isFolded = !line->isFolded;
+        LOG_INFO("Toggled fold on line %zu to %d", lineIndex + 1, line->isFolded);
+        Editor_ScrollTab(editor, tab);
+    } else {
+        Editor_SetStatusMessage(editor, "Line is not foldable (no indented block below it)");
     }
 }

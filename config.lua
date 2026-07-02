@@ -26,7 +26,8 @@ keybindings = {
     next_tab = "ctrl-n",
     prev_tab = "ctrl-p",
     save_as = "alt-s",
-    show_logs = "ctrl-l"
+    show_logs = "ctrl-l",
+    toggle_fold = "ctrl-f"
 }
 
 languages = {

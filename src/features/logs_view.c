@@ -30,7 +30,8 @@ static void DrawHighlightedLogLine(Array* screenBuffer, const char* line, size_t
     size_t len = strlen(line);
 
     // Check for timestamp (first 19 characters, format "YYYY-MM-DD HH:MM:SS")
-    bool hasTimestamp = (len >= 19 && line[4] == '-' && line[7] == '-' && line[10] == ' ' && line[13] == ':' && line[16] == ':');
+    bool hasTimestamp
+        = (len >= 19 && line[4] == '-' && line[7] == '-' && line[10] == ' ' && line[13] == ':' && line[16] == ':');
 
     size_t currentIdx = 0;
     if (hasTimestamp) {
@@ -138,7 +139,8 @@ void Editor_DrawLogs(Editor* editor, Array* screenBuffer)
     // Draw header
     Array_Append(screenBuffer, "\x1b[7m", 4);
     char header[256];
-    int headerLen = snprintf(header, sizeof(header), " LOG VIEWER: (Press ESC or Ctrl-L to exit, Up/Down/PgUp/PgDn to scroll) ");
+    int headerLen
+        = snprintf(header, sizeof(header), " LOG VIEWER: (Press ESC or Ctrl-L to exit, Up/Down/PgUp/PgDn to scroll) ");
     if (headerLen > (int)cols)
         headerLen = cols;
     Array_Append(screenBuffer, header, headerLen);
