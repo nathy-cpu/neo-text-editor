@@ -32,11 +32,11 @@ $(shell mkdir -p $(BIN_DIR))
 
 # Main build rule
 $(TARGET):
-	$(CC) $(CFLAGS) $(LDFLAGS) $(SRCS) -o $@
+	$(CC) $(CFLAGS) $(SRCS) $(LDFLAGS) -o $@
 
 # Test rule
 $(TEST_TARGET):
-	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_SRCS) $(filter-out src/main.c,$(SRCS)) -o $@
+	$(CC) $(CFLAGS) $(TEST_SRCS) $(filter-out src/main.c,$(SRCS)) $(LDFLAGS) -o $@
 
 # Phony targets
 all: $(TARGET)
