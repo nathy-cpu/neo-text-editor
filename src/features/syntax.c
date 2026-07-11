@@ -37,18 +37,19 @@ static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+
 
 static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineComment)
 {
-    GapBuffer_Clear(&line->styles);
+    Array_Clear(&line->styles);
 
-    Slice textSlice = GapBuffer_ToSlice(&line->text);
-    size_t length = GapBuffer_Size(&line->text);
+    Slice textSlice = Line_GetText(line);
+    size_t length = Line_Length(line);
     char* text = (char*)textSlice.data;
 
     // Default to HIGHLIGHT_NORMAL
     for (size_t i = 0; i < length; i++) {
-        GapBuffer_InsertChar(&line->styles, i, HIGHLIGHT_NORMAL);
+        char val = HIGHLIGHT_NORMAL;
+        Array_Append(&line->styles, &val, 1);
     }
 
-    Slice stylesSlice = GapBuffer_ToSlice(&line->styles);
+    Slice stylesSlice = Array_ToSlice(&line->styles);
     char* styles = (char*)stylesSlice.data;
 
     if (syntax == NULL)
@@ -182,15 +183,19 @@ void Tab_UpdateSyntax(Tab* tab)
         for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
             Line* line = Buffer_GetLine(tab->buffer, i);
             if (line) {
-                GapBuffer_Clear(&line->styles);
-                size_t length = GapBuffer_Size(&line->text);
+                Array_Clear(&line->styles);
+                size_t length = Line_Length(line);
                 for (size_t j = 0; j < length; j++) {
-                    GapBuffer_InsertChar(&line->styles, j, HIGHLIGHT_NORMAL);
+                    char val = HIGHLIGHT_NORMAL;
+                    Array_Append(&line->styles, &val, 1);
                 }
             }
         }
         return;
     }
+
+    LOG_DEBUG("Tab_UpdateSyntax: updating syntax highlighting for tab '%s' using '%s'", tab->filename ? tab->filename : "<scratch>", tab->syntax->fileType);
+
     bool inMultiLineComment = false;
     for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
         Line* line = Buffer_GetLine(tab->buffer, i);
@@ -215,9 +220,11 @@ void Tab_SetSyntaxHighlight(Tab* tab)
             if ((isExt && ext && !strcmp(ext, syn->fileMatch[i]))
                 || (!isExt && strstr(tab->filename, syn->fileMatch[i]))) {
                 tab->syntax = syn;
+                LOG_INFO("Tab_SetSyntaxHighlight: detected '%s' syntax for file '%s'", syn->fileType, tab->filename);
                 Tab_UpdateSyntax(tab);
                 return;
             }
         }
     }
+    LOG_INFO("Tab_SetSyntaxHighlight: no matching syntax rules found for file '%s'", tab->filename);
 }

@@ -194,6 +194,7 @@ bool CliOptions_Parse(CliOptions* options, int argc, char* argv[])
         }
     }
 
+    LOG_INFO("CliOptions_Parse: parsed %d arguments. fileCount=%d, readOnly=%d, config=%s", argc, options->fileCount, options->readOnlyMode, options->configPath ? options->configPath : "<default>");
     return true;
 }
 

@@ -289,3 +289,44 @@ static void test_editor_toggle_all_folds(void)
     Editor_Free(&editor);
 }
 
+static void test_buffer_piece_table(void)
+{
+    const char* path = "test_temp_piece_table.txt";
+    Slice content = Slice_Make("Hello, World!\nWelcome to Neo!\n", 30);
+    assert(FileIoWrite(path, content));
+
+    MappedFile mapped = FileIoMmap(path);
+    assert(mapped.fileDescriptor != -1);
+
+    Buffer* buffer = Buffer_NewFromMmap(mapped, path);
+    assert(buffer != NULL);
+    assert(Buffer_GetLineCount(buffer) == 3);
+
+    Line* line0 = Buffer_GetLine(buffer, 0);
+    assert(line0 != NULL);
+    Slice l0Text = Line_GetText(line0);
+    assert(l0Text.size == 13);
+    assert(memcmp(l0Text.data, "Hello, World!", 13) == 0);
+
+    Buffer_InsertText(buffer, 7, "Beautiful ", 10);
+    
+    line0 = Buffer_GetLine(buffer, 0);
+    l0Text = Line_GetText(line0);
+    assert(l0Text.size == 23);
+    assert(memcmp(l0Text.data, "Hello, Beautiful World!", 23) == 0);
+    assert(Buffer_GetTotalBytes(buffer) == 40);
+
+    Buffer_DeleteRange(buffer, 7, 17);
+    line0 = Buffer_GetLine(buffer, 0);
+    l0Text = Line_GetText(line0);
+    assert(l0Text.size == 13);
+    assert(memcmp(l0Text.data, "Hello, World!", 13) == 0);
+
+    Buffer_OnSave(buffer, path);
+    assert(buffer->isModified == false);
+    assert(Buffer_GetLineCount(buffer) == 3);
+
+    Buffer_Free(buffer);
+    remove(path);
+}
+

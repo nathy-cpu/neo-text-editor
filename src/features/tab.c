@@ -58,6 +58,11 @@ void Tab_Init(Tab* tab)
     // Visual wrapping state
     Array_InitStruct(&tab->visualRows, VisualRow, 16);
 
+    // Selection state
+    tab->hasSelection = false;
+    tab->selectStartX = 0;
+    tab->selectStartY = 0;
+
     tab->config = &defaultTestConfig;
     tab->buffer->history.undoLimit = tab->config->undoLimit;
 }
@@ -78,43 +83,20 @@ void Tab_LoadFile(Tab* tab, const char* path)
 {
     assert(tab && path);
 
-    Array fileContent = { 0 };
-
-    if (!FileIoRead(path, &fileContent)) {
-        LOG_ERROR("Failed to load file into tab: %s", path);
-        Array_Free(&fileContent);
-        return; // Silent fail (caller can check filename)
-    }
-
-    // Clear existing content
-    Buffer_Free(tab->buffer);
-    tab->buffer = Buffer_New();
-    tab->buffer->history.undoLimit = tab->config->undoLimit;
-
-    // Parse file content into lines
-    char* content = (char*)fileContent.data;
-    size_t contentSize = fileContent.size;
-    size_t lineStart = 0;
-    size_t lineNumber = 0;
-    Line* currentLine = tab->buffer->firstLine; // Initial empty line
-
-    for (size_t i = 0; i < contentSize; i++) {
-        if (content[i] == '\n' || i == contentSize - 1) {
-            size_t lineLength = i - lineStart;
-            if (i == contentSize - 1 && content[i] != '\n') {
-                lineLength++; // Include the last character if not a newline
-            }
-
-            if (lineLength > 0 && currentLine) {
-                Line_InsertText(currentLine, 0, content + lineStart, lineLength);
-            }
-
-            if (content[i] == '\n') {
-                lineNumber++;
-                currentLine = Buffer_InsertLine(tab->buffer, lineNumber);
-            }
-
-            lineStart = i + 1;
+    MappedFile mappedFile = FileIoMmap(path);
+    if (mappedFile.fileDescriptor == -1) {
+        LOG_INFO("File not found or failed to mmap, starting with empty buffer: %s", path);
+        Buffer_Free(tab->buffer);
+        tab->buffer = Buffer_New();
+        if (tab->buffer) {
+            tab->buffer->filename = strdup(path);
+            tab->buffer->history.undoLimit = tab->config->undoLimit;
+        }
+    } else {
+        Buffer_Free(tab->buffer);
+        tab->buffer = Buffer_NewFromMmap(mappedFile, path);
+        if (tab->buffer) {
+            tab->buffer->history.undoLimit = tab->config->undoLimit;
         }
     }
 
@@ -130,8 +112,6 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->rowOffset = tab->columnOffset = 0;
 
     LOG_INFO("Loaded tab content from file: %s (lines: %zu)", path, Buffer_GetLineCount(tab->buffer));
-
-    Array_Free(&fileContent);
 }
 
 // Save tab content to file
@@ -142,12 +122,6 @@ void Tab_SaveFile(Tab* tab)
         return;
     }
 
-    Slice content = Buffer_ToSlice(tab->buffer);
-    if (FileIoWrite(tab->filename, content)) {
-        tab->isSaved = true;
-        LOG_INFO("Saved tab content to file: %s", tab->filename);
-    } else {
-        LOG_ERROR("Failed to save tab content to file: %s", tab->filename);
-    }
-    free((void*)content.data);
+    Buffer_OnSave(tab->buffer, tab->filename);
+    tab->isSaved = !tab->buffer->isModified;
 }

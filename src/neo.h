@@ -27,6 +27,11 @@ typedef struct {
     size_t size;
 } Slice;
 
+typedef struct {
+    Slice content;
+    int fileDescriptor; // File descriptor for cleanup
+} MappedFile;
+
 /**
  * @brief Creates a new Slice from a raw pointer and size.
  * @param data Pointer to the start of the data.
@@ -141,7 +146,7 @@ Slice Array_ToSlice(const Array* array);
 #define Array_Get(array, type, index) (*(type*)Array_At(array, index))
 #define Array_AppendSlice(array, slice) Array_Append(array, slice.data, slice.size)
 
-// GapBuffer - Gap buffer with internal Array of char type
+// GapBuffer - Type-agnostic gap buffer
 typedef struct {
     Array data;
     size_t gapStart;
@@ -149,74 +154,52 @@ typedef struct {
 } GapBuffer;
 
 /**
- * @brief Initializes a gap buffer.
- * @param gapBuffer Pointer to the gap buffer to initialize.
- * @param initialCapacity Starting capacity.
- * @param alignment Memory alignment constraint.
+ * @brief Initializes a gap buffer with a specific item size.
  */
-void GapBuffer_Init(GapBuffer* gapBuffer, size_t initialCapacity, size_t alignment);
+void GapBuffer_Init(GapBuffer* gapBuffer, size_t itemSize, size_t initialCapacity, size_t alignment);
 
 /**
  * @brief Frees resources associated with the gap buffer.
- * @param gapBuffer Pointer to the gap buffer.
  */
 void GapBuffer_Free(GapBuffer* gapBuffer);
 
 /**
+ * @brief Gets a pointer to the item at a specific logical position in the gap buffer.
+ */
+void* GapBuffer_At(const GapBuffer* gapBuffer, size_t index);
+
+/**
  * @brief Inserts a slice of data at a logical position in the gap buffer.
- * @param gapBuffer Pointer to the gap buffer.
- * @param position Logical index to insert at.
- * @param content The slice of content to insert.
  */
 void GapBuffer_InsertSlice(GapBuffer* gapBuffer, size_t position, Slice content);
 
 /**
- * @brief Inserts a single character at a logical position.
- * @param gapBuffer Pointer to the gap buffer.
- * @param position Logical index to insert at.
- * @param content Character to insert.
+ * @brief Inserts a single character at a logical position (for char gap buffers).
  */
 void GapBuffer_InsertChar(GapBuffer* gapBuffer, size_t position, char content);
 
 /**
- * @brief Deletes a sequence of bytes from the gap buffer.
- * @param gapBuffer Pointer to the gap buffer.
- * @param position Logical index to start deleting.
- * @param size Number of bytes to delete.
+ * @brief Deletes a sequence of items from the gap buffer.
  */
 void GapBuffer_Delete(GapBuffer* gapBuffer, size_t position, size_t size);
 
 /**
- * @brief Flattens the gap buffer into a dynamically allocated contiguous slice.
- * @param gapBuffer Pointer to the gap buffer.
- * @return A Slice containing the complete content.
+ * @brief Flattens a char gap buffer into a dynamically allocated contiguous slice.
  */
 Slice GapBuffer_ToSlice(GapBuffer* gapBuffer);
 
 /**
  * @brief Clears the entire gap buffer.
- * @param gapBuffer Pointer to the gap buffer.
  */
 void GapBuffer_Clear(GapBuffer* gapBuffer);
 
 /**
- * @brief Gets a character at a specific logical position in the gap buffer.
- * @param gapBuffer Pointer to the gap buffer.
- * @param index Logical index.
- * @return The character at the index.
- */
-char GapBuffer_Get(const GapBuffer* gapBuffer, size_t index);
-
-/**
- * @brief Returns the total logical size (amount of text/content) in the gap buffer.
- * @param gapBuffer Pointer to the gap buffer.
- * @return Logical size in bytes.
+ * @brief Returns the total logical size (amount of elements) in the gap buffer.
  */
 size_t GapBuffer_Size(const GapBuffer* gapBuffer);
+
 /**
  * @brief Moves the gap to the specified new logical position.
- * @param gapBuffer Pointer to the gap buffer.
- * @param newGapStart The new start position for the gap.
  */
 void GapBuffer_MoveGap(GapBuffer* gapBuffer, size_t newGapStart);
 
@@ -244,12 +227,19 @@ typedef struct {
     } payload;
 } Action;
 
+typedef struct {
+    GapBuffer pieces;
+    size_t totalBytes;
+} DocumentSnapshot;
+
 typedef struct ActionGroup {
     Array actions;
+    DocumentSnapshot* snapshotBefore;
+    DocumentSnapshot* snapshotAfter;
 } ActionGroup;
 
 typedef struct StackNode {
-    void* data; // Pointer to ActionGroup
+    ActionGroup* data;
     struct StackNode* next;
 } StackNode;
 
@@ -280,32 +270,54 @@ ActionGroup* ActionGroup_New(void);
 void ActionGroup_Free(ActionGroup* group);
 
 // ============================================================================
-// LINKED LIST TEXT BUFFER
+// PIECE TABLE & LINE CACHE BUFFER
 // ============================================================================
+
+typedef enum { PIECE_SOURCE_ORIGINAL, PIECE_SOURCE_ADD } PieceSource;
+
+typedef struct {
+    PieceSource source;
+    size_t start;
+    size_t length;
+} Piece;
+
+struct Buffer;
 
 // Line - Represents a single line in the text buffer
 typedef struct Line {
-    GapBuffer text; // Text content of the line
-    GapBuffer styles; // Parallel gap buffer for syntax highlighting
-    size_t lineNumber; // 0-based line number
-    bool isFolded; // Whether this line is folded/collapsed
-    size_t foldLevel; // Nesting level for folding
-    struct Line* next; // Next line in the list
-    struct Line* prev; // Previous line in the list
+    struct Buffer* buffer; // Parent buffer (NULL for standalone tests)
+    size_t offset; // Absolute byte offset in the Piece Table
+    size_t length; // Length of the line (excluding trailing newline)
+    char* text; // Flattened/cached text view of the line (lazily loaded, or NULL)
+    Array styles; // Highlighting styles array (dynamic array of char)
+    size_t lineNumber; // 0-based logical line number
+    bool isFolded; // Whether line is folded
+    size_t foldLevel; // Indentation fold level
+    Array testText; // Standalone test text buffer
 } Line;
 
-// Buffer - Main text buffer containing linked list of lines
+typedef struct {
+    Line* lines; // Gap buffer array of Line structures
+    size_t count; // Count of lines
+    size_t gapStart; // Gap start index
+    size_t gapEnd; // Gap end index
+    size_t capacity; // Allocated capacity
+    size_t dirtyLineStart; // Rebuilding starting mark
+} LineCache;
+
+// Buffer - Main text buffer containing Piece Table and Line Cache
 typedef struct Buffer {
-    Line* firstLine; // First line in the buffer
-    Line* lastLine; // Last line in the buffer
-    Line* currentLine; // Currently active line
-    size_t totalLines; // Total number of lines
-    size_t totalBytes; // Total number of bytes across all lines
-    char* filename; // Associated filename
-    bool isModified; // Whether buffer has been modified
-    bool isReadOnly; // Whether buffer is read-only
-    size_t refCount;
-    History history; // Undo/Redo history
+    MappedFile mappedFile; // Mmap handle for file cleanup
+    Slice bufferOriginal; // Immutable original buffer
+    Array bufferAdd; // Append-only dynamic add buffer
+    GapBuffer pieces; // GapBuffer of Pieces
+    LineCache lineCache; // Line Cache gap buffer
+    size_t totalBytes; // Total bytes/chars in the document
+    char* filename; // File path
+    bool isModified; // Modified flag
+    bool isReadOnly; // Read-only flag
+    size_t refCount; // Reference count
+    History history; // History stack
 } Buffer;
 
 /**
@@ -476,6 +488,16 @@ void Buffer_Undo(Buffer* buffer);
  * @param buffer Pointer to the buffer.
  */
 void Buffer_Redo(Buffer* buffer);
+void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len);
+void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end);
+
+char Line_GetChar(Line* line, size_t index);
+Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename);
+void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset);
+DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer);
+void DocumentSnapshot_Free(DocumentSnapshot* snap);
+void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap);
+void Buffer_OnSave(Buffer* buffer, const char* path);
 
 // ============================================================================
 // TERMINAL HANDLING
@@ -593,10 +615,6 @@ bool FileIoRead(const char* path, Array* out);
 bool FileIoWrite(const char* path, Slice content);
 
 // Memory-mapped file variant (zero-copy for large files)
-typedef struct {
-    Slice content;
-    int fileDescriptor; // File descriptor for cleanup
-} MappedFile;
 
 /**
  * @brief Memory-maps a file for zero-copy read access.

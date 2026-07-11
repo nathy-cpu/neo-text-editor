@@ -5,7 +5,7 @@
 static void test_gap_buffer_basic(void)
 {
     GapBuffer gb;
-    GapBuffer_Init(&gb, 10, 64);
+    GapBuffer_Init(&gb, sizeof(char), 10, 64);
 
     assert(GapBuffer_Size(&gb) == 0 && "New gap buffer size should be 0");
 

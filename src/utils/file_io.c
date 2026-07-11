@@ -93,12 +93,14 @@ MappedFile FileIoMmap(const char* path)
         return (MappedFile) { .fileDescriptor = -1 };
     }
 
+    LOG_INFO("FileIoMmap: successfully memory-mapped file '%s' (%lld bytes)", path, (long long)fileStat.st_size);
     return (MappedFile) { .content = Slice_Make(data, fileStat.st_size), .fileDescriptor = fileDescriptor };
 }
 
 void MappedFile_Unmap(MappedFile* file)
 {
     if (file->fileDescriptor != -1) {
+        LOG_DEBUG("MappedFile_Unmap: unmapping file descriptor %d (size=%zu)", file->fileDescriptor, file->content.size);
         munmap((void*)file->content.data, file->content.size);
         close(file->fileDescriptor);
         file->fileDescriptor = -1;

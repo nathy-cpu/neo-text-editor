@@ -19,14 +19,14 @@ void Editor_MoveCursor(Editor* editor, int key)
             if (prevVisible < tab->cursorY) {
                 tab->cursorY = prevVisible;
                 Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY);
-                tab->cursorX = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+                tab->cursorX = previousRow ? Line_Length(previousRow) : 0;
             }
         }
         break;
     case ARROW_RIGHT:
-        if (row != NULL && tab->cursorX < GapBuffer_Size(&row->text))
+        if (row != NULL && tab->cursorX < Line_Length(row))
             tab->cursorX++;
-        else if (row != NULL && tab->cursorX == GapBuffer_Size(&row->text)) {
+        else if (row != NULL && tab->cursorX == Line_Length(row)) {
             size_t nextVisible = Tab_NextVisibleLine(tab, tab->cursorY);
             if (nextVisible > tab->cursorY) {
                 tab->cursorY = nextVisible;
@@ -53,7 +53,7 @@ void Editor_MoveCursor(Editor* editor, int key)
     }
 
     row = Buffer_GetLine(tab->buffer, tab->cursorY);
-    size_t rowSize = (row != NULL) ? GapBuffer_Size(&row->text) : 0;
+    size_t rowSize = (row != NULL) ? Line_Length(row) : 0;
     if (tab->cursorX > rowSize)
         tab->cursorX = rowSize;
 }
@@ -94,7 +94,7 @@ void Editor_DeleteSelection(Editor* editor)
             tab->cursorX--;
         } else if (tab->cursorY > 0) {
             Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
-            size_t previousLength = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+            size_t previousLength = previousRow ? Line_Length(previousRow) : 0;
             Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
             tab->cursorY--;
             tab->cursorX = previousLength;
@@ -114,19 +114,19 @@ void Editor_MoveCursorWord(Editor* editor, int key)
         return;
 
     if (key == CTRL_ARROW_RIGHT) {
-        while (tab->cursorX < GapBuffer_Size(&row->text)) {
-            char c = GapBuffer_Get(&row->text, tab->cursorX);
+        while (tab->cursorX < Line_Length(row)) {
+            char c = Line_GetChar(row, tab->cursorX);
             if (isspace(c))
                 break;
             tab->cursorX++;
         }
-        while (tab->cursorX < GapBuffer_Size(&row->text)) {
-            char c = GapBuffer_Get(&row->text, tab->cursorX);
+        while (tab->cursorX < Line_Length(row)) {
+            char c = Line_GetChar(row, tab->cursorX);
             if (!isspace(c))
                 break;
             tab->cursorX++;
         }
-        if (tab->cursorX == GapBuffer_Size(&row->text) && tab->cursorY < Buffer_GetLineCount(tab->buffer) - 1) {
+        if (tab->cursorX == Line_Length(row) && tab->cursorY < Buffer_GetLineCount(tab->buffer) - 1) {
             tab->cursorY++;
             tab->cursorX = 0;
         }
@@ -134,17 +134,17 @@ void Editor_MoveCursorWord(Editor* editor, int key)
         if (tab->cursorX == 0 && tab->cursorY > 0) {
             tab->cursorY--;
             row = Buffer_GetLine(tab->buffer, tab->cursorY);
-            tab->cursorX = row ? GapBuffer_Size(&row->text) : 0;
+            tab->cursorX = row ? Line_Length(row) : 0;
             return;
         }
         while (tab->cursorX > 0) {
-            char c = GapBuffer_Get(&row->text, tab->cursorX - 1);
+            char c = Line_GetChar(row, tab->cursorX - 1);
             if (!isspace(c))
                 break;
             tab->cursorX--;
         }
         while (tab->cursorX > 0) {
-            char c = GapBuffer_Get(&row->text, tab->cursorX - 1);
+            char c = Line_GetChar(row, tab->cursorX - 1);
             if (isspace(c))
                 break;
             tab->cursorX--;
@@ -158,6 +158,8 @@ void Editor_ProcessInput(Editor* editor, int input)
         return;
     Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     bool modified = false;
+
+    LOG_DEBUG("Editor_ProcessInput: processing keypress %d on tab '%s'", input, tab->filename ? tab->filename : "<scratch>");
 
     if (input == editor->config.keySave) {
         if (tab->buffer->isReadOnly) {
@@ -191,7 +193,7 @@ void Editor_ProcessInput(Editor* editor, int input)
             tab->selectStartY = 0;
             tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
             Line* lastRow = Buffer_GetLine(tab->buffer, tab->cursorY);
-            tab->cursorX = lastRow ? GapBuffer_Size(&lastRow->text) : 0;
+            tab->cursorX = lastRow ? Line_Length(lastRow) : 0;
             tab->hasSelection = true;
             break;
 
@@ -204,8 +206,8 @@ void Editor_ProcessInput(Editor* editor, int input)
                     tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
                 }
                 Line* rowZ = Buffer_GetLine(tab->buffer, tab->cursorY);
-                if (rowZ && tab->cursorX > GapBuffer_Size(&rowZ->text)) {
-                    tab->cursorX = GapBuffer_Size(&rowZ->text);
+                if (rowZ && tab->cursorX > Line_Length(rowZ)) {
+                    tab->cursorX = Line_Length(rowZ);
                 }
             }
             break;
@@ -219,8 +221,8 @@ void Editor_ProcessInput(Editor* editor, int input)
                     tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
                 }
                 Line* rowY = Buffer_GetLine(tab->buffer, tab->cursorY);
-                if (rowY && tab->cursorX > GapBuffer_Size(&rowY->text)) {
-                    tab->cursorX = GapBuffer_Size(&rowY->text);
+                if (rowY && tab->cursorX > Line_Length(rowY)) {
+                    tab->cursorX = Line_Length(rowY);
                 }
             }
             break;
@@ -240,7 +242,7 @@ void Editor_ProcessInput(Editor* editor, int input)
         case END_KEY: {
             Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
             if (row)
-                tab->cursorX = GapBuffer_Size(&row->text);
+                tab->cursorX = Line_Length(row);
         } break;
 
         case BACKSPACE:
@@ -264,7 +266,7 @@ void Editor_ProcessInput(Editor* editor, int input)
                     modified = true;
                 } else if (tab->cursorY > 0) {
                     Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
-                    size_t previousLength = previousRow ? GapBuffer_Size(&previousRow->text) : 0;
+                    size_t previousLength = previousRow ? Line_Length(previousRow) : 0;
                     Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
                     tab->cursorY--;
                     tab->cursorX = previousLength;

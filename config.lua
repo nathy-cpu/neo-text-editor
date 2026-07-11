@@ -7,7 +7,7 @@ status_timeout = 3
 -- Logging Configuration
 log_file = "neo.log"
 log_level = "INFO"
-log_to_file = false
+log_to_file = true
 log_to_ui = true
 log_max_messages = 1000
 

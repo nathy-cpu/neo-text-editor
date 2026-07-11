@@ -251,7 +251,7 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
     size_t startRx = Line_GetRenderX(line, vr->startCol, tab->config->tabSize);
     size_t targetRx = startRx + targetVisualCol;
 
-    Slice text = GapBuffer_ToSlice(&line->text);
+    Slice text = Line_GetText(line);
     size_t col = vr->startCol;
     size_t rx = startRx;
 
@@ -304,7 +304,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
             }
         }
 
-        Slice text = GapBuffer_ToSlice(&line->text);
+        Slice text = Line_GetText(line);
         size_t size = text.size;
         const char* str = (const char*)text.data;
 
@@ -379,7 +379,7 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
         if (!cursorVisible) {
             tab->cursorY = Tab_PrevVisibleLine(tab, tab->cursorY);
             Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
-            tab->cursorX = (row != NULL) ? GapBuffer_Size(&row->text) : 0;
+            tab->cursorX = (row != NULL) ? Line_Length(row) : 0;
         }
     }
 
@@ -472,8 +472,8 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
             VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, vrowIdx);
             Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
             if (line) {
-                Slice textSlice = GapBuffer_ToSlice(&line->text);
-                Slice styleSlice = GapBuffer_ToSlice(&line->styles);
+                Slice textSlice = Line_GetText(line);
+                Slice styleSlice = Array_ToSlice(&line->styles);
 
                 // Draw styled gutter
                 if (usableColumns > 0) {
@@ -581,7 +581,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                         Array_Append(screenBuffer, "\x1b[90m [...]\x1b[m", 15);
                     }
 
-                    size_t logicalSize = GapBuffer_Size(&line->text);
+                    size_t logicalSize = Line_Length(line);
                     if (vr->startCol + vr->length == logicalSize) {
                         if (IsSelected(tab, vr->lineIndex, logicalSize)) {
                             if (!tab->config->wrapLines) {
@@ -594,7 +594,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                         }
                     }
                 } else {
-                    size_t logicalSize = GapBuffer_Size(&line->text);
+                    size_t logicalSize = Line_Length(line);
                     if (IsSelected(tab, vr->lineIndex, logicalSize)) {
                         if (usableColumns > 0) {
                             Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
@@ -769,7 +769,7 @@ void Editor_RefreshScreen(Editor* editor)
 size_t Line_GetIndentation(Line* line, size_t tabSize)
 {
     assert(line != NULL);
-    Slice text = GapBuffer_ToSlice(&line->text);
+    Slice text = Line_GetText(line);
     size_t indent = 0;
     for (size_t i = 0; i < text.size; i++) {
         char c = ((const char*)text.data)[i];
@@ -787,7 +787,7 @@ size_t Line_GetIndentation(Line* line, size_t tabSize)
 bool Line_IsBlank(Line* line)
 {
     assert(line != NULL);
-    Slice text = GapBuffer_ToSlice(&line->text);
+    Slice text = Line_GetText(line);
     for (size_t i = 0; i < text.size; i++) {
         char c = ((const char*)text.data)[i];
         if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {

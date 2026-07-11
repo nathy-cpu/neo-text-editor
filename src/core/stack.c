@@ -20,6 +20,7 @@ void Stack_Push(Stack* stack, void* data)
     node->next = stack->top;
     stack->top = node;
     stack->size++;
+    LOG_DEBUG("Stack_Push: pushed node %p with data %p (size=%zu)", (void*)node, data, stack->size);
 }
 
 void* Stack_Pop(Stack* stack)
@@ -31,6 +32,7 @@ void* Stack_Pop(Stack* stack)
     stack->top = top->next;
     free(top);
     stack->size--;
+    LOG_DEBUG("Stack_Pop: popped data %p (size=%zu)", data, stack->size);
     return data;
 }
 
@@ -55,6 +57,9 @@ void Stack_EnforceLimit(Stack* stack, size_t limit, void (*freeData)(void*))
 {
     if (!stack || limit == 0)
         return;
+    if (stack->size > limit) {
+        LOG_DEBUG("Stack_EnforceLimit: current size %zu exceeds limit %zu, discarding oldest items", stack->size, limit);
+    }
     while (stack->size > limit) {
         StackNode* prev = NULL;
         StackNode* curr = stack->top;

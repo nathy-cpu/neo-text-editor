@@ -13,25 +13,28 @@ static void EnsureGapCapacity(GapBuffer* gb, size_t required)
     size_t newGapSize = (required > MIN_GAP_SIZE) ? required * 2 : MIN_GAP_SIZE;
     size_t newCapacity = gb->data.size + newGapSize;
 
+    LOG_DEBUG("EnsureGapCapacity: expanding gap buffer capacity from %zu to %zu (required=%zu)", gb->data.capacity, newCapacity, required);
+
     Array newData;
     Array_Init(&newData, gb->data.itemSize, newCapacity, gb->data.alignment);
 
     // Copy data before gap
     Array_Append(&newData, gb->data.data, gb->gapStart);
     // Copy data after gap
-    Array_Append(&newData, (char*)gb->data.data + gb->gapEnd, gb->data.size - gb->gapStart);
+    Array_Append(&newData, (char*)gb->data.data + (gb->gapEnd * gb->data.itemSize), gb->data.size - gb->gapStart);
 
     Array_Free(&gb->data);
     gb->data = newData;
     gb->gapEnd = gb->gapStart + newGapSize;
 }
 
-void GapBuffer_Init(GapBuffer* gb, size_t initialCapacity, size_t alignment)
+void GapBuffer_Init(GapBuffer* gb, size_t itemSize, size_t initialCapacity, size_t alignment)
 {
     assert(gb);
-    Array_Init(&gb->data, sizeof(char), initialCapacity + MIN_GAP_SIZE, alignment);
+    Array_Init(&gb->data, itemSize, initialCapacity + MIN_GAP_SIZE, alignment);
     gb->gapStart = 0;
     gb->gapEnd = gb->data.capacity;
+    LOG_DEBUG("GapBuffer initialized: itemSize=%zu, capacity=%zu, alignment=%zu", itemSize, gb->data.capacity, alignment);
 }
 
 void GapBuffer_Free(GapBuffer* gb)
@@ -42,12 +45,24 @@ void GapBuffer_Free(GapBuffer* gb)
     gb->gapStart = gb->gapEnd = 0;
 }
 
+void* GapBuffer_At(const GapBuffer* gb, size_t index)
+{
+    assert(index < gb->data.size);
+    if (index < gb->gapStart) {
+        return (char*)gb->data.data + (index * gb->data.itemSize);
+    } else {
+        return (char*)gb->data.data + ((index + (gb->gapEnd - gb->gapStart)) * gb->data.itemSize);
+    }
+}
+
 void GapBuffer_MoveGap(GapBuffer* gb, size_t newGapStart)
 {
     assert(newGapStart <= gb->data.size);
 
     if (newGapStart == gb->gapStart)
         return;
+
+    LOG_DEBUG("GapBuffer_MoveGap: shifting gap from %zu to %zu", gb->gapStart, newGapStart);
 
     size_t gapSize = gb->gapEnd - gb->gapStart;
     void* src = (newGapStart > gb->gapStart) ? Array_RawAt(&gb->data, gb->gapEnd) : Array_RawAt(&gb->data, newGapStart);
@@ -66,16 +81,20 @@ void GapBuffer_InsertSlice(GapBuffer* gb, size_t position, Slice content)
     if (content.size == 0)
         return;
 
+    assert(content.size % gb->data.itemSize == 0);
+    size_t count = content.size / gb->data.itemSize;
+
     GapBuffer_MoveGap(gb, position);
-    EnsureGapCapacity(gb, content.size);
+    EnsureGapCapacity(gb, count);
 
     memcpy(Array_RawAt(&gb->data, gb->gapStart), content.data, content.size);
-    gb->gapStart += content.size;
-    gb->data.size += content.size;
+    gb->gapStart += count;
+    gb->data.size += count;
 }
 
 void GapBuffer_InsertChar(GapBuffer* gb, size_t position, char character)
 {
+    assert(gb->data.itemSize == sizeof(char));
     GapBuffer_MoveGap(gb, position);
     EnsureGapCapacity(gb, 1);
 
@@ -97,7 +116,7 @@ void GapBuffer_Delete(GapBuffer* gb, size_t position, size_t size)
 Slice GapBuffer_ToSlice(GapBuffer* gb)
 {
     GapBuffer_MoveGap(gb, gb->data.size); // Collapse gap
-    return (Slice) { .data = gb->data.data, .size = gb->data.size };
+    return (Slice) { .data = gb->data.data, .size = gb->data.size * gb->data.itemSize };
 }
 
 void GapBuffer_Clear(GapBuffer* gb)
@@ -108,12 +127,3 @@ void GapBuffer_Clear(GapBuffer* gb)
 }
 
 size_t GapBuffer_Size(const GapBuffer* gb) { return gb->data.size; }
-
-char GapBuffer_Get(const GapBuffer* gb, size_t index)
-{
-    if (index < gb->gapStart) {
-        return ((char*)gb->data.data)[index];
-    } else {
-        return ((char*)gb->data.data)[index + (gb->gapEnd - gb->gapStart)];
-    }
-}

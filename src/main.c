@@ -136,7 +136,7 @@ int main(int argc, char* argv[])
                     // Set column
                     Line* lineObj = Buffer_GetLine(tab->buffer, tab->cursorY);
                     if (lineObj) {
-                        size_t lineLen = GapBuffer_Size(&lineObj->text);
+                        size_t lineLen = Line_Length(lineObj);
                         if (col > 0) {
                             tab->cursorX = ((size_t)col <= lineLen) ? (size_t)(col - 1) : lineLen;
                         } else {

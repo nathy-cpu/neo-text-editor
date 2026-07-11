@@ -126,6 +126,8 @@ void Config_InitDefaults(Config* config)
         .multiLineCommentStart = NULL,
         .multiLineCommentEnd = NULL };
     Array_Append(&config->syntaxDatabase, &logSyntax, 1);
+
+    LOG_INFO("Config_InitDefaults: Initialized default configurations.");
 }
 
 /**
@@ -161,6 +163,7 @@ void Syntax_Free(Syntax* syntax)
  */
 void Config_Free(Config* config)
 {
+    LOG_INFO("Config_Free: Freeing editor configuration.");
     for (int index = 0; index < 9; index++) {
         free(config->syntaxColors[index]);
         config->syntaxColors[index] = NULL;
@@ -527,6 +530,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
                     if (!isLanguageReplaced) {
                         Array_Append(&config->syntaxDatabase, &syntax, 1);
                     }
+                    LOG_INFO("Editor_LoadConfig: registered/updated language rules for: %s", syntax.fileType);
                 } else {
                     Syntax_Free(&syntax);
                 }

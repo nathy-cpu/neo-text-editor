@@ -34,6 +34,8 @@ void Array_Init(Array* array, size_t itemSize, size_t capacity, size_t alignment
     array->capacity = (array->data != NULL) ? capacity : 0;
     array->itemSize = itemSize;
     array->alignment = alignment;
+
+    LOG_DEBUG("Array initialized: itemSize=%zu, capacity=%zu, alignment=%zu", itemSize, capacity, alignment);
 }
 
 void Array_Free(Array* array)
@@ -57,6 +59,7 @@ bool Array_Append(Array* array, const void* items, size_t count)
     // Resize if needed (geometric growth)
     if (array->size + count > array->capacity) {
         size_t newCapacity = array->capacity * 2 + count;
+        LOG_DEBUG("Array resizing capacity from %zu to %zu (need total size %zu)", array->capacity, newCapacity, array->size + count);
         size_t totalSize = array->itemSize * newCapacity;
         size_t alignedSize = totalSize;
         if (alignedSize % array->alignment != 0) {
