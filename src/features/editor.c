@@ -219,16 +219,30 @@ size_t Tab_GetCursorVRowIdx(const Tab* tab)
     if (totalVRows == 0)
         return 0;
 
+    // visualRows is sorted ascending by lineIndex; binary search for the first entry
+    // belonging to cursorY (if any), then scan only its small contiguous wrap-segment run.
+    size_t low = 0, high = totalVRows;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, mid);
+        if (vr->lineIndex < tab->cursorY) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+
     size_t bestIdx = 0;
-    for (size_t i = 0; i < totalVRows; i++) {
+    for (size_t i = low; i < totalVRows; i++) {
         VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
-        if (vr->lineIndex == tab->cursorY) {
-            if (tab->cursorX >= vr->startCol && tab->cursorX < vr->startCol + vr->length) {
-                return i;
-            }
-            if (tab->cursorX == vr->startCol + vr->length) {
-                bestIdx = i;
-            }
+        if (vr->lineIndex != tab->cursorY) {
+            break;
+        }
+        if (tab->cursorX >= vr->startCol && tab->cursorX < vr->startCol + vr->length) {
+            return i;
+        }
+        if (tab->cursorX == vr->startCol + vr->length) {
+            bestIdx = i;
         }
     }
     return bestIdx;
@@ -310,16 +324,29 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
 void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
 {
     (void)editor;
-    Array_Clear(&tab->visualRows);
 
     if (!tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0)) {
+        Array_Clear(&tab->visualRows);
         return;
     }
+
+    size_t foldedLineCount = tab->buffer->foldedLineCount;
+    size_t editVersion = tab->buffer->editVersion;
+    if (tab->visualRowsEditVersion == editVersion && tab->visualRowsFoldedCount == foldedLineCount
+        && tab->visualRowsUsableColumns == usableColumns) {
+        // Nothing that affects layout changed since the last build; reuse tab->visualRows as-is.
+        return;
+    }
+
+    Array_Clear(&tab->visualRows);
 
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
     if (totalLines == 0) {
         VisualRow vr = { .lineIndex = 0, .startCol = 0, .length = 0, .isWrapped = false };
         Array_Append(&tab->visualRows, &vr, 1);
+        tab->visualRowsEditVersion = editVersion;
+        tab->visualRowsFoldedCount = foldedLineCount;
+        tab->visualRowsUsableColumns = usableColumns;
         return;
     }
 
@@ -399,6 +426,10 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
             hiddenUntilIndent = indent;
         }
     }
+
+    tab->visualRowsEditVersion = editVersion;
+    tab->visualRowsFoldedCount = foldedLineCount;
+    tab->visualRowsUsableColumns = usableColumns;
 }
 
 void Editor_ScrollTab(Editor* editor, Tab* tab)

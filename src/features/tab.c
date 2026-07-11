@@ -57,6 +57,9 @@ void Tab_Init(Tab* tab)
 
     // Visual wrapping state
     Array_InitStruct(&tab->visualRows, VisualRow, 16);
+    tab->visualRowsEditVersion = SIZE_MAX;
+    tab->visualRowsFoldedCount = SIZE_MAX;
+    tab->visualRowsUsableColumns = SIZE_MAX;
 
     // Selection state
     tab->hasSelection = false;
@@ -110,6 +113,11 @@ void Tab_LoadFile(Tab* tab, const char* path)
     // Reset view state
     tab->cursorX = tab->cursorY = 0;
     tab->rowOffset = tab->columnOffset = 0;
+
+    // The buffer pointer changed, so any cached visualRows/signature is stale
+    tab->visualRowsEditVersion = SIZE_MAX;
+    tab->visualRowsFoldedCount = SIZE_MAX;
+    tab->visualRowsUsableColumns = SIZE_MAX;
 
     LOG_INFO("Loaded tab content from file: %s (lines: %zu)", path, Buffer_GetLineCount(tab->buffer));
 }

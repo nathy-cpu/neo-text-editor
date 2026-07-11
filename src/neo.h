@@ -294,6 +294,8 @@ typedef struct Line {
     bool isFolded; // Whether line is folded
     size_t foldLevel; // Indentation fold level
     Array testText; // Standalone test text buffer
+    bool commentStateOut; // Multi-line-comment state after this line, for incremental syntax updates
+    bool commentStateOutValid; // Whether commentStateOut reflects the line's current content
 } Line;
 
 typedef struct {
@@ -303,6 +305,8 @@ typedef struct {
     size_t gapEnd; // Gap end index
     size_t capacity; // Allocated capacity
     size_t dirtyLineStart; // Rebuilding starting mark
+    size_t dirtyOffsetEnd; // Rebuilding ending byte offset in the new buffer
+    size_t oldTotalBytes; // Total bytes before the edit
 } LineCache;
 
 // Buffer - Main text buffer containing Piece Table and Line Cache
@@ -319,6 +323,7 @@ typedef struct Buffer {
     size_t refCount; // Reference count
     History history; // History stack
     size_t foldedLineCount; // Number of folded lines in the document
+    size_t editVersion; // Incremented on every content-mutating edit, for cache invalidation
 } Buffer;
 
 /**
@@ -464,6 +469,14 @@ void Buffer_JoinLine(Buffer* buffer, size_t lineNumber);
 size_t Buffer_GetLineCount(const Buffer* buffer);
 
 /**
+ * @brief Returns the first line index marked dirty by a pending edit, without
+ * triggering a line cache rebuild (unlike Buffer_GetLineCount/Buffer_GetLine).
+ * @param buffer Pointer to the buffer.
+ * @return The dirty line index, or SIZE_MAX if the cache is clean.
+ */
+size_t Buffer_PeekDirtyLineStart(const Buffer* buffer);
+
+/**
  * @brief Computes the total exact byte size of the buffer when rendered into a single string.
  * @param buffer Pointer to the buffer.
  * @return Total exact bytes.
@@ -494,7 +507,7 @@ void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end);
 
 char Line_GetChar(Line* line, size_t index);
 Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename);
-void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset);
+void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffset, size_t oldTotalBytes);
 DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer);
 void DocumentSnapshot_Free(DocumentSnapshot* snap);
 void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap);
@@ -763,6 +776,9 @@ typedef struct {
 
     // Visual wrapping state
     Array visualRows; // Array of VisualRow
+    size_t visualRowsEditVersion; // Buffer editVersion visualRows was last built for
+    size_t visualRowsFoldedCount; // Buffer foldedLineCount visualRows was last built for
+    size_t visualRowsUsableColumns; // usableColumns visualRows was last built for
 
     // Pointer to active configuration
     Config* config;

@@ -37,11 +37,17 @@ static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+
 
 static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineComment)
 {
-    Array_Clear(&line->styles);
-
     Slice textSlice = Line_GetText(line);
     size_t length = Line_Length(line);
     char* text = (char*)textSlice.data;
+
+    // Lines belonging to a tab with no active syntax are never populated at all
+    // (see Tab_UpdateSyntax), so this is the first time this line's styles array
+    // is touched -- allocate it lazily, only once real highlighting is needed.
+    if (!line->styles.data) {
+        Array_InitChar(&line->styles, length > 0 ? length : 1);
+    }
+    Array_Clear(&line->styles);
 
     // Default to HIGHLIGHT_NORMAL
     for (size_t i = 0; i < length; i++) {
@@ -179,29 +185,50 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
 void Tab_UpdateSyntax(Tab* tab)
 {
     if (!tab->config || !tab->config->syntaxEnabled || tab->syntax == NULL) {
-        // Clear syntax styles for all lines
-        for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
-            Line* line = Buffer_GetLine(tab->buffer, i);
-            if (line) {
-                Array_Clear(&line->styles);
-                size_t length = Line_Length(line);
-                for (size_t j = 0; j < length; j++) {
-                    char val = HIGHLIGHT_NORMAL;
-                    Array_Append(&line->styles, &val, 1);
-                }
-            }
-        }
+        // Neither syntaxEnabled nor tab->syntax can change at runtime once this tab
+        // exists (both are decided once, at load time, in Tab_SetSyntaxHighlight),
+        // so a tab that reaches here has never had real highlight data written into
+        // any line's styles -- there is nothing to clear. Lines' styles arrays are
+        // left untouched (never even allocated, see UpdateLineSyntax), and the
+        // renderer already treats an empty/undersized styles array as all-normal.
         return;
     }
 
     LOG_DEBUG("Tab_UpdateSyntax: updating syntax highlighting for tab '%s' using '%s'",
         tab->filename ? tab->filename : "<scratch>", tab->syntax->fileType);
 
+    // Peek the pending edit's dirty line before any Buffer_GetLine/GetLineCount call
+    // triggers a line cache rebuild and clears it.
+    size_t startLine = Buffer_PeekDirtyLineStart(tab->buffer);
+    size_t lineCount = Buffer_GetLineCount(tab->buffer);
+    if (startLine == SIZE_MAX || startLine >= lineCount) {
+        startLine = 0;
+    }
+
     bool inMultiLineComment = false;
-    for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
+    if (startLine > 0) {
+        Line* prevLine = Buffer_GetLine(tab->buffer, startLine - 1);
+        if (prevLine && prevLine->commentStateOutValid) {
+            inMultiLineComment = prevLine->commentStateOut;
+        }
+    }
+
+    for (size_t i = startLine; i < lineCount; i++) {
         Line* line = Buffer_GetLine(tab->buffer, i);
-        if (line) {
-            UpdateLineSyntax(line, tab->syntax, &inMultiLineComment);
+        if (!line)
+            continue;
+
+        bool oldStateValid = line->commentStateOutValid;
+        bool oldState = line->commentStateOut;
+
+        UpdateLineSyntax(line, tab->syntax, &inMultiLineComment);
+
+        line->commentStateOut = inMultiLineComment;
+        line->commentStateOutValid = true;
+
+        // Lines beyond the edit whose exit state didn't change are unaffected downstream.
+        if (i > startLine && oldStateValid && oldState == inMultiLineComment) {
+            break;
         }
     }
 }

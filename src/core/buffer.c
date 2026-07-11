@@ -16,6 +16,8 @@ static void LineCache_Init(LineCache* lc)
     lc->gapEnd = 64;
     lc->capacity = 64;
     lc->dirtyLineStart = 0;
+    lc->dirtyOffsetEnd = SIZE_MAX;
+    lc->oldTotalBytes = 0;
 }
 
 static void LineCache_Free(LineCache* lc)
@@ -129,6 +131,23 @@ static Line* Buffer_GetCachedLine(Buffer* buffer, size_t lineNumber)
 // LAZY REBUILDING SCANNERS
 // ============================================================================
 
+static size_t FindSavedLineByOffset(const Line* savedLines, size_t count, size_t targetOffset)
+{
+    size_t low = 0;
+    size_t high = count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        if (savedLines[mid].offset == targetOffset) {
+            return mid;
+        } else if (savedLines[mid].offset < targetOffset) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    return SIZE_MAX;
+}
+
 static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 {
     if (buffer->lineCache.dirtyLineStart == SIZE_MAX) {
@@ -154,7 +173,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             if (oldLine->isFolded) {
                 oldFolded++;
             }
-            // Clear style/text pointers so they don't get double-freed
+            // Clear style/text pointers so they don't get double-freed when moving the gap
             oldLine->text = NULL;
             oldLine->styles = (Array) { 0 };
             oldLine->testText = (Array) { 0 };
@@ -181,6 +200,9 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         currentOffset = prevLine->offset + prevLine->length + 1; // +1 for the newline
     }
 
+    // Calculate delta for shifted lines
+    size_t delta = buffer->totalBytes - buffer->lineCache.oldTotalBytes;
+
     PiecePosition pos = Buffer_FindPiecePosition(buffer, currentOffset);
     size_t pieceIdx = pos.pieceIndex;
     size_t localOffset = pos.localOffset;
@@ -188,8 +210,11 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 
     size_t scanOffset = currentOffset;
     size_t lineStartOffset = currentOffset;
+    bool aligned = false;
+    size_t k = SIZE_MAX;
+    size_t discardedFoldedCount = 0;
 
-    while (pieceIdx < pieceCount) {
+    while (pieceIdx < pieceCount && !aligned) {
         Piece* p = Buffer_GetPiece(buffer, pieceIdx);
         const char* src
             = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
@@ -215,6 +240,34 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                 scanOffset += (foundIdx - j) + 1;
                 lineStartOffset = scanOffset;
                 j = foundIdx + 1;
+
+                // Check for alignment
+                if (lineStartOffset >= buffer->lineCache.dirtyOffsetEnd && savedLines) {
+                    size_t targetOldOffset = lineStartOffset - delta;
+                    k = FindSavedLineByOffset(savedLines, numOldLinesToSave, targetOldOffset);
+                    if (k != SIZE_MAX) {
+                        // Count discarded folded lines
+                        for (size_t idx = 0; idx < k; idx++) {
+                            if (savedLines[idx].isFolded) {
+                                discardedFoldedCount++;
+                            }
+                        }
+                        // Found alignment! Restore rest of lines
+                        for (size_t reuseIdx = k; reuseIdx < numOldLinesToSave; reuseIdx++) {
+                            Line rl = savedLines[reuseIdx];
+                            rl.offset += delta;
+                            rl.lineNumber = lineIdx;
+                            LineCache_Insert(&buffer->lineCache, &rl);
+                            lineIdx++;
+                            // Clear pointers so they are not freed when savedLines is freed
+                            savedLines[reuseIdx].text = NULL;
+                            savedLines[reuseIdx].styles = (Array){ 0 };
+                            savedLines[reuseIdx].testText = (Array){ 0 };
+                        }
+                        aligned = true;
+                        break;
+                    }
+                }
             } else {
                 scanOffset += (p->length - j);
                 break;
@@ -224,8 +277,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         localOffset = 0;
     }
 
-    // Handle last line
-    if (lineStartOffset <= buffer->totalBytes) {
+    // Handle last line if we didn't align
+    if (!aligned && lineStartOffset <= buffer->totalBytes) {
         size_t lineLen = buffer->totalBytes - lineStartOffset;
         Line newLine = { .buffer = buffer,
             .offset = lineStartOffset,
@@ -242,7 +295,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 
     // Copy back preserved folding & style state
     size_t newTotal = buffer->lineCache.count;
-    for (size_t i = buffer->lineCache.dirtyLineStart; i < newTotal; i++) {
+    size_t stateCopyLimit = aligned ? (newTotal - (numOldLinesToSave - k)) : newTotal;
+    for (size_t i = buffer->lineCache.dirtyLineStart; i < stateCopyLimit; i++) {
         size_t oldIdx = i - newTotal + oldTotal;
         if (oldIdx >= buffer->lineCache.dirtyLineStart && oldIdx < oldTotal) {
             size_t savedIdx = oldIdx - buffer->lineCache.dirtyLineStart;
@@ -250,6 +304,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                 Line* newLine = LineCache_At(&buffer->lineCache, i);
                 newLine->isFolded = savedLines[savedIdx].isFolded;
                 newLine->foldLevel = savedLines[savedIdx].foldLevel;
+                newLine->commentStateOut = savedLines[savedIdx].commentStateOut;
+                newLine->commentStateOutValid = savedLines[savedIdx].commentStateOutValid;
                 // Move styles array (shallow copy)
                 Array_Free(&newLine->styles);
                 newLine->styles = savedLines[savedIdx].styles;
@@ -258,7 +314,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         }
     }
 
-    // Free the savedLines memory
+    // Free the remaining savedLines memory
     if (savedLines) {
         for (size_t i = 0; i < numOldLinesToSave; i++) {
             free(savedLines[i].text);
@@ -270,33 +326,64 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 
     // Recompute folded lines in the modified range
     size_t newFolded = 0;
-    for (size_t i = buffer->lineCache.dirtyLineStart; i < buffer->lineCache.count; i++) {
-        if (LineCache_At(&buffer->lineCache, i)->isFolded) {
-            newFolded++;
+    if (aligned) {
+        for (size_t i = buffer->lineCache.dirtyLineStart; i < stateCopyLimit; i++) {
+            if (LineCache_At(&buffer->lineCache, i)->isFolded) {
+                newFolded++;
+            }
         }
+        buffer->foldedLineCount = buffer->foldedLineCount - discardedFoldedCount + newFolded;
+    } else {
+        for (size_t i = buffer->lineCache.dirtyLineStart; i < buffer->lineCache.count; i++) {
+            if (LineCache_At(&buffer->lineCache, i)->isFolded) {
+                newFolded++;
+            }
+        }
+        buffer->foldedLineCount = buffer->foldedLineCount - oldFolded + newFolded;
     }
-    buffer->foldedLineCount = buffer->foldedLineCount - oldFolded + newFolded;
 
     buffer->lineCache.dirtyLineStart = SIZE_MAX;
+    buffer->lineCache.dirtyOffsetEnd = SIZE_MAX;
 }
 
-void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset)
+void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffset, size_t oldTotalBytes)
 {
+    buffer->editVersion++;
+
     size_t lineIdx = 0;
     if (offset > 0 && buffer->lineCache.dirtyLineStart != 0) {
         size_t searchLimit = (buffer->lineCache.dirtyLineStart == SIZE_MAX) ? buffer->lineCache.count
                                                                             : buffer->lineCache.dirtyLineStart;
-        for (size_t i = 0; i < searchLimit; i++) {
-            Line* line = LineCache_At(&buffer->lineCache, i);
-            if (line->offset + line->length >= offset) {
-                lineIdx = i;
-                break;
+        // Lines are ordered by ascending offset, so binary search for the first line
+        // whose end reaches `offset` instead of scanning linearly (O(log n) vs O(n)).
+        size_t low = 0, high = searchLimit;
+        while (low < high) {
+            size_t mid = low + (high - low) / 2;
+            Line* line = LineCache_At(&buffer->lineCache, mid);
+            if (line->offset + line->length < offset) {
+                low = mid + 1;
+            } else {
+                high = mid;
             }
+        }
+        if (low < searchLimit) {
+            lineIdx = low;
         }
     }
 
-    if (lineIdx < buffer->lineCache.dirtyLineStart) {
+    if (buffer->lineCache.dirtyLineStart == SIZE_MAX) {
         buffer->lineCache.dirtyLineStart = lineIdx;
+        buffer->lineCache.dirtyOffsetEnd = newEndOffset;
+        buffer->lineCache.oldTotalBytes = oldTotalBytes;
+    } else {
+        if (lineIdx < buffer->lineCache.dirtyLineStart) {
+            buffer->lineCache.dirtyLineStart = lineIdx;
+        }
+        // A second edit landed before the pending dirty range was ever rebuilt, so
+        // dirtyOffsetEnd (recorded in the first edit's coordinate space) can no longer
+        // be trusted as a byte offset in the current buffer. Disable the realignment
+        // fast path for this rebuild instead of risking reusing shifted-but-stale lines.
+        buffer->lineCache.dirtyOffsetEnd = SIZE_MAX;
     }
 }
 
@@ -374,7 +461,7 @@ void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap)
 
     buffer->totalBytes = snap->totalBytes;
 
-    Buffer_InvalidateLineCache(buffer, 0);
+    Buffer_InvalidateLineCache(buffer, 0, buffer->totalBytes, buffer->totalBytes);
 }
 
 // ============================================================================
@@ -489,6 +576,8 @@ Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename)
 
     LineCache_Init(&buffer->lineCache);
     buffer->lineCache.dirtyLineStart = 0;
+    buffer->lineCache.dirtyOffsetEnd = buffer->totalBytes;
+    buffer->lineCache.oldTotalBytes = buffer->totalBytes;
 
     History_Init(&buffer->history);
 
@@ -686,7 +775,7 @@ void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len)
         if (prevPiece->source == PIECE_SOURCE_ADD && prevPiece->start + prevPiece->length == addStart) {
             prevPiece->length += len;
             buffer->totalBytes += len;
-            Buffer_InvalidateLineCache(buffer, pos);
+            Buffer_InvalidateLineCache(buffer, pos, pos + len, buffer->totalBytes - len);
             if (GapBuffer_Size(&buffer->pieces) > 1000) {
                 Buffer_Defragment(buffer);
             }
@@ -698,7 +787,7 @@ void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len)
             if (targetPiece->source == PIECE_SOURCE_ADD && targetPiece->start + targetPiece->length == addStart) {
                 targetPiece->length += len;
                 buffer->totalBytes += len;
-                Buffer_InvalidateLineCache(buffer, pos);
+                Buffer_InvalidateLineCache(buffer, pos, pos + len, buffer->totalBytes - len);
                 if (GapBuffer_Size(&buffer->pieces) > 1000) {
                     Buffer_Defragment(buffer);
                 }
@@ -728,7 +817,7 @@ void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len)
     }
 
     buffer->totalBytes += len;
-    Buffer_InvalidateLineCache(buffer, pos);
+    Buffer_InvalidateLineCache(buffer, pos, pos + len, buffer->totalBytes - len);
 
     if (GapBuffer_Size(&buffer->pieces) > 1000) {
         Buffer_Defragment(buffer);
@@ -778,7 +867,7 @@ void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end)
     buffer->pieces = newPieces;
     buffer->totalBytes -= deleteLen;
 
-    Buffer_InvalidateLineCache(buffer, start);
+    Buffer_InvalidateLineCache(buffer, start, start, buffer->totalBytes + deleteLen);
 
     if (GapBuffer_Size(&buffer->pieces) > 1000) {
         Buffer_Defragment(buffer);
@@ -793,6 +882,12 @@ size_t Buffer_GetLineCount(const Buffer* buffer)
         Buffer_RebuildLineCache(mutBuffer, SIZE_MAX);
     }
     return mutBuffer->lineCache.count;
+}
+
+size_t Buffer_PeekDirtyLineStart(const Buffer* buffer)
+{
+    assert(buffer);
+    return buffer->lineCache.dirtyLineStart;
 }
 
 size_t Buffer_GetTotalBytes(const Buffer* buffer)
