@@ -13,7 +13,8 @@ static void EnsureGapCapacity(GapBuffer* gb, size_t required)
     size_t newGapSize = (required > MIN_GAP_SIZE) ? required * 2 : MIN_GAP_SIZE;
     size_t newCapacity = gb->data.size + newGapSize;
 
-    LOG_DEBUG("EnsureGapCapacity: expanding gap buffer capacity from %zu to %zu (required=%zu)", gb->data.capacity, newCapacity, required);
+    LOG_DEBUG("EnsureGapCapacity: expanding gap buffer capacity from %zu to %zu (required=%zu)", gb->data.capacity,
+        newCapacity, required);
 
     Array newData;
     Array_Init(&newData, gb->data.itemSize, newCapacity, gb->data.alignment);
@@ -34,13 +35,15 @@ void GapBuffer_Init(GapBuffer* gb, size_t itemSize, size_t initialCapacity, size
     Array_Init(&gb->data, itemSize, initialCapacity + MIN_GAP_SIZE, alignment);
     gb->gapStart = 0;
     gb->gapEnd = gb->data.capacity;
-    LOG_DEBUG("GapBuffer initialized: itemSize=%zu, capacity=%zu, alignment=%zu", itemSize, gb->data.capacity, alignment);
+    LOG_DEBUG(
+        "GapBuffer initialized: itemSize=%zu, capacity=%zu, alignment=%zu", itemSize, gb->data.capacity, alignment);
 }
 
 void GapBuffer_Free(GapBuffer* gb)
 {
     if (!gb)
         return;
+    LOG_DEBUG("GapBuffer_Free: freeing gap buffer %p", (void*)gb);
     Array_Free(&gb->data);
     gb->gapStart = gb->gapEnd = 0;
 }
@@ -90,6 +93,7 @@ void GapBuffer_InsertSlice(GapBuffer* gb, size_t position, Slice content)
     memcpy(Array_RawAt(&gb->data, gb->gapStart), content.data, content.size);
     gb->gapStart += count;
     gb->data.size += count;
+    LOG_DEBUG("GapBuffer_InsertSlice: inserted %zu items at position %zu", count, position);
 }
 
 void GapBuffer_InsertChar(GapBuffer* gb, size_t position, char character)
@@ -101,6 +105,7 @@ void GapBuffer_InsertChar(GapBuffer* gb, size_t position, char character)
     *(char*)Array_RawAt(&gb->data, gb->gapStart) = character;
     gb->gapStart++;
     gb->data.size++;
+    LOG_DEBUG("GapBuffer_InsertChar: inserted char '%c' at position %zu", character, position);
 }
 
 void GapBuffer_Delete(GapBuffer* gb, size_t position, size_t size)
@@ -111,6 +116,7 @@ void GapBuffer_Delete(GapBuffer* gb, size_t position, size_t size)
     GapBuffer_MoveGap(gb, position + size);
     gb->gapStart -= size;
     gb->data.size -= size;
+    LOG_DEBUG("GapBuffer_Delete: deleted %zu items starting from %zu", size, position);
 }
 
 Slice GapBuffer_ToSlice(GapBuffer* gb)
@@ -121,6 +127,7 @@ Slice GapBuffer_ToSlice(GapBuffer* gb)
 
 void GapBuffer_Clear(GapBuffer* gb)
 {
+    LOG_DEBUG("GapBuffer_Clear: clearing gap buffer %p", (void*)gb);
     gb->gapStart = 0;
     gb->gapEnd = gb->data.capacity;
     gb->data.size = 0;

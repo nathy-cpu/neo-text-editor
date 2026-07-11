@@ -20,6 +20,7 @@ Line* Line_New(size_t initialCapacity)
     line->isFolded = false;
     line->foldLevel = 0;
 
+    LOG_DEBUG("Line_New: allocated line %p with capacity %zu", (void*)line, initialCapacity);
     return line;
 }
 
@@ -28,6 +29,8 @@ void Line_Free(Line* line)
     if (!line)
         return;
 
+    LOG_DEBUG("Line_Free: freeing line %p (lineNumber=%zu, offset=%zu, length=%zu)",
+        (void*)line, line->lineNumber, line->offset, line->length);
     free(line->text);
     Array_Free(&line->testText);
     Array_Free(&line->styles);
@@ -37,6 +40,8 @@ void Line_Free(Line* line)
 void Line_InsertChar(Line* line, size_t position, char character)
 {
     assert(line != NULL && "Line cannot be NULL");
+    LOG_DEBUG("Line_InsertChar: inserting '%c' at position %zu for line %zu (buffer=%p)",
+        character, position, line->lineNumber, (void*)line->buffer);
     if (line->buffer != NULL) {
         Buffer_InsertChar(line->buffer, line->lineNumber, position, character);
     } else {
@@ -59,6 +64,8 @@ void Line_InsertChar(Line* line, size_t position, char character)
 void Line_DeleteChar(Line* line, size_t position)
 {
     assert(line != NULL && "Line cannot be NULL");
+    LOG_DEBUG("Line_DeleteChar: deleting char at position %zu for line %zu (buffer=%p)",
+        position, line->lineNumber, (void*)line->buffer);
     if (line->buffer != NULL) {
         Buffer_DeleteChar(line->buffer, line->lineNumber, position);
     } else {
@@ -77,6 +84,8 @@ void Line_InsertText(Line* line, size_t position, const char* text, size_t lengt
 {
     assert(line != NULL && "Line cannot be NULL");
     assert(text != NULL && "Text pointer cannot be NULL");
+    LOG_DEBUG("Line_InsertText: inserting text of length %zu at position %zu for line %zu (buffer=%p)",
+        length, position, line->lineNumber, (void*)line->buffer);
     if (line->buffer != NULL) {
         size_t offset = line->offset + position;
         Buffer_InsertText(line->buffer, offset, text, length);
@@ -103,6 +112,8 @@ void Line_InsertText(Line* line, size_t position, const char* text, size_t lengt
 void Line_DeleteText(Line* line, size_t position, size_t length)
 {
     assert(line != NULL && "Line cannot be NULL");
+    LOG_DEBUG("Line_DeleteText: deleting %zu chars starting at position %zu for line %zu (buffer=%p)",
+        length, position, line->lineNumber, (void*)line->buffer);
     if (line->buffer != NULL) {
         size_t offset = line->offset + position;
         Buffer_DeleteRange(line->buffer, offset, offset + length);

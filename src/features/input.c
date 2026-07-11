@@ -159,7 +159,8 @@ void Editor_ProcessInput(Editor* editor, int input)
     Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     bool modified = false;
 
-    LOG_DEBUG("Editor_ProcessInput: processing keypress %d on tab '%s'", input, tab->filename ? tab->filename : "<scratch>");
+    LOG_DEBUG(
+        "Editor_ProcessInput: processing keypress %d on tab '%s'", input, tab->filename ? tab->filename : "<scratch>");
 
     if (input == editor->config.keySave) {
         if (tab->buffer->isReadOnly) {

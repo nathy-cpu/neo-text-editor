@@ -8,6 +8,7 @@ static void test_buffer_basic(void)
 {
     Buffer* buffer = Buffer_New();
     assert(buffer != NULL);
+    assert(buffer->mappedFile.fileDescriptor == -1);
     assert(Buffer_GetLineCount(buffer) == 1);
     
     Buffer_InsertChar(buffer, 0, 0, 'a');

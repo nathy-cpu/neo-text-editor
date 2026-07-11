@@ -100,7 +100,8 @@ MappedFile FileIoMmap(const char* path)
 void MappedFile_Unmap(MappedFile* file)
 {
     if (file->fileDescriptor != -1) {
-        LOG_DEBUG("MappedFile_Unmap: unmapping file descriptor %d (size=%zu)", file->fileDescriptor, file->content.size);
+        LOG_DEBUG(
+            "MappedFile_Unmap: unmapping file descriptor %d (size=%zu)", file->fileDescriptor, file->content.size);
         munmap((void*)file->content.data, file->content.size);
         close(file->fileDescriptor);
         file->fileDescriptor = -1;

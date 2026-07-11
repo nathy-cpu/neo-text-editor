@@ -57,8 +57,8 @@ static void LineCache_EnsureCapacity(LineCache* lc, size_t required)
     if (gapSize >= required)
         return;
 
-    size_t newGapSize = gapSize * 2 + required;
-    size_t newCapacity = lc->capacity + newGapSize - gapSize;
+    size_t newCapacity = lc->capacity * 2 + required;
+    size_t newGapSize = newCapacity - lc->count;
     Line* newLines = malloc(sizeof(Line) * newCapacity);
     assert(newLines);
 
@@ -167,6 +167,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         Array_Free(&buffer->lineCache.lines[i].styles);
         Array_Free(&buffer->lineCache.lines[i].testText);
     }
+    buffer->lineCache.gapEnd = buffer->lineCache.capacity;
     buffer->lineCache.count = lineIdx;
 
     // Find starting offset for scanning
@@ -321,6 +322,7 @@ static void Buffer_Defragment(Buffer* buffer)
 
 DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer)
 {
+    LOG_DEBUG("DocumentSnapshot_Copy: creating snapshot of buffer %p (totalBytes=%zu)", (void*)buffer, buffer->totalBytes);
     DocumentSnapshot* snap = malloc(sizeof(DocumentSnapshot));
     assert(snap);
 
@@ -339,6 +341,7 @@ void DocumentSnapshot_Free(DocumentSnapshot* snap)
 {
     if (!snap)
         return;
+    LOG_DEBUG("DocumentSnapshot_Free: freeing snapshot %p (totalBytes=%zu)", (void*)snap, snap->totalBytes);
     GapBuffer_Free(&snap->pieces);
     free(snap);
 }
@@ -346,6 +349,7 @@ void DocumentSnapshot_Free(DocumentSnapshot* snap)
 void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap)
 {
     assert(buffer && snap);
+    LOG_DEBUG("Buffer_RestoreSnapshot: restoring snapshot %p to buffer %p (totalBytes=%zu)", (void*)snap, (void*)buffer, snap->totalBytes);
 
     GapBuffer_Free(&buffer->pieces);
 
@@ -423,6 +427,7 @@ Buffer* Buffer_New(void)
 
     buffer->refCount = 1;
     buffer->totalBytes = 0;
+    buffer->mappedFile.fileDescriptor = -1;
 
     buffer->bufferOriginal = (Slice) { .data = NULL, .size = 0 };
     Array_Init(&buffer->bufferAdd, sizeof(char), 256, 0);
@@ -474,7 +479,8 @@ Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename)
 
     History_Init(&buffer->history);
 
-    LOG_INFO("Buffer_NewFromMmap: Created memory-mapped buffer from file '%s' (bytes=%zu).", filename ? filename : "<unknown>", mappedFile.content.size);
+    LOG_INFO("Buffer_NewFromMmap: Created memory-mapped buffer from file '%s' (bytes=%zu).",
+        filename ? filename : "<unknown>", mappedFile.content.size);
     return buffer;
 }
 
@@ -485,7 +491,8 @@ void Buffer_Free(Buffer* buffer)
 
     buffer->refCount--;
     if (buffer->refCount > 0) {
-        LOG_DEBUG("Buffer_Free: DecRef refCount to %d for '%s'", buffer->refCount, buffer->filename ? buffer->filename : "<none>");
+        LOG_DEBUG("Buffer_Free: DecRef refCount to %d for '%s'", buffer->refCount,
+            buffer->filename ? buffer->filename : "<none>");
         return;
     }
 
@@ -519,6 +526,8 @@ Line* Buffer_GetLine(const Buffer* buffer, size_t lineNumber)
 Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber)
 {
     assert(buffer);
+    LOG_DEBUG("Buffer_InsertLine: inserting line at index %zu (totalLines=%zu)",
+        lineNumber, Buffer_GetLineCount(buffer));
     size_t offset = 0;
     size_t totalLines = Buffer_GetLineCount(buffer);
     if (lineNumber > 0) {
@@ -539,6 +548,8 @@ Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber)
 void Buffer_DeleteLine(Buffer* buffer, size_t lineNumber)
 {
     assert(buffer);
+    LOG_DEBUG("Buffer_DeleteLine: deleting line at index %zu (totalLines=%zu)",
+        lineNumber, Buffer_GetLineCount(buffer));
     Line* line = Buffer_GetLine(buffer, lineNumber);
     if (!line)
         return;
@@ -569,6 +580,7 @@ static size_t Buffer_GetAbsoluteOffset(Buffer* buffer, size_t lineNumber, size_t
 void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column, char character)
 {
     assert(buffer);
+    LOG_DEBUG("Buffer_InsertChar: inserting '%c' at line=%zu col=%zu", character, lineNumber, column);
     size_t offset = Buffer_GetAbsoluteOffset(buffer, lineNumber, column);
 
     Action action = {
@@ -583,6 +595,7 @@ void Buffer_InsertChar(Buffer* buffer, size_t lineNumber, size_t column, char ch
 void Buffer_DeleteChar(Buffer* buffer, size_t lineNumber, size_t column)
 {
     assert(buffer);
+    LOG_DEBUG("Buffer_DeleteChar: deleting char at line=%zu col=%zu", lineNumber, column);
     Line* line = Buffer_GetLine(buffer, lineNumber);
     if (line && column < line->length) {
         char c = Line_GetChar(line, column);
@@ -599,6 +612,7 @@ void Buffer_DeleteChar(Buffer* buffer, size_t lineNumber, size_t column)
 void Buffer_SplitLine(Buffer* buffer, size_t lineNumber, size_t column)
 {
     assert(buffer);
+    LOG_DEBUG("Buffer_SplitLine: splitting line=%zu col=%zu", lineNumber, column);
     Line* line = Buffer_GetLine(buffer, lineNumber);
     if (line) {
         if (column > line->length)
@@ -615,6 +629,7 @@ void Buffer_SplitLine(Buffer* buffer, size_t lineNumber, size_t column)
 void Buffer_JoinLine(Buffer* buffer, size_t lineNumber)
 {
     assert(buffer);
+    LOG_DEBUG("Buffer_JoinLine: joining line=%zu with line=%zu", lineNumber, lineNumber + 1);
     Line* line = Buffer_GetLine(buffer, lineNumber);
     if (line) {
         Action action = { .type = ACTION_JOIN_LINE, .lineNumber = lineNumber, .column = line->length };

@@ -7,6 +7,7 @@ void Stack_Init(Stack* stack)
         return;
     stack->top = NULL;
     stack->size = 0;
+    LOG_DEBUG("Stack_Init: initialized stack at %p", (void*)stack);
 }
 
 void Stack_Push(Stack* stack, void* data)
@@ -40,6 +41,7 @@ void Stack_Free(Stack* stack, void (*freeData)(void*))
 {
     if (!stack)
         return;
+    LOG_DEBUG("Stack_Free: freeing stack at %p (size=%zu)", (void*)stack, stack->size);
     StackNode* current = stack->top;
     while (current) {
         StackNode* next = current->next;
@@ -58,7 +60,8 @@ void Stack_EnforceLimit(Stack* stack, size_t limit, void (*freeData)(void*))
     if (!stack || limit == 0)
         return;
     if (stack->size > limit) {
-        LOG_DEBUG("Stack_EnforceLimit: current size %zu exceeds limit %zu, discarding oldest items", stack->size, limit);
+        LOG_DEBUG(
+            "Stack_EnforceLimit: current size %zu exceeds limit %zu, discarding oldest items", stack->size, limit);
     }
     while (stack->size > limit) {
         StackNode* prev = NULL;

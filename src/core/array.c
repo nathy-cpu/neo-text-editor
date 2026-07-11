@@ -40,12 +40,17 @@ void Array_Init(Array* array, size_t itemSize, size_t capacity, size_t alignment
 
 void Array_Free(Array* array)
 {
+    LOG_DEBUG("Array_Free: freeing array %p", (void*)array);
     free(array->data); // aligned_alloc uses standard free()
     array->data = NULL;
     array->size = array->capacity = 0;
 }
 
-void Array_Clear(Array* array) { array->size = 0; }
+void Array_Clear(Array* array)
+{
+    LOG_DEBUG("Array_Clear: clearing array %p (size was %zu)", (void*)array, array->size);
+    array->size = 0;
+}
 
 bool Array_Append(Array* array, const void* items, size_t count)
 {
@@ -59,7 +64,8 @@ bool Array_Append(Array* array, const void* items, size_t count)
     // Resize if needed (geometric growth)
     if (array->size + count > array->capacity) {
         size_t newCapacity = array->capacity * 2 + count;
-        LOG_DEBUG("Array resizing capacity from %zu to %zu (need total size %zu)", array->capacity, newCapacity, array->size + count);
+        LOG_DEBUG("Array resizing capacity from %zu to %zu (need total size %zu)", array->capacity, newCapacity,
+            array->size + count);
         size_t totalSize = array->itemSize * newCapacity;
         size_t alignedSize = totalSize;
         if (alignedSize % array->alignment != 0) {
@@ -80,6 +86,7 @@ bool Array_Append(Array* array, const void* items, size_t count)
     // Append new items
     memcpy((char*)array->data + (array->size * array->itemSize), items, count * array->itemSize);
     array->size += count;
+    LOG_DEBUG("Array_Append: appended %zu items, new size=%zu", count, array->size);
     return true;
 }
 
@@ -88,6 +95,7 @@ bool Array_Pop(Array* array)
     if (array->size == 0)
         return false;
     array->size--;
+    LOG_DEBUG("Array_Pop: popped 1 item, new size=%zu", array->size);
     return true;
 }
 

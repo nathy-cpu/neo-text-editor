@@ -194,7 +194,8 @@ void Tab_UpdateSyntax(Tab* tab)
         return;
     }
 
-    LOG_DEBUG("Tab_UpdateSyntax: updating syntax highlighting for tab '%s' using '%s'", tab->filename ? tab->filename : "<scratch>", tab->syntax->fileType);
+    LOG_DEBUG("Tab_UpdateSyntax: updating syntax highlighting for tab '%s' using '%s'",
+        tab->filename ? tab->filename : "<scratch>", tab->syntax->fileType);
 
     bool inMultiLineComment = false;
     for (size_t i = 0; i < Buffer_GetLineCount(tab->buffer); i++) {
