@@ -144,12 +144,16 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     size_t oldTotal = buffer->lineCache.count;
     size_t numOldLinesToSave = (oldTotal > lineIdx) ? (oldTotal - lineIdx) : 0;
     Line* savedLines = NULL;
+    size_t oldFolded = 0;
     if (numOldLinesToSave > 0) {
         savedLines = malloc(sizeof(Line) * numOldLinesToSave);
         assert(savedLines);
         for (size_t i = 0; i < numOldLinesToSave; i++) {
             Line* oldLine = LineCache_At(&buffer->lineCache, lineIdx + i);
             savedLines[i] = *oldLine;
+            if (oldLine->isFolded) {
+                oldFolded++;
+            }
             // Clear style/text pointers so they don't get double-freed
             oldLine->text = NULL;
             oldLine->styles = (Array) { 0 };
@@ -263,6 +267,15 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         }
         free(savedLines);
     }
+
+    // Recompute folded lines in the modified range
+    size_t newFolded = 0;
+    for (size_t i = buffer->lineCache.dirtyLineStart; i < buffer->lineCache.count; i++) {
+        if (LineCache_At(&buffer->lineCache, i)->isFolded) {
+            newFolded++;
+        }
+    }
+    buffer->foldedLineCount = buffer->foldedLineCount - oldFolded + newFolded;
 
     buffer->lineCache.dirtyLineStart = SIZE_MAX;
 }

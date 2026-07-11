@@ -218,6 +218,7 @@ static void test_tab_folding(void)
     }
 
     line0->isFolded = true;
+    tab.buffer->foldedLineCount = 1;
     Tab_UpdateVisualRows((const Editor*)NULL, &tab, 80);
 
     assert(Array_Size(&tab.visualRows) == 6);

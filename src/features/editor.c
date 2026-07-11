@@ -197,8 +197,24 @@ size_t Tab_GetGutterWidth(const Tab* tab)
     return Tab_GetGutterDigits(tab) + 4;
 }
 
+size_t Tab_GetVisualRowCount(const Tab* tab)
+{
+    if (!tab->config || !tab->config->wrapLines) {
+        if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
+            return tab->buffer ? Buffer_GetLineCount(tab->buffer) : 0;
+        }
+    }
+    return Array_Size(&tab->visualRows);
+}
+
 size_t Tab_GetCursorVRowIdx(const Tab* tab)
 {
+    if (!tab->config || !tab->config->wrapLines) {
+        if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
+            return tab->cursorY;
+        }
+    }
+
     size_t totalVRows = Array_Size(&tab->visualRows);
     if (totalVRows == 0)
         return 0;
@@ -220,6 +236,13 @@ size_t Tab_GetCursorVRowIdx(const Tab* tab)
 
 size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
 {
+    if (!tab->config || !tab->config->wrapLines) {
+        if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
+            Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
+            return line ? Line_GetRenderX(line, tab->cursorX, tab->config->tabSize) : 0;
+        }
+    }
+
     size_t totalVRows = Array_Size(&tab->visualRows);
     if (vrowIdx >= totalVRows)
         return 0;
@@ -236,11 +259,23 @@ size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
 
 void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCol)
 {
-    size_t totalVRows = Array_Size(&tab->visualRows);
+    bool useDirect = !tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0);
+    size_t totalVRows = useDirect ? Buffer_GetLineCount(tab->buffer) : Array_Size(&tab->visualRows);
     if (targetVRowIdx >= totalVRows)
         return;
 
-    VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, targetVRowIdx);
+    VisualRow vr_mock;
+    VisualRow* vr;
+    if (useDirect) {
+        Line* line = Buffer_GetLine(tab->buffer, targetVRowIdx);
+        vr_mock.lineIndex = targetVRowIdx;
+        vr_mock.startCol = 0;
+        vr_mock.length = line ? Line_Length(line) : 0;
+        vr_mock.isWrapped = false;
+        vr = &vr_mock;
+    } else {
+        vr = (VisualRow*)Array_At(&tab->visualRows, targetVRowIdx);
+    }
     tab->cursorY = vr->lineIndex;
     Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
     if (!line) {
@@ -277,6 +312,10 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
     (void)editor;
     Array_Clear(&tab->visualRows);
 
+    if (!tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0)) {
+        return;
+    }
+
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
     if (totalLines == 0) {
         VisualRow vr = { .lineIndex = 0, .startCol = 0, .length = 0, .isWrapped = false };
@@ -291,8 +330,12 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         if (!line)
             continue;
 
-        bool isBlank = Line_IsBlank(line);
-        size_t indent = isBlank ? 0 : Line_GetIndentation(line, tab->config->tabSize);
+        bool isBlank = false;
+        size_t indent = 0;
+        if (hiddenUntilIndent != SIZE_MAX || line->isFolded) {
+            isBlank = Line_IsBlank(line);
+            indent = isBlank ? 0 : Line_GetIndentation(line, tab->config->tabSize);
+        }
 
         if (hiddenUntilIndent != SIZE_MAX) {
             if (isBlank || indent > hiddenUntilIndent) {
@@ -366,8 +409,10 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     // 1. Update wrapping segments
     Tab_UpdateVisualRows(editor, tab, usableColumns);
 
+    bool useDirect = !tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0);
+
     // Snap cursor if it became hidden
-    if (Array_Size(&tab->visualRows) > 0) {
+    if (!useDirect && Array_Size(&tab->visualRows) > 0) {
         bool cursorVisible = false;
         for (size_t i = 0; i < Array_Size(&tab->visualRows); i++) {
             VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
@@ -423,7 +468,8 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
     size_t gutterWidth = Tab_GetGutterWidth(tab);
     size_t digits = Tab_GetGutterDigits(tab);
     size_t usableColumns = (editor->screenColumns > gutterWidth) ? (editor->screenColumns - gutterWidth) : 0;
-    size_t totalVRows = Array_Size(&tab->visualRows);
+    bool useDirect = !tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0);
+    size_t totalVRows = useDirect ? Buffer_GetLineCount(tab->buffer) : Array_Size(&tab->visualRows);
 
     for (size_t i = 0; i < editor->screenRows; i++) {
         size_t vrowIdx = i + tab->rowOffset;
@@ -469,7 +515,18 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                 }
             }
         } else {
-            VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, vrowIdx);
+            VisualRow vr_mock;
+            VisualRow* vr;
+            if (useDirect) {
+                Line* line = Buffer_GetLine(tab->buffer, vrowIdx);
+                vr_mock.lineIndex = vrowIdx;
+                vr_mock.startCol = 0;
+                vr_mock.length = line ? Line_Length(line) : 0;
+                vr_mock.isWrapped = false;
+                vr = &vr_mock;
+            } else {
+                vr = (VisualRow*)Array_At(&tab->visualRows, vrowIdx);
+            }
             Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
             if (line) {
                 Slice textSlice = Line_GetText(line);
@@ -818,6 +875,10 @@ bool Line_IsFoldable(const Buffer* buffer, size_t lineNumber, size_t tabSize)
 
 bool Tab_IsLineVisible(const Tab* tab, size_t lineIndex)
 {
+    if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
+        return lineIndex < Buffer_GetLineCount(tab->buffer);
+    }
+
     size_t totalVRows = Array_Size(&tab->visualRows);
     for (size_t i = 0; i < totalVRows; i++) {
         VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
@@ -831,6 +892,10 @@ bool Tab_IsLineVisible(const Tab* tab, size_t lineIndex)
 size_t Tab_NextVisibleLine(const Tab* tab, size_t lineIndex)
 {
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
+    if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
+        return (lineIndex + 1 < totalLines) ? (lineIndex + 1) : lineIndex;
+    }
+
     for (size_t i = lineIndex + 1; i < totalLines; i++) {
         if (Tab_IsLineVisible(tab, i)) {
             return i;
@@ -843,6 +908,10 @@ size_t Tab_PrevVisibleLine(const Tab* tab, size_t lineIndex)
 {
     if (lineIndex == 0)
         return 0;
+    if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
+        return lineIndex - 1;
+    }
+
     for (size_t i = lineIndex; i > 0; i--) {
         if (Tab_IsLineVisible(tab, i - 1)) {
             return i - 1;

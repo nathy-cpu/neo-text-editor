@@ -44,7 +44,7 @@ void Editor_MoveCursor(Editor* editor, int key)
     }
     case ARROW_DOWN: {
         size_t currentVRowIdx = Tab_GetCursorVRowIdx(tab);
-        if (currentVRowIdx + 1 < Array_Size(&tab->visualRows)) {
+        if (currentVRowIdx + 1 < Tab_GetVisualRowCount(tab)) {
             size_t targetCol = Tab_GetCursorVisualCol(tab, currentVRowIdx);
             Tab_SetCursorFromVRow(tab, currentVRowIdx + 1, targetCol);
         }
@@ -488,7 +488,10 @@ void Editor_ToggleFold(Editor* editor)
         return;
 
     if (Line_IsFoldable(tab->buffer, lineIndex, tab->config->tabSize)) {
+        bool wasFolded = line->isFolded;
         line->isFolded = !line->isFolded;
+        if (line->isFolded && !wasFolded) tab->buffer->foldedLineCount++;
+        else if (!line->isFolded && wasFolded) tab->buffer->foldedLineCount--;
         LOG_INFO("Toggled fold on line %zu to %d", lineIndex + 1, line->isFolded);
         Editor_ScrollTab(editor, tab);
     } else {
@@ -517,7 +520,10 @@ void Editor_ToggleAllFolds(Editor* editor)
     for (size_t i = 0; i < totalLines; i++) {
         Line* line = Buffer_GetLine(tab->buffer, i);
         if (line && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
+            bool wasFolded = line->isFolded;
             line->isFolded = anyUnfolded;
+            if (line->isFolded && !wasFolded) tab->buffer->foldedLineCount++;
+            else if (!line->isFolded && wasFolded) tab->buffer->foldedLineCount--;
         }
     }
 

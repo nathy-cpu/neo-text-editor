@@ -318,6 +318,7 @@ typedef struct Buffer {
     bool isReadOnly; // Read-only flag
     size_t refCount; // Reference count
     History history; // History stack
+    size_t foldedLineCount; // Number of folded lines in the document
 } Buffer;
 
 /**
@@ -974,6 +975,14 @@ size_t Tab_GetGutterWidth(const Tab* tab);
  * @return Visual row index.
  */
 size_t Tab_GetCursorVRowIdx(const Tab* tab);
+
+/**
+ * @brief Retrieves the total number of visual rows, optimized for unwrapped/unfolded text.
+ * @param tab Pointer to the Tab.
+ * @return Total number of visual rows.
+ */
+size_t Tab_GetVisualRowCount(const Tab* tab);
+
 
 /**
  * @brief Retrieves the visual column offset of the cursor in a specific visual row.
