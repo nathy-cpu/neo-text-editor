@@ -92,6 +92,7 @@ void Config_InitDefaults(Config* config)
     config->logToFile = false;
     config->logToUi = true;
     config->logMaxMessages = 1000;
+    config->undoLimit = 1000;
 
     // Initialize syntax database
     Array_Init(&config->syntaxDatabase, sizeof(Syntax), 4, alignof(Syntax));
@@ -443,6 +444,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->logToFile = GetLuaBool(luaState, "log_to_file", config->logToFile);
     config->logToUi = GetLuaBool(luaState, "log_to_ui", config->logToUi);
     config->logMaxMessages = GetLuaInt(luaState, "log_max_messages", config->logMaxMessages);
+    config->undoLimit = (size_t)GetLuaInt(luaState, "undo_limit", (int)config->undoLimit);
 
     // Parse syntax colors
     char* newSyntaxColors[9];

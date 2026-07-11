@@ -195,6 +195,36 @@ void Editor_ProcessInput(Editor* editor, int input)
             tab->hasSelection = true;
             break;
 
+        case CTRL_KEY('z'):
+            if (!tab->buffer->isReadOnly) {
+                Buffer_Undo(tab->buffer);
+                modified = true;
+                tab->isSaved = false;
+                if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
+                    tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
+                }
+                Line* rowZ = Buffer_GetLine(tab->buffer, tab->cursorY);
+                if (rowZ && tab->cursorX > GapBuffer_Size(&rowZ->text)) {
+                    tab->cursorX = GapBuffer_Size(&rowZ->text);
+                }
+            }
+            break;
+
+        case CTRL_KEY('y'):
+            if (!tab->buffer->isReadOnly) {
+                Buffer_Redo(tab->buffer);
+                modified = true;
+                tab->isSaved = false;
+                if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
+                    tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
+                }
+                Line* rowY = Buffer_GetLine(tab->buffer, tab->cursorY);
+                if (rowY && tab->cursorX > GapBuffer_Size(&rowY->text)) {
+                    tab->cursorX = GapBuffer_Size(&rowY->text);
+                }
+            }
+            break;
+
         case CTRL_KEY('q'):
             // Handled in Editor_ProcessKeypress
             break;

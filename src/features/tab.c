@@ -22,6 +22,7 @@ static void InitDefaultTestConfig(void)
     }
     // Set database to empty array representation
     memset(&defaultTestConfig.syntaxDatabase, 0, sizeof(Array));
+    defaultTestConfig.undoLimit = 1000;
     defaultTestConfigInitialized = true;
 }
 
@@ -58,6 +59,7 @@ void Tab_Init(Tab* tab)
     Array_InitStruct(&tab->visualRows, VisualRow, 16);
 
     tab->config = &defaultTestConfig;
+    tab->buffer->history.undoLimit = tab->config->undoLimit;
 }
 
 // Free all resources
@@ -87,6 +89,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
     // Clear existing content
     Buffer_Free(tab->buffer);
     tab->buffer = Buffer_New();
+    tab->buffer->history.undoLimit = tab->config->undoLimit;
 
     // Parse file content into lines
     char* content = (char*)fileContent.data;

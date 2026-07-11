@@ -221,6 +221,65 @@ size_t GapBuffer_Size(const GapBuffer* gapBuffer);
 void GapBuffer_MoveGap(GapBuffer* gapBuffer, size_t newGapStart);
 
 // ============================================================================
+// UNDO/REDO HISTORY
+// ============================================================================
+
+typedef enum {
+    ACTION_INSERT_CHAR,
+    ACTION_DELETE_CHAR,
+    ACTION_INSERT_TEXT,
+    ACTION_DELETE_TEXT,
+    ACTION_SPLIT_LINE,
+    ACTION_JOIN_LINE
+} ActionType;
+
+typedef struct {
+    ActionType type;
+    size_t lineNumber;
+    size_t column;
+
+    union {
+        char character;
+        Slice text;
+    } payload;
+} Action;
+
+typedef struct ActionGroup {
+    Array actions;
+} ActionGroup;
+
+typedef struct StackNode {
+    void* data; // Pointer to ActionGroup
+    struct StackNode* next;
+} StackNode;
+
+typedef struct {
+    StackNode* top;
+    size_t size;
+} Stack;
+
+void Stack_Init(Stack* stack);
+void Stack_Push(Stack* stack, void* data);
+void* Stack_Pop(Stack* stack);
+void Stack_Free(Stack* stack, void (*freeData)(void*));
+void Stack_EnforceLimit(Stack* stack, size_t limit, void (*freeData)(void*));
+
+typedef struct {
+    Stack undoStack;
+    Stack redoStack;
+    ActionGroup* currentGroup;
+    bool isUndoRedoing;
+    size_t undoLimit;
+} History;
+
+void History_Init(History* history);
+void History_Free(History* history);
+
+void Action_Free(Action* action);
+ActionGroup* ActionGroup_New(void);
+void ActionGroup_Free(ActionGroup* group);
+
+// ============================================================================
 // LINKED LIST TEXT BUFFER
 // ============================================================================
 
@@ -245,6 +304,8 @@ typedef struct Buffer {
     char* filename; // Associated filename
     bool isModified; // Whether buffer has been modified
     bool isReadOnly; // Whether buffer is read-only
+    size_t refCount;
+    History history; // Undo/Redo history
 } Buffer;
 
 /**
@@ -403,6 +464,18 @@ size_t Buffer_GetTotalBytes(const Buffer* buffer);
  * @return A Slice representing the full file content including inserted newlines.
  */
 Slice Buffer_ToSlice(const Buffer* buffer);
+
+/**
+ * @brief Undoes the last action or action group.
+ * @param buffer Pointer to the buffer.
+ */
+void Buffer_Undo(Buffer* buffer);
+
+/**
+ * @brief Redoes the previously undone action or action group.
+ * @param buffer Pointer to the buffer.
+ */
+void Buffer_Redo(Buffer* buffer);
 
 // ============================================================================
 // TERMINAL HANDLING
@@ -604,6 +677,9 @@ typedef struct {
     bool logToFile;
     bool logToUi;
     int logMaxMessages;
+
+    // Undo Configuration
+    size_t undoLimit;
 } Config;
 
 typedef struct {
