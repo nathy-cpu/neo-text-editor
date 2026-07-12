@@ -111,6 +111,19 @@ bool Array_Append(Array* array, const void* items, size_t count);
 bool Array_Pop(Array* array);
 
 /**
+ * @brief Replaces a range of items in-place with a different number of items,
+ * shifting the tail as needed (memmove-based; only safe for POD element types
+ * with no owned pointers).
+ * @param array Pointer to the array.
+ * @param start Index of the first item to replace.
+ * @param count Number of existing items to remove starting at `start`.
+ * @param newItems Pointer to the replacement items (may be NULL if newCount is 0).
+ * @param newCount Number of replacement items.
+ * @return True on success, false on allocation failure.
+ */
+bool Array_ReplaceRange(Array* array, size_t start, size_t count, const void* newItems, size_t newCount);
+
+/**
  * @brief Gets a pointer to the item at the specified index.
  * @param array Pointer to the array.
  * @param index Index of the item.
@@ -324,6 +337,15 @@ typedef struct Buffer {
     History history; // History stack
     size_t foldedLineCount; // Number of folded lines in the document
     size_t editVersion; // Incremented on every content-mutating edit, for cache invalidation
+
+    // Line range touched by the most recent Buffer_RebuildLineCache call, so
+    // other incremental consumers (e.g. visual row wrapping) can splice just
+    // the affected range instead of rebuilding from scratch. Persists across
+    // rebuilds so multiple consumers can each read it once per edit cycle.
+    size_t lastRebuiltOldStart; // First old line index invalidated
+    size_t lastRebuiltOldEnd; // Exclusive; old lines beyond this were reused as-is (shifted)
+    size_t lastRebuiltNewEnd; // Exclusive; new lines beyond this are the reused/shifted tail
+    bool lastRebuildOccurred; // Whether a rebuild has ever populated the fields above
 } Buffer;
 
 /**
@@ -475,6 +497,20 @@ size_t Buffer_GetLineCount(const Buffer* buffer);
  * @return The dirty line index, or SIZE_MAX if the cache is clean.
  */
 size_t Buffer_PeekDirtyLineStart(const Buffer* buffer);
+
+/**
+ * @brief Returns the line range touched by the most recent line cache rebuild,
+ * in both old (pre-edit) and new (post-edit) line-index space, so incremental
+ * consumers (e.g. visual row wrapping) can splice just the affected range.
+ * @param buffer Pointer to the buffer.
+ * @param oldStart Out: first old line index invalidated by the rebuild.
+ * @param oldEnd Out: exclusive end of the invalidated old-line range (old lines
+ * at/after this index were reused as-is, just shifted).
+ * @param newEnd Out: exclusive end of the freshly-computed new-line range (new
+ * lines at/after this index are the reused/shifted tail).
+ * @return True if a rebuild has occurred and the range is valid, false otherwise.
+ */
+bool Buffer_GetLastRebuildRange(const Buffer* buffer, size_t* oldStart, size_t* oldEnd, size_t* newEnd);
 
 /**
  * @brief Computes the total exact byte size of the buffer when rendered into a single string.
@@ -779,6 +815,7 @@ typedef struct {
     size_t visualRowsEditVersion; // Buffer editVersion visualRows was last built for
     size_t visualRowsFoldedCount; // Buffer foldedLineCount visualRows was last built for
     size_t visualRowsUsableColumns; // usableColumns visualRows was last built for
+    size_t visualRowsLineCount; // Buffer line count visualRows was last built for
 
     // Pointer to active configuration
     Config* config;

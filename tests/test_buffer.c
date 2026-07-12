@@ -291,6 +291,140 @@ static void test_editor_toggle_all_folds(void)
     Editor_Free(&editor);
 }
 
+// Regression test for the perf fix in Buffer_RebuildLineCache: editing a
+// single line deep inside a multi-line buffer must only invalidate that one
+// line (the "aligned" fast path), not rebuild the whole rest of the file.
+// Only when two edits land back-to-back with no intervening rebuild (so the
+// realignment offset can no longer be trusted) should the full tail rebuild.
+static void test_buffer_last_rebuild_range(void)
+{
+    Buffer* buffer = Buffer_New();
+    for (size_t i = 1; i < 5; i++) {
+        Buffer_InsertLine(buffer, i);
+    }
+    for (size_t i = 0; i < 5; i++) {
+        Buffer_InsertChar(buffer, i, 0, (char)('0' + i));
+    }
+    assert(Buffer_GetLineCount(buffer) == 5);
+
+    // Aligned case: a single edit on line 2 only invalidates line 2.
+    Buffer_InsertChar(buffer, 2, 1, 'x'); // line 2: "2" -> "2x"
+    assert(Buffer_GetLineCount(buffer) == 5);
+
+    size_t oldStart = SIZE_MAX, oldEnd = SIZE_MAX, newEnd = SIZE_MAX;
+    assert(Buffer_GetLastRebuildRange(buffer, &oldStart, &oldEnd, &newEnd) == true);
+    assert(oldStart == 2);
+    assert(oldEnd == 3);
+    assert(newEnd == 3);
+
+    // Unaligned case: two direct edits on different lines with no rebuild in
+    // between merge into one dirty range and disable the realignment offset,
+    // forcing the whole tail (line 0 through the end) to be rebuilt.
+    Buffer_InsertText(buffer, 0, "y", 1); // line 0: "0" -> "y0"
+    Buffer_InsertText(buffer, 8, "z", 1); // line 3: "3" -> "z3"
+    assert(Buffer_GetLineCount(buffer) == 5);
+
+    Line* line0 = Buffer_GetLine(buffer, 0);
+    Slice l0Text = Line_GetText(line0);
+    assert(l0Text.size == 2 && memcmp(l0Text.data, "y0", 2) == 0);
+    Line* line3 = Buffer_GetLine(buffer, 3);
+    Slice l3Text = Line_GetText(line3);
+    assert(l3Text.size == 2 && memcmp(l3Text.data, "z3", 2) == 0);
+
+    assert(Buffer_GetLastRebuildRange(buffer, &oldStart, &oldEnd, &newEnd) == true);
+    assert(oldStart == 0);
+    assert(oldEnd == 5);
+    assert(newEnd == 5);
+
+    Buffer_Free(buffer);
+}
+
+// Regression test for the perf fix in Tab_UpdateVisualRows: an edit that
+// doesn't change the total line count should only re-wrap the edited line
+// (no renumbering of the rest), and an edit that does change the line count
+// should shift only the lineIndex of rows after the edit, not rebuild/move
+// the rows before it.
+static void test_tab_visual_rows_incremental(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+
+    for (size_t i = 1; i < 6; i++) {
+        Buffer_InsertLine(tab.buffer, i);
+    }
+    for (size_t i = 0; i < 6; i++) {
+        char text[8];
+        int n = snprintf(text, sizeof(text), "L%zu", i);
+        Line* line = Buffer_GetLine(tab.buffer, i);
+        Buffer_InsertText(tab.buffer, line->offset, text, (size_t)n);
+    }
+    assert(Buffer_GetLineCount(tab.buffer) == 6);
+
+    size_t usableColumns = 10;
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, usableColumns);
+    assert(Array_Size(&tab.visualRows) == 6);
+    for (size_t i = 0; i < 6; i++) {
+        VisualRow* vr = (VisualRow*)Array_At(&tab.visualRows, i);
+        assert(vr->lineIndex == i);
+        assert(vr->isWrapped == false);
+    }
+
+    // Extend line 1 well past usableColumns so it now wraps into 2 rows.
+    // Total line count is unchanged (no newline inserted).
+    Line* line1 = Buffer_GetLine(tab.buffer, 1);
+    Buffer_InsertText(tab.buffer, line1->offset + line1->length, "0123456789ABCDE", 15);
+    assert(Buffer_GetLineCount(tab.buffer) == 6);
+
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, usableColumns);
+    // line1 is now "L10123456789ABCDE" (17 chars) at width 10 -> wraps into 2 rows.
+    assert(Array_Size(&tab.visualRows) == 7);
+
+    VisualRow* vr = (VisualRow*)Array_At(&tab.visualRows, 0);
+    assert(vr->lineIndex == 0 && vr->length == 2); // "L0" untouched
+
+    vr = (VisualRow*)Array_At(&tab.visualRows, 1);
+    assert(vr->lineIndex == 1 && vr->startCol == 0 && vr->length == 10 && vr->isWrapped == false);
+
+    vr = (VisualRow*)Array_At(&tab.visualRows, 2);
+    assert(vr->lineIndex == 1 && vr->startCol == 10 && vr->length == 7 && vr->isWrapped == true);
+
+    // Lines 2..5 must be untouched and NOT renumbered (line count didn't change).
+    for (size_t i = 2; i < 6; i++) {
+        vr = (VisualRow*)Array_At(&tab.visualRows, i + 1);
+        assert(vr->lineIndex == i);
+    }
+
+    // Now split line 2 into two lines -- a line-count-changing edit -- and
+    // confirm rows after the split point get renumbered (shifted by +1).
+    Buffer_SplitLine(tab.buffer, 2, 1); // "L2" -> "L", "2"
+    assert(Buffer_GetLineCount(tab.buffer) == 7);
+
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, usableColumns);
+    assert(Array_Size(&tab.visualRows) == 8);
+
+    // Rows before the split point (line 0, line 1's two segments) are untouched.
+    vr = (VisualRow*)Array_At(&tab.visualRows, 0);
+    assert(vr->lineIndex == 0);
+    vr = (VisualRow*)Array_At(&tab.visualRows, 1);
+    assert(vr->lineIndex == 1 && vr->isWrapped == false);
+    vr = (VisualRow*)Array_At(&tab.visualRows, 2);
+    assert(vr->lineIndex == 1 && vr->isWrapped == true);
+
+    // Old line 2's content, now split into logical lines 2 and 3.
+    vr = (VisualRow*)Array_At(&tab.visualRows, 3);
+    assert(vr->lineIndex == 2);
+    vr = (VisualRow*)Array_At(&tab.visualRows, 4);
+    assert(vr->lineIndex == 3);
+
+    // Old lines 3,4,5 are now logical lines 4,5,6 -- confirm the shift.
+    for (size_t i = 0; i < 3; i++) {
+        vr = (VisualRow*)Array_At(&tab.visualRows, 5 + i);
+        assert(vr->lineIndex == 4 + i);
+    }
+
+    Tab_Free(&tab);
+}
+
 static void test_buffer_piece_table(void)
 {
     const char* path = "test_temp_piece_table.txt";

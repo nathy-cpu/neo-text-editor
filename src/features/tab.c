@@ -60,6 +60,7 @@ void Tab_Init(Tab* tab)
     tab->visualRowsEditVersion = SIZE_MAX;
     tab->visualRowsFoldedCount = SIZE_MAX;
     tab->visualRowsUsableColumns = SIZE_MAX;
+    tab->visualRowsLineCount = SIZE_MAX;
 
     // Selection state
     tab->hasSelection = false;
@@ -118,6 +119,7 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->visualRowsEditVersion = SIZE_MAX;
     tab->visualRowsFoldedCount = SIZE_MAX;
     tab->visualRowsUsableColumns = SIZE_MAX;
+    tab->visualRowsLineCount = SIZE_MAX;
 
     LOG_INFO("Loaded tab content from file: %s (lines: %zu)", path, Buffer_GetLineCount(tab->buffer));
 }

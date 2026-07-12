@@ -158,6 +158,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     }
 
     size_t lineIdx = buffer->lineCache.dirtyLineStart;
+    size_t rebuildOldStart = lineIdx;
 
     // Save old lines for preserving state
     size_t oldTotal = buffer->lineCache.count;
@@ -296,6 +297,14 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     // Copy back preserved folding & style state
     size_t newTotal = buffer->lineCache.count;
     size_t stateCopyLimit = aligned ? (newTotal - (numOldLinesToSave - k)) : newTotal;
+
+    // Record the touched range so incremental consumers (e.g. visual row wrapping)
+    // can splice just the affected span instead of rebuilding from scratch.
+    buffer->lastRebuiltOldStart = rebuildOldStart;
+    buffer->lastRebuiltOldEnd = aligned ? (rebuildOldStart + k) : oldTotal;
+    buffer->lastRebuiltNewEnd = stateCopyLimit;
+    buffer->lastRebuildOccurred = true;
+
     for (size_t i = buffer->lineCache.dirtyLineStart; i < stateCopyLimit; i++) {
         size_t oldIdx = i - newTotal + oldTotal;
         if (oldIdx >= buffer->lineCache.dirtyLineStart && oldIdx < oldTotal) {
@@ -888,6 +897,18 @@ size_t Buffer_PeekDirtyLineStart(const Buffer* buffer)
 {
     assert(buffer);
     return buffer->lineCache.dirtyLineStart;
+}
+
+bool Buffer_GetLastRebuildRange(const Buffer* buffer, size_t* oldStart, size_t* oldEnd, size_t* newEnd)
+{
+    assert(buffer);
+    if (!buffer->lastRebuildOccurred) {
+        return false;
+    }
+    *oldStart = buffer->lastRebuiltOldStart;
+    *oldEnd = buffer->lastRebuiltOldEnd;
+    *newEnd = buffer->lastRebuiltNewEnd;
+    return true;
 }
 
 size_t Buffer_GetTotalBytes(const Buffer* buffer)

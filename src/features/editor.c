@@ -321,6 +321,145 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
     tab->cursorX = col;
 }
 
+// Appends the wrap-segment VisualRow(s) for a single line into `out`, honoring
+// the current wrap mode/width. Shared by the full-rebuild and incremental
+// splice paths of Tab_UpdateVisualRows so they can never drift apart.
+static void AppendWrappedRowsForLine(Array* out, const Tab* tab, Line* line, size_t lineIndex, size_t usableColumns)
+{
+    Slice text = Line_GetText(line);
+    size_t size = text.size;
+    const char* str = (const char*)text.data;
+
+    if (!tab->config->wrapLines) {
+        // Unwrapped mode: one visual row per line
+        VisualRow vr = { .lineIndex = lineIndex, .startCol = 0, .length = size, .isWrapped = false };
+        Array_Append(out, &vr, 1);
+        return;
+    }
+
+    if (size == 0 || usableColumns == 0) {
+        VisualRow vr = { .lineIndex = lineIndex, .startCol = 0, .length = 0, .isWrapped = false };
+        Array_Append(out, &vr, 1);
+        return;
+    }
+
+    size_t startCol = 0;
+    size_t col = 0;
+    size_t rx = 0;
+    bool isWrapped = false;
+
+    while (col < size) {
+        size_t charWidth = 1;
+        if (str[col] == '\t') {
+            charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
+        }
+
+        if (rx + charWidth > usableColumns) {
+            if (col == startCol) {
+                col++;
+            }
+            size_t len = col - startCol;
+            VisualRow vr = { .lineIndex = lineIndex, .startCol = startCol, .length = len, .isWrapped = isWrapped };
+            Array_Append(out, &vr, 1);
+            startCol = col;
+            rx = 0;
+            isWrapped = true;
+            continue;
+        }
+
+        rx += charWidth;
+        col++;
+    }
+
+    if (col >= startCol) {
+        VisualRow vr = { .lineIndex = lineIndex, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
+        Array_Append(out, &vr, 1);
+    }
+}
+
+// Binary-searches `visualRows` (sorted ascending by lineIndex) for the index of
+// the first row whose lineIndex is >= targetLineIndex.
+static size_t VisualRows_LowerBound(const Array* visualRows, size_t targetLineIndex)
+{
+    size_t low = 0, high = Array_Size(visualRows);
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        VisualRow* vr = (VisualRow*)Array_At(visualRows, mid);
+        if (vr->lineIndex < targetLineIndex) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    return low;
+}
+
+// Attempts to update tab->visualRows by splicing in wrap segments only for the
+// line range touched by the most recent edit, instead of rebuilding the whole
+// document. Only valid when no folding is active (no hiddenUntilIndent state
+// to reconstruct at the splice boundary) and the viewport/wrap-mode hasn't
+// changed since the last build (only editVersion moved). Returns false if the
+// incremental path can't be used, in which case the caller must fall back to
+// a full rebuild.
+static bool Tab_TryUpdateVisualRowsIncremental(Tab* tab, size_t usableColumns, size_t editVersion, size_t foldedLineCount)
+{
+    if (foldedLineCount != 0 || tab->visualRowsFoldedCount != 0) {
+        return false;
+    }
+    if (tab->visualRowsUsableColumns != usableColumns) {
+        return false;
+    }
+    if (tab->visualRowsEditVersion == SIZE_MAX || tab->visualRowsLineCount == SIZE_MAX) {
+        return false;
+    }
+
+    size_t newTotalLines = Buffer_GetLineCount(tab->buffer);
+
+    size_t oldStart, oldEnd, newEnd;
+    if (!Buffer_GetLastRebuildRange(tab->buffer, &oldStart, &oldEnd, &newEnd)) {
+        return false;
+    }
+
+    size_t spliceStart = VisualRows_LowerBound(&tab->visualRows, oldStart);
+    size_t spliceEnd = VisualRows_LowerBound(&tab->visualRows, oldEnd);
+
+    Array newRows;
+    Array_InitStruct(&newRows, VisualRow, (newEnd > oldStart) ? (newEnd - oldStart) : 1);
+    for (size_t i = oldStart; i < newEnd; i++) {
+        Line* line = Buffer_GetLine(tab->buffer, i);
+        if (!line)
+            continue;
+        AppendWrappedRowsForLine(&newRows, tab, line, i, usableColumns);
+    }
+
+    size_t oldLineCount = tab->visualRowsLineCount;
+    size_t totalVRows = Array_Size(&tab->visualRows);
+    if (newTotalLines >= oldLineCount) {
+        size_t delta = newTotalLines - oldLineCount;
+        if (delta != 0) {
+            for (size_t i = spliceEnd; i < totalVRows; i++) {
+                VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
+                vr->lineIndex += delta;
+            }
+        }
+    } else {
+        size_t delta = oldLineCount - newTotalLines;
+        for (size_t i = spliceEnd; i < totalVRows; i++) {
+            VisualRow* vr = (VisualRow*)Array_At(&tab->visualRows, i);
+            vr->lineIndex -= delta;
+        }
+    }
+
+    Array_ReplaceRange(&tab->visualRows, spliceStart, spliceEnd - spliceStart, newRows.data, Array_Size(&newRows));
+    Array_Free(&newRows);
+
+    tab->visualRowsEditVersion = editVersion;
+    tab->visualRowsFoldedCount = foldedLineCount;
+    tab->visualRowsUsableColumns = usableColumns;
+    tab->visualRowsLineCount = newTotalLines;
+    return true;
+}
+
 void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
 {
     (void)editor;
@@ -338,6 +477,10 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         return;
     }
 
+    if (Tab_TryUpdateVisualRowsIncremental(tab, usableColumns, editVersion, foldedLineCount)) {
+        return;
+    }
+
     Array_Clear(&tab->visualRows);
 
     size_t totalLines = Buffer_GetLineCount(tab->buffer);
@@ -347,6 +490,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         tab->visualRowsEditVersion = editVersion;
         tab->visualRowsFoldedCount = foldedLineCount;
         tab->visualRowsUsableColumns = usableColumns;
+        tab->visualRowsLineCount = totalLines;
         return;
     }
 
@@ -374,52 +518,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
             }
         }
 
-        Slice text = Line_GetText(line);
-        size_t size = text.size;
-        const char* str = (const char*)text.data;
-
-        if (!tab->config->wrapLines) {
-            // Unwrapped mode: one visual row per line
-            VisualRow vr = { .lineIndex = i, .startCol = 0, .length = size, .isWrapped = false };
-            Array_Append(&tab->visualRows, &vr, 1);
-        } else if (size == 0 || usableColumns == 0) {
-            VisualRow vr = { .lineIndex = i, .startCol = 0, .length = 0, .isWrapped = false };
-            Array_Append(&tab->visualRows, &vr, 1);
-        } else {
-            size_t startCol = 0;
-            size_t col = 0;
-            size_t rx = 0;
-            bool isWrapped = false;
-
-            while (col < size) {
-                size_t charWidth = 1;
-                if (str[col] == '\t') {
-                    charWidth = tab->config->tabSize - (rx % tab->config->tabSize);
-                }
-
-                if (rx + charWidth > usableColumns) {
-                    if (col == startCol) {
-                        col++;
-                    }
-                    size_t len = col - startCol;
-                    VisualRow vr = { .lineIndex = i, .startCol = startCol, .length = len, .isWrapped = isWrapped };
-                    Array_Append(&tab->visualRows, &vr, 1);
-                    startCol = col;
-                    rx = 0;
-                    isWrapped = true;
-                    continue;
-                }
-
-                rx += charWidth;
-                col++;
-            }
-
-            if (col >= startCol) {
-                VisualRow vr
-                    = { .lineIndex = i, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
-                Array_Append(&tab->visualRows, &vr, 1);
-            }
-        }
+        AppendWrappedRowsForLine(&tab->visualRows, tab, line, i, usableColumns);
 
         // Check if we should start hiding next lines
         if (line->isFolded && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
@@ -430,6 +529,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
     tab->visualRowsEditVersion = editVersion;
     tab->visualRowsFoldedCount = foldedLineCount;
     tab->visualRowsUsableColumns = usableColumns;
+    tab->visualRowsLineCount = totalLines;
 }
 
 void Editor_ScrollTab(Editor* editor, Tab* tab)

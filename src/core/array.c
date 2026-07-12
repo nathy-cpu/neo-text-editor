@@ -99,6 +99,56 @@ bool Array_Pop(Array* array)
     return true;
 }
 
+bool Array_ReplaceRange(Array* array, size_t start, size_t count, const void* newItems, size_t newCount)
+{
+    assert(start <= array->size);
+    assert(start + count <= array->size);
+    if (!array->data)
+        return false;
+
+    size_t tailCount = array->size - (start + count);
+    size_t newSize = start + newCount + tailCount;
+
+    if (newSize > array->capacity) {
+        size_t newCapacity = array->capacity * 2 + (newSize - array->capacity);
+        size_t totalSize = array->itemSize * newCapacity;
+        size_t alignedSize = totalSize;
+        if (alignedSize % array->alignment != 0) {
+            alignedSize = ((totalSize / array->alignment) + 1) * array->alignment;
+        }
+
+        void* newData = AlignedAllocPosix(array->alignment, alignedSize);
+        if (!newData)
+            return false;
+
+        memcpy(newData, array->data, start * array->itemSize);
+        if (newCount > 0 && newItems) {
+            memcpy((char*)newData + start * array->itemSize, newItems, newCount * array->itemSize);
+        }
+        memcpy((char*)newData + (start + newCount) * array->itemSize,
+            (char*)array->data + (start + count) * array->itemSize, tailCount * array->itemSize);
+
+        free(array->data);
+        array->data = newData;
+        array->capacity = alignedSize / array->itemSize;
+        array->size = newSize;
+        LOG_DEBUG("Array_ReplaceRange: grew capacity to %zu, new size=%zu", array->capacity, array->size);
+        return true;
+    }
+
+    if (tailCount > 0 && count != newCount) {
+        memmove((char*)array->data + (start + newCount) * array->itemSize,
+            (char*)array->data + (start + count) * array->itemSize, tailCount * array->itemSize);
+    }
+    if (newCount > 0 && newItems) {
+        memcpy((char*)array->data + start * array->itemSize, newItems, newCount * array->itemSize);
+    }
+    array->size = newSize;
+    LOG_DEBUG("Array_ReplaceRange: replaced %zu items at %zu with %zu items, new size=%zu", count, start, newCount,
+        array->size);
+    return true;
+}
+
 void* Array_At(const Array* array, size_t index)
 {
     assert(index < array->size);

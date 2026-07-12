@@ -43,6 +43,9 @@ int main(void) {
     LOG_INFO("Starting array tests...");
     test_array_basic();
     test_array_growth();
+    test_array_replace_range_shrink();
+    test_array_replace_range_grow();
+    test_array_replace_range_ends();
     printf("All array tests passed!\n\r");
     LOG_INFO("All array tests passed!");
 
@@ -75,6 +78,8 @@ int main(void) {
     test_tab_folding();
     test_editor_toggle_all_folds();
     test_buffer_piece_table();
+    test_buffer_last_rebuild_range();
+    test_tab_visual_rows_incremental();
     printf("All buffer tests passed!\n\r");
     LOG_INFO("All buffer tests passed!");
 
