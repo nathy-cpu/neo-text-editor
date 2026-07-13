@@ -201,7 +201,11 @@ void Editor_ProcessInput(Editor* editor, int input)
 
         case CTRL_KEY('z'):
             if (!tab->buffer->isReadOnly) {
-                Buffer_Undo(tab->buffer);
+                size_t undoLine, undoColumn;
+                if (Buffer_Undo(tab->buffer, &undoLine, &undoColumn)) {
+                    tab->cursorY = undoLine;
+                    tab->cursorX = undoColumn;
+                }
                 modified = true;
                 tab->isSaved = false;
                 if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
@@ -216,7 +220,11 @@ void Editor_ProcessInput(Editor* editor, int input)
 
         case CTRL_KEY('y'):
             if (!tab->buffer->isReadOnly) {
-                Buffer_Redo(tab->buffer);
+                size_t redoLine, redoColumn;
+                if (Buffer_Redo(tab->buffer, &redoLine, &redoColumn)) {
+                    tab->cursorY = redoLine;
+                    tab->cursorX = redoColumn;
+                }
                 modified = true;
                 tab->isSaved = false;
                 if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {

@@ -526,14 +526,20 @@ Slice Buffer_ToSlice(const Buffer* buffer);
 /**
  * @brief Undoes the last action or action group.
  * @param buffer Pointer to the buffer.
+ * @param outLineNumber Out: line the cursor should move to, if a group was undone.
+ * @param outColumn Out: column the cursor should move to, if a group was undone.
+ * @return True if a group was undone, false if the undo stack was empty.
  */
-void Buffer_Undo(Buffer* buffer);
+bool Buffer_Undo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn);
 
 /**
  * @brief Redoes the previously undone action or action group.
  * @param buffer Pointer to the buffer.
+ * @param outLineNumber Out: line the cursor should move to, if a group was redone.
+ * @param outColumn Out: column the cursor should move to, if a group was redone.
+ * @return True if a group was redone, false if the redo stack was empty.
  */
-void Buffer_Redo(Buffer* buffer);
+bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn);
 void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len);
 void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end);
 

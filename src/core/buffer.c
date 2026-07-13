@@ -904,16 +904,55 @@ Slice Buffer_ToSlice(const Buffer* buffer)
     return (Slice) { .data = content, .size = buffer->totalBytes };
 }
 
-void Buffer_Undo(Buffer* buffer)
+// Computes where the cursor should land right before (afterAction=false) or
+// right after (afterAction=true) a single action's effect, so undo/redo can
+// place the cursor at the edit they just reverted/replayed instead of merely
+// clamping whatever the cursor already happened to be.
+static void Action_GetCursorPosition(const Action* action, bool afterAction, size_t* outLine, size_t* outColumn)
+{
+    *outLine = action->lineNumber;
+    switch (action->type) {
+    case ACTION_INSERT_CHAR:
+        *outColumn = afterAction ? action->column + 1 : action->column;
+        break;
+    case ACTION_DELETE_CHAR:
+        *outColumn = afterAction ? action->column : action->column + 1;
+        break;
+    case ACTION_INSERT_TEXT:
+        *outColumn = afterAction ? action->column + action->payload.text.size : action->column;
+        break;
+    case ACTION_DELETE_TEXT:
+        *outColumn = afterAction ? action->column : action->column + action->payload.text.size;
+        break;
+    case ACTION_SPLIT_LINE:
+        if (afterAction) {
+            *outLine = action->lineNumber + 1;
+            *outColumn = 0;
+        } else {
+            *outColumn = action->column;
+        }
+        break;
+    case ACTION_JOIN_LINE:
+        if (afterAction) {
+            *outColumn = action->column;
+        } else {
+            *outLine = action->lineNumber + 1;
+            *outColumn = 0;
+        }
+        break;
+    }
+}
+
+bool Buffer_Undo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
 {
     if (!buffer)
-        return;
+        return false;
     LOG_INFO("Buffer_Undo: executing undo.");
     buffer->history.currentGroup = NULL;
     ActionGroup* group = (ActionGroup*)Stack_Pop(&buffer->history.undoStack);
     if (!group) {
         LOG_INFO("Buffer_Undo: undo stack is empty.");
-        return;
+        return false;
     }
 
     buffer->history.isUndoRedoing = true;
@@ -927,20 +966,26 @@ void Buffer_Undo(Buffer* buffer)
 
     buffer->history.isUndoRedoing = false;
 
+    if (Array_Size(&group->actions) > 0) {
+        Action* firstAction = (Action*)Array_At(&group->actions, 0);
+        Action_GetCursorPosition(firstAction, false, outLineNumber, outColumn);
+    }
+
     Stack_Push(&buffer->history.redoStack, group);
     Stack_EnforceLimit(&buffer->history.redoStack, buffer->history.undoLimit, (void (*)(void*))ActionGroup_Free);
+    return true;
 }
 
-void Buffer_Redo(Buffer* buffer)
+bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
 {
     if (!buffer)
-        return;
+        return false;
     LOG_INFO("Buffer_Redo: executing redo.");
     buffer->history.currentGroup = NULL;
     ActionGroup* group = (ActionGroup*)Stack_Pop(&buffer->history.redoStack);
     if (!group) {
         LOG_INFO("Buffer_Redo: redo stack is empty.");
-        return;
+        return false;
     }
 
     buffer->history.isUndoRedoing = true;
@@ -949,8 +994,14 @@ void Buffer_Redo(Buffer* buffer)
 
     buffer->history.isUndoRedoing = false;
 
+    if (Array_Size(&group->actions) > 0) {
+        Action* lastAction = (Action*)Array_At(&group->actions, Array_Size(&group->actions) - 1);
+        Action_GetCursorPosition(lastAction, true, outLineNumber, outColumn);
+    }
+
     Stack_Push(&buffer->history.undoStack, group);
     Stack_EnforceLimit(&buffer->history.undoStack, buffer->history.undoLimit, (void (*)(void*))ActionGroup_Free);
+    return true;
 }
 
 void Buffer_OnSave(Buffer* buffer, const char* path)
