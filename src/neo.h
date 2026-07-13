@@ -312,11 +312,7 @@ typedef struct Line {
 } Line;
 
 typedef struct {
-    Line* lines; // Gap buffer array of Line structures
-    size_t count; // Count of lines
-    size_t gapStart; // Gap start index
-    size_t gapEnd; // Gap end index
-    size_t capacity; // Allocated capacity
+    GapBuffer lines; // Gap buffer of Line structures
     size_t dirtyLineStart; // Rebuilding starting mark
     size_t dirtyOffsetEnd; // Rebuilding ending byte offset in the new buffer
     size_t oldTotalBytes; // Total bytes before the edit

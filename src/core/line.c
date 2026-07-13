@@ -47,17 +47,9 @@ void Line_InsertChar(Line* line, size_t position, char character)
     } else {
         if (position > line->testText.size)
             position = line->testText.size;
-        char dummy = 0;
-        Array_Append(&line->testText, &dummy, 1);
-        memmove((char*)line->testText.data + position + 1, (char*)line->testText.data + position,
-            line->testText.size - 1 - position);
-        ((char*)line->testText.data)[position] = character;
-
-        // Sync styles size
-        Array_Append(&line->styles, &dummy, 1);
-        memmove((char*)line->styles.data + position + 1, (char*)line->styles.data + position,
-            line->styles.size - 1 - position);
-        ((char*)line->styles.data)[position] = 0;
+        Array_ReplaceRange(&line->testText, position, 0, &character, 1);
+        Array_ReplaceRange(&line->styles, position, 0, NULL, 1);
+        *(char*)Array_RawAt(&line->styles, position) = 0;
     }
 }
 
@@ -70,13 +62,8 @@ void Line_DeleteChar(Line* line, size_t position)
         Buffer_DeleteChar(line->buffer, line->lineNumber, position);
     } else {
         assert(position < line->testText.size && "Delete position out of bounds");
-        memmove((char*)line->testText.data + position, (char*)line->testText.data + position + 1,
-            line->testText.size - 1 - position);
-        line->testText.size--;
-
-        memmove((char*)line->styles.data + position, (char*)line->styles.data + position + 1,
-            line->styles.size - 1 - position);
-        line->styles.size--;
+        Array_ReplaceRange(&line->testText, position, 1, NULL, 0);
+        Array_ReplaceRange(&line->styles, position, 1, NULL, 0);
     }
 }
 
@@ -94,18 +81,9 @@ void Line_InsertText(Line* line, size_t position, const char* text, size_t lengt
             return;
         if (position > line->testText.size)
             position = line->testText.size;
-        size_t oldSize = line->testText.size;
-        for (size_t i = 0; i < length; i++) {
-            char dummy = 0;
-            Array_Append(&line->testText, &dummy, 1);
-            Array_Append(&line->styles, &dummy, 1);
-        }
-        memmove(
-            (char*)line->testText.data + position + length, (char*)line->testText.data + position, oldSize - position);
-        memcpy((char*)line->testText.data + position, text, length);
-
-        memmove((char*)line->styles.data + position + length, (char*)line->styles.data + position, oldSize - position);
-        memset((char*)line->styles.data + position, 0, length);
+        Array_ReplaceRange(&line->testText, position, 0, text, length);
+        Array_ReplaceRange(&line->styles, position, 0, NULL, length);
+        memset(Array_RawAt(&line->styles, position), 0, length);
     }
 }
 
@@ -121,13 +99,8 @@ void Line_DeleteText(Line* line, size_t position, size_t length)
         if (length == 0)
             return;
         assert(position + length <= line->testText.size && "Delete range out of bounds");
-        memmove((char*)line->testText.data + position, (char*)line->testText.data + position + length,
-            line->testText.size - position - length);
-        line->testText.size -= length;
-
-        memmove((char*)line->styles.data + position, (char*)line->styles.data + position + length,
-            line->styles.size - position - length);
-        line->styles.size -= length;
+        Array_ReplaceRange(&line->testText, position, length, NULL, 0);
+        Array_ReplaceRange(&line->styles, position, length, NULL, 0);
     }
 }
 

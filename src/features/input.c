@@ -1,6 +1,7 @@
 #include "../neo.h"
 #include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 void Editor_MoveCursor(Editor* editor, int key)
@@ -353,35 +354,33 @@ void Editor_ProcessInput(Editor* editor, int input)
 
 char* Editor_Prompt(Editor* editor, const char* prompt)
 {
-    size_t bufsize = 128;
-    char* buf = malloc(bufsize);
-    size_t buflen = 0;
-    buf[0] = '\0';
+    Array buf;
+    Array_InitChar(&buf, 128);
+    char nul = '\0';
+    Array_Append(&buf, &nul, 1);
 
     while (1) {
-        Editor_SetStatusMessage(editor, prompt, buf);
+        Editor_SetStatusMessage(editor, prompt, (const char*)buf.data);
         Editor_RefreshScreen(editor);
 
         int c = ReadKey();
         if (c == DELETE_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
-            if (buflen != 0)
-                buf[--buflen] = '\0';
+            if (buf.size > 1)
+                Array_ReplaceRange(&buf, buf.size - 2, 1, NULL, 0);
         } else if (c == '\x1b') {
             Editor_SetStatusMessage(editor, "");
-            free(buf);
+            Array_Free(&buf);
             return NULL;
         } else if (c == '\r') {
-            if (buflen != 0) {
+            if (buf.size > 1) {
                 Editor_SetStatusMessage(editor, "");
-                return buf;
+                char* result = strdup((const char*)buf.data);
+                Array_Free(&buf);
+                return result;
             }
         } else if (!iscntrl(c) && c < 128) {
-            if (buflen == bufsize - 1) {
-                bufsize *= 2;
-                buf = realloc(buf, bufsize);
-            }
-            buf[buflen++] = c;
-            buf[buflen] = '\0';
+            char ch = (char)c;
+            Array_ReplaceRange(&buf, buf.size - 1, 0, &ch, 1);
         }
     }
 }

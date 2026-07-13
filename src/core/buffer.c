@@ -9,12 +9,7 @@
 
 static void LineCache_Init(LineCache* lc)
 {
-    lc->lines = malloc(sizeof(Line) * 64);
-    assert(lc->lines);
-    lc->count = 0;
-    lc->gapStart = 0;
-    lc->gapEnd = 64;
-    lc->capacity = 64;
+    GapBuffer_Init(&lc->lines, sizeof(Line), 0, alignof(Line));
     lc->dirtyLineStart = 0;
     lc->dirtyOffsetEnd = SIZE_MAX;
     lc->oldTotalBytes = 0;
@@ -22,76 +17,27 @@ static void LineCache_Init(LineCache* lc)
 
 static void LineCache_Free(LineCache* lc)
 {
-    if (!lc->lines)
+    if (!lc->lines.data.data)
         return;
-    for (size_t i = 0; i < lc->capacity; i++) {
-        if (i < lc->gapStart || i >= lc->gapEnd) {
-            free(lc->lines[i].text);
-            Array_Free(&lc->lines[i].styles);
-            Array_Free(&lc->lines[i].testText);
+    for (size_t i = 0; i < lc->lines.data.capacity; i++) {
+        if (i < lc->lines.gapStart || i >= lc->lines.gapEnd) {
+            Line* line = (Line*)Array_RawAt(&lc->lines.data, i);
+            free(line->text);
+            Array_Free(&line->styles);
+            Array_Free(&line->testText);
         }
     }
-    free(lc->lines);
-    lc->lines = NULL;
-    lc->count = lc->gapStart = lc->gapEnd = lc->capacity = 0;
-}
-
-static void LineCache_MoveGap(LineCache* lc, size_t newGapStart)
-{
-    if (newGapStart == lc->gapStart)
-        return;
-
-    size_t gapSize = lc->gapEnd - lc->gapStart;
-    if (newGapStart > lc->gapStart) {
-        size_t moveCount = newGapStart - lc->gapStart;
-        memmove(&lc->lines[lc->gapStart], &lc->lines[lc->gapEnd], sizeof(Line) * moveCount);
-    } else {
-        size_t moveCount = lc->gapStart - newGapStart;
-        memmove(&lc->lines[newGapStart + gapSize], &lc->lines[newGapStart], sizeof(Line) * moveCount);
-    }
-    lc->gapStart = newGapStart;
-    lc->gapEnd = newGapStart + gapSize;
-}
-
-static void LineCache_EnsureCapacity(LineCache* lc, size_t required)
-{
-    size_t gapSize = lc->gapEnd - lc->gapStart;
-    if (gapSize >= required)
-        return;
-
-    size_t newCapacity = lc->capacity * 2 + required;
-    size_t newGapSize = newCapacity - lc->count;
-    Line* newLines = malloc(sizeof(Line) * newCapacity);
-    assert(newLines);
-
-    // Copy elements before gap
-    memcpy(newLines, lc->lines, sizeof(Line) * lc->gapStart);
-    // Copy elements after gap
-    size_t afterCount = lc->capacity - lc->gapEnd;
-    memcpy(&newLines[lc->gapStart + newGapSize], &lc->lines[lc->gapEnd], sizeof(Line) * afterCount);
-
-    free(lc->lines);
-    lc->lines = newLines;
-    lc->gapEnd = lc->gapStart + newGapSize;
-    lc->capacity = newCapacity;
+    GapBuffer_Free(&lc->lines);
 }
 
 static void LineCache_Insert(LineCache* lc, Line* line)
 {
-    LineCache_EnsureCapacity(lc, 1);
-    lc->lines[lc->gapStart] = *line;
-    lc->gapStart++;
-    lc->count++;
+    GapBuffer_InsertSlice(&lc->lines, GapBuffer_Size(&lc->lines), Slice_Make(line, sizeof(Line)));
 }
 
 static Line* LineCache_At(const LineCache* lc, size_t index)
 {
-    assert(index < lc->count);
-    if (index < lc->gapStart) {
-        return &lc->lines[index];
-    } else {
-        return &lc->lines[index + (lc->gapEnd - lc->gapStart)];
-    }
+    return (Line*)GapBuffer_At(&lc->lines, index);
 }
 
 // ============================================================================
@@ -161,7 +107,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     size_t rebuildOldStart = lineIdx;
 
     // Save old lines for preserving state
-    size_t oldTotal = buffer->lineCache.count;
+    size_t oldTotal = GapBuffer_Size(&buffer->lineCache.lines);
     size_t numOldLinesToSave = (oldTotal > lineIdx) ? (oldTotal - lineIdx) : 0;
     Line* savedLines = NULL;
     size_t oldFolded = 0;
@@ -182,17 +128,18 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     }
 
     // Truncate the lineCache to lineIdx
-    LineCache_MoveGap(&buffer->lineCache, lineIdx);
+    GapBuffer_MoveGap(&buffer->lineCache.lines, lineIdx);
 
     // Free elements after gap
-    for (size_t i = buffer->lineCache.gapEnd; i < buffer->lineCache.capacity; i++) {
-        free(buffer->lineCache.lines[i].text);
-        buffer->lineCache.lines[i].text = NULL;
-        Array_Free(&buffer->lineCache.lines[i].styles);
-        Array_Free(&buffer->lineCache.lines[i].testText);
+    for (size_t i = buffer->lineCache.lines.gapEnd; i < buffer->lineCache.lines.data.capacity; i++) {
+        Line* discardedLine = (Line*)Array_RawAt(&buffer->lineCache.lines.data, i);
+        free(discardedLine->text);
+        discardedLine->text = NULL;
+        Array_Free(&discardedLine->styles);
+        Array_Free(&discardedLine->testText);
     }
-    buffer->lineCache.gapEnd = buffer->lineCache.capacity;
-    buffer->lineCache.count = lineIdx;
+    buffer->lineCache.lines.gapEnd = buffer->lineCache.lines.data.capacity;
+    buffer->lineCache.lines.data.size = lineIdx;
 
     // Find starting offset for scanning
     size_t currentOffset = 0;
@@ -295,7 +242,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     }
 
     // Copy back preserved folding & style state
-    size_t newTotal = buffer->lineCache.count;
+    size_t newTotal = GapBuffer_Size(&buffer->lineCache.lines);
     size_t stateCopyLimit = aligned ? (newTotal - (numOldLinesToSave - k)) : newTotal;
 
     // Record the touched range so incremental consumers (e.g. visual row wrapping)
@@ -343,7 +290,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         }
         buffer->foldedLineCount = buffer->foldedLineCount - discardedFoldedCount + newFolded;
     } else {
-        for (size_t i = buffer->lineCache.dirtyLineStart; i < buffer->lineCache.count; i++) {
+        for (size_t i = buffer->lineCache.dirtyLineStart; i < GapBuffer_Size(&buffer->lineCache.lines); i++) {
             if (LineCache_At(&buffer->lineCache, i)->isFolded) {
                 newFolded++;
             }
@@ -361,7 +308,7 @@ void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffs
 
     size_t lineIdx = 0;
     if (offset > 0 && buffer->lineCache.dirtyLineStart != 0) {
-        size_t searchLimit = (buffer->lineCache.dirtyLineStart == SIZE_MAX) ? buffer->lineCache.count
+        size_t searchLimit = (buffer->lineCache.dirtyLineStart == SIZE_MAX) ? GapBuffer_Size(&buffer->lineCache.lines)
                                                                             : buffer->lineCache.dirtyLineStart;
         // Lines are ordered by ascending offset, so binary search for the first line
         // whose end reaches `offset` instead of scanning linearly (O(log n) vs O(n)).
@@ -627,7 +574,7 @@ Line* Buffer_GetLine(const Buffer* buffer, size_t lineNumber)
         Buffer_RebuildLineCache(mutBuffer, SIZE_MAX);
     }
 
-    if (lineNumber >= mutBuffer->lineCache.count) {
+    if (lineNumber >= GapBuffer_Size(&mutBuffer->lineCache.lines)) {
         return NULL;
     }
 
@@ -890,7 +837,7 @@ size_t Buffer_GetLineCount(const Buffer* buffer)
     if (mutBuffer->lineCache.dirtyLineStart != SIZE_MAX) {
         Buffer_RebuildLineCache(mutBuffer, SIZE_MAX);
     }
-    return mutBuffer->lineCache.count;
+    return GapBuffer_Size(&mutBuffer->lineCache.lines);
 }
 
 size_t Buffer_PeekDirtyLineStart(const Buffer* buffer)

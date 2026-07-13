@@ -10,8 +10,8 @@ static void EnsureGapCapacity(GapBuffer* gb, size_t required)
     if ((gb->gapEnd - gb->gapStart) >= required)
         return;
 
-    size_t newGapSize = (required > MIN_GAP_SIZE) ? required * 2 : MIN_GAP_SIZE;
-    size_t newCapacity = gb->data.size + newGapSize;
+    size_t newCapacity = gb->data.capacity * 2 + required;
+    size_t newGapSize = newCapacity - gb->data.size;
 
     LOG_DEBUG("EnsureGapCapacity: expanding gap buffer capacity from %zu to %zu (required=%zu)", gb->data.capacity,
         newCapacity, required);
