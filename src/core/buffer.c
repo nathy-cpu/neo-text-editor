@@ -918,6 +918,10 @@ void Buffer_Undo(Buffer* buffer)
 
     buffer->history.isUndoRedoing = true;
 
+    // A group can be undone more than once (undo -> redo -> undo), so drop
+    // any snapshotAfter from a previous undo of this same group before
+    // replacing it.
+    DocumentSnapshot_Free(group->snapshotAfter);
     group->snapshotAfter = DocumentSnapshot_Copy(buffer);
     Buffer_RestoreSnapshot(buffer, group->snapshotBefore);
 
