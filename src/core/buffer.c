@@ -383,12 +383,16 @@ DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer)
     assert(snap);
 
     snap->totalBytes = buffer->totalBytes;
-    GapBuffer_Init(&snap->pieces, sizeof(Piece), GapBuffer_Size(&buffer->pieces), alignof(Piece));
 
-    Array_Append(&snap->pieces.data, buffer->pieces.data.data, buffer->pieces.data.size);
-    snap->pieces.gapStart = buffer->pieces.gapStart;
-    snap->pieces.gapEnd = buffer->pieces.gapEnd;
-    snap->pieces.data.size = buffer->pieces.data.size;
+    // A gap buffer's real pieces are split into a before-gap segment and an
+    // after-gap segment, not contiguous from the start of the array, so each
+    // must be copied separately.
+    size_t pieceCount = GapBuffer_Size(&buffer->pieces);
+    GapBuffer_Init(&snap->pieces, sizeof(Piece), pieceCount, alignof(Piece));
+    GapBuffer_InsertSlice(&snap->pieces, 0, Slice_Make(buffer->pieces.data.data, buffer->pieces.gapStart * sizeof(Piece)));
+    GapBuffer_InsertSlice(&snap->pieces, GapBuffer_Size(&snap->pieces),
+        Slice_Make((char*)buffer->pieces.data.data + buffer->pieces.gapEnd * sizeof(Piece),
+            (pieceCount - buffer->pieces.gapStart) * sizeof(Piece)));
 
     return snap;
 }
@@ -409,15 +413,28 @@ void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap)
 
     GapBuffer_Free(&buffer->pieces);
 
-    GapBuffer_Init(&buffer->pieces, sizeof(Piece), GapBuffer_Size(&snap->pieces), alignof(Piece));
-    Array_Append(&buffer->pieces.data, snap->pieces.data.data, snap->pieces.data.size);
-    buffer->pieces.gapStart = snap->pieces.gapStart;
-    buffer->pieces.gapEnd = snap->pieces.gapEnd;
-    buffer->pieces.data.size = snap->pieces.data.size;
+    // See DocumentSnapshot_Copy: the snapshot's pieces are likewise split
+    // around its own gap, so copy each segment separately.
+    size_t pieceCount = GapBuffer_Size(&snap->pieces);
+    GapBuffer_Init(&buffer->pieces, sizeof(Piece), pieceCount, alignof(Piece));
+    GapBuffer_InsertSlice(&buffer->pieces, 0, Slice_Make(snap->pieces.data.data, snap->pieces.gapStart * sizeof(Piece)));
+    GapBuffer_InsertSlice(&buffer->pieces, GapBuffer_Size(&buffer->pieces),
+        Slice_Make((char*)snap->pieces.data.data + snap->pieces.gapEnd * sizeof(Piece),
+            (pieceCount - snap->pieces.gapStart) * sizeof(Piece)));
 
     buffer->totalBytes = snap->totalBytes;
 
-    Buffer_InvalidateLineCache(buffer, 0, buffer->totalBytes, buffer->totalBytes);
+    // A snapshot restore swaps in an unrelated document version rather than
+    // applying a local edit, so none of the old cached lines' offsets, fold
+    // state, or styles can be assumed to correspond to anything in the
+    // restored document (unlike Buffer_InvalidateLineCache's usual callers,
+    // where an edit's unaffected tail shifts by a uniform delta). Reset the
+    // line cache to empty so the next access rebuilds it from scratch instead
+    // of risking reuse of stale, unrelated lines.
+    LineCache_Free(&buffer->lineCache);
+    LineCache_Init(&buffer->lineCache);
+    buffer->foldedLineCount = 0;
+    buffer->editVersion++;
 }
 
 // ============================================================================
