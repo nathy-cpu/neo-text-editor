@@ -1,9 +1,21 @@
 #pragma once
 
+// Guarded so this header stays a no-op re-define when something upstream
+// (e.g. a translation unit that pulled in a system header before this one)
+// already set these -- an unconditional #define here would otherwise clash
+// with a differently-spelled value <features.h> computed for the same macro.
+#ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
+#endif
+#ifndef _BSD_SOURCE
 #define _BSD_SOURCE
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 
 #include <signal.h>
 #include <stdalign.h>

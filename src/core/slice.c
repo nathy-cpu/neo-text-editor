@@ -9,7 +9,7 @@ Slice Slice_From(const void* string) { return (Slice) { .data = string, .size = 
 
 Slice Slice_Subslice(Slice slice, size_t start, size_t end)
 {
-    if (start > slice.size - 1 || end > slice.size)
+    if (start > end || end > slice.size)
         return (Slice) { .data = NULL, .size = 0 };
 
     return (Slice) { .data = (const char*)slice.data + start, .size = end - start };

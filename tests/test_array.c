@@ -108,3 +108,93 @@ static void test_array_replace_range_ends(void)
 
     Array_Free(&arr);
 }
+
+static void test_array_replace_range_grow_with_tail(void)
+{
+    Array arr;
+    Array_InitChar(&arr, 3);
+    Array_Append(&arr, "ac", 2); // size=2, capacity=3
+
+    // Replacing 0 chars at position 1 with "XYZ" leaves a 1-char tail ("c") that
+    // must survive the capacity-growth reallocation (newSize=5 > capacity=3).
+    Array_ReplaceRange(&arr, 1, 0, "XYZ", 3);
+    assert(Array_Size(&arr) == 5);
+    assert(arr.capacity >= 5);
+    Slice s = Array_ToSlice(&arr);
+    assert(memcmp(s.data, "aXYZc", 5) == 0);
+
+    Array_Free(&arr);
+}
+
+static void test_array_replace_range_exact_capacity_fit(void)
+{
+    Array arr;
+    Array_InitChar(&arr, 4);
+    Array_Append(&arr, "ab", 2); // size=2, capacity=4
+
+    // newSize (4) exactly equals capacity (4) -- must take the non-growth path.
+    size_t capacityBefore = arr.capacity;
+    Array_ReplaceRange(&arr, 2, 0, "cd", 2);
+    assert(arr.capacity == capacityBefore && "Exact-fit replace should not reallocate");
+    assert(Array_Size(&arr) == 4);
+    Slice s = Array_ToSlice(&arr);
+    assert(memcmp(s.data, "abcd", 4) == 0);
+
+    Array_Free(&arr);
+}
+
+static void test_array_pop_empty(void)
+{
+    Array arr;
+    Array_InitChar(&arr, 4);
+    assert(Array_Pop(&arr) == false && "Popping an empty array should fail, not underflow size");
+    assert(Array_Size(&arr) == 0);
+
+    Array_Free(&arr);
+}
+
+static void test_array_at_and_raw_at(void)
+{
+    Array arr;
+    Array_InitChar(&arr, 8);
+    Array_Append(&arr, "ab", 2); // size=2, capacity=8
+
+    assert(*(char*)Array_At(&arr, 0) == 'a');
+    assert(*(char*)Array_At(&arr, 1) == 'b');
+    assert(Array_RawAt(&arr, 0) == Array_At(&arr, 0));
+
+    // Array_RawAt indexes into capacity, so an index past size but within
+    // capacity is valid -- unlike Array_At, which would assert on it.
+    void* raw = Array_RawAt(&arr, arr.capacity - 1);
+    assert(raw == (char*)arr.data + (arr.capacity - 1));
+
+    Array_Free(&arr);
+}
+
+static void test_array_free_resets_state(void)
+{
+    Array arr;
+    Array_InitChar(&arr, 4);
+    Array_Append(&arr, "ab", 2);
+
+    Array_Free(&arr);
+    assert(arr.data == NULL);
+    assert(arr.size == 0);
+    assert(arr.capacity == 0);
+}
+
+static void test_array_init_natural_alignment(void)
+{
+    Array arr;
+    // alignment=0 falls back to natural (max_align_t) alignment instead of a caller-specified one.
+    Array_Init(&arr, sizeof(int), 4, 0);
+    assert(arr.data != NULL);
+
+    int values[3] = { 10, 20, 30 };
+    Array_Append(&arr, values, 3);
+    assert(Array_Size(&arr) == 3);
+    assert(*(int*)Array_At(&arr, 0) == 10);
+    assert(*(int*)Array_At(&arr, 2) == 30);
+
+    Array_Free(&arr);
+}

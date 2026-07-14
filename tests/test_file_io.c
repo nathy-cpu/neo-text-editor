@@ -89,6 +89,92 @@ static void test_null_safety() {
     Array_Free(&arr2);
 }
 
+static void test_mmap_threshold_boundary() {
+    // FileIoRead switches from the small-file (read()) path to the mmap path
+    // strictly above 1MB; verify both sides of that exact boundary.
+    const size_t oneMb = 1024 * 1024;
+
+    const char *atThreshold = "at_threshold.bin";
+    FILE *f1 = fopen(atThreshold, "wb");
+    assert(f1 && "Failed to create at-threshold file");
+    fputs("HEAD", f1);
+    fseek(f1, (long)oneMb - 1, SEEK_SET);
+    fputc('\0', f1);
+    fclose(f1);
+
+    Array arr1 = {0};
+    assert(FileIoRead(atThreshold, &arr1) && "Read at exactly 1MB should use the small-file path");
+    assert(arr1.size == oneMb);
+    assert(memcmp(arr1.data, "HEAD", 4) == 0);
+    Array_Free(&arr1);
+    unlink(atThreshold);
+
+    const char *overThreshold = "over_threshold.bin";
+    FILE *f2 = fopen(overThreshold, "wb");
+    assert(f2 && "Failed to create over-threshold file");
+    fputs("HEAD", f2);
+    fseek(f2, (long)oneMb, SEEK_SET); // one byte over 1MB
+    fputc('\0', f2);
+    fclose(f2);
+
+    Array arr2 = {0};
+    assert(FileIoRead(overThreshold, &arr2) && "Read at 1MB+1 should use the mmap path");
+    assert(arr2.size == oneMb + 1);
+    assert(memcmp(arr2.data, "HEAD", 4) == 0);
+    Array_Free(&arr2);
+    unlink(overThreshold);
+}
+
+static void test_zero_byte_file() {
+    const char *path = "empty.txt";
+    CreateTestFile(path, "");
+
+    Array arr = {0};
+    assert(FileIoRead(path, &arr) && "Reading a zero-byte file should succeed");
+    assert(arr.size == 0);
+    Array_Free(&arr);
+
+    Slice empty = Slice_Make(NULL, 0);
+    assert(FileIoWrite(path, empty) && "Writing zero bytes should succeed");
+
+    struct stat st;
+    assert(stat(path, &st) == 0);
+    assert(st.st_size == 0);
+
+    unlink(path);
+}
+
+static void test_write_failure() {
+    // The parent directory doesn't exist, so open(..., O_CREAT) must fail.
+    Slice content = Slice_From("data");
+    assert(!FileIoWrite("no_such_dir/file.txt", content) && "Write to a nonexistent directory should fail");
+}
+
+static void test_mmap_open_failure() {
+    MappedFile file = FileIoMmap("nonexistent_for_mmap.txt");
+    assert(file.fileDescriptor == -1 && "Mmap of a nonexistent file should fail cleanly");
+}
+
+static void test_mapped_file_unmap_safety() {
+    // Unmapping a MappedFile that was never successfully mapped is a no-op.
+    MappedFile neverMapped = { .fileDescriptor = -1 };
+    MappedFile_Unmap(&neverMapped);
+    assert(neverMapped.fileDescriptor == -1);
+
+    // Unmapping twice must not double-close/double-munmap.
+    const char *path = "double_unmap.txt";
+    CreateTestFile(path, "data");
+    MappedFile file = FileIoMmap(path);
+    assert(file.fileDescriptor != -1);
+
+    MappedFile_Unmap(&file);
+    assert(file.fileDescriptor == -1);
+    MappedFile_Unmap(&file); // must be a safe no-op
+    assert(file.fileDescriptor == -1);
+
+    unlink(path);
+}
+
 static void test_large_file() {
     const char *path = "largefile.bin";
     const size_t size = 1024 * 1024 * 1024; // 1GB

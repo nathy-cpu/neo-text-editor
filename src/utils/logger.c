@@ -114,9 +114,14 @@ void Logger_Configure(const char* logFile, LogLevel level, bool logToFile, bool 
                 char* msg = Array_Get(&g_logMessages, char*, i);
                 free(msg);
             }
+            // Array_Free itself logs a debug message; clear the flag first so
+            // that reentrant call (if debug-level UI logging is still active)
+            // can't append a message into the array this very call is freeing.
+            g_logToUi = false;
             Array_Free(&g_logMessages);
+        } else {
+            g_logToUi = false;
         }
-        g_logToUi = false;
     }
 }
 
@@ -124,6 +129,11 @@ void Logger_Free(void)
 {
     if (!g_loggerInitialized)
         return;
+
+    // Cleared up front so any logging triggered by this teardown itself
+    // (e.g. Array_Free's own debug log below) is a guaranteed no-op instead
+    // of appending into -- and leaking a string into -- the array being freed.
+    g_loggerInitialized = false;
 
     if (g_logFile) {
         fclose(g_logFile);
@@ -140,7 +150,6 @@ void Logger_Free(void)
         Array_Free(&g_logMessages);
     }
 
-    g_loggerInitialized = false;
     g_logToFile = false;
     g_logToUi = false;
 }

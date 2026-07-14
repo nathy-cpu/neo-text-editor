@@ -466,3 +466,232 @@ static void test_buffer_piece_table(void)
     remove(path);
 }
 
+static void test_buffer_undo_redo_insert_char(void)
+{
+    Buffer* buffer = Buffer_New();
+
+    Buffer_InsertChar(buffer, 0, 0, 'a');
+    Buffer_InsertChar(buffer, 0, 1, 'b');
+    Buffer_InsertChar(buffer, 0, 2, 'c');
+
+    Line* line = Buffer_GetLine(buffer, 0);
+    Slice text = Line_GetText(line);
+    assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
+
+    // Adjacent char inserts coalesce into a single ActionGroup, so one undo
+    // reverts all three at once.
+    size_t undoLine = SIZE_MAX, undoColumn = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &undoLine, &undoColumn) == true);
+    line = Buffer_GetLine(buffer, 0);
+    assert(Line_Length(line) == 0);
+    assert(undoLine == 0 && undoColumn == 0);
+
+    size_t redoLine = SIZE_MAX, redoColumn = SIZE_MAX;
+    assert(Buffer_Redo(buffer, &redoLine, &redoColumn) == true);
+    line = Buffer_GetLine(buffer, 0);
+    text = Line_GetText(line);
+    assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
+    assert(redoLine == 0 && redoColumn == 3);
+
+    Buffer_Free(buffer);
+}
+
+static void test_buffer_undo_redo_grouping_boundary(void)
+{
+    Buffer* buffer = Buffer_New();
+    Buffer_InsertLine(buffer, 1);
+
+    Buffer_InsertChar(buffer, 0, 0, 'a');
+    Buffer_InsertChar(buffer, 1, 0, 'b'); // Different line -- forces a new group.
+
+    Line* line0 = Buffer_GetLine(buffer, 0);
+    Line* line1 = Buffer_GetLine(buffer, 1);
+    assert(Line_Length(line0) == 1);
+    assert(Line_Length(line1) == 1);
+
+    size_t l = SIZE_MAX, c = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+    line0 = Buffer_GetLine(buffer, 0);
+    line1 = Buffer_GetLine(buffer, 1);
+    assert(Line_Length(line0) == 1); // Untouched -- only the line1 group reverted.
+    assert(Line_Length(line1) == 0);
+
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+    line0 = Buffer_GetLine(buffer, 0);
+    assert(Line_Length(line0) == 0);
+
+    Buffer_Free(buffer);
+}
+
+static void test_buffer_undo_redo_delete_split_join(void)
+{
+    // ACTION_DELETE_CHAR
+    {
+        Buffer* buffer = Buffer_New();
+        Buffer_InsertChar(buffer, 0, 0, 'a');
+        Buffer_InsertChar(buffer, 0, 1, 'b');
+        Buffer_InsertChar(buffer, 0, 2, 'c');
+        Buffer_DeleteChar(buffer, 0, 2); // "abc" -> "ab"
+
+        Line* line = Buffer_GetLine(buffer, 0);
+        Slice text = Line_GetText(line);
+        assert(text.size == 2 && memcmp(text.data, "ab", 2) == 0);
+
+        size_t l = SIZE_MAX, c = SIZE_MAX;
+        assert(Buffer_Undo(buffer, &l, &c) == true);
+        line = Buffer_GetLine(buffer, 0);
+        text = Line_GetText(line);
+        assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
+        assert(l == 0 && c == 3);
+
+        assert(Buffer_Redo(buffer, &l, &c) == true);
+        line = Buffer_GetLine(buffer, 0);
+        text = Line_GetText(line);
+        assert(text.size == 2 && memcmp(text.data, "ab", 2) == 0);
+        assert(l == 0 && c == 2);
+
+        Buffer_Free(buffer);
+    }
+
+    // ACTION_SPLIT_LINE
+    {
+        Buffer* buffer = Buffer_New();
+        Buffer_InsertChar(buffer, 0, 0, 'a');
+        Buffer_InsertChar(buffer, 0, 1, 'b');
+        Buffer_InsertChar(buffer, 0, 2, 'c');
+        Buffer_SplitLine(buffer, 0, 1); // "abc" -> "a", "bc"
+        assert(Buffer_GetLineCount(buffer) == 2);
+
+        size_t l = SIZE_MAX, c = SIZE_MAX;
+        assert(Buffer_Undo(buffer, &l, &c) == true);
+        assert(Buffer_GetLineCount(buffer) == 1);
+        Line* line = Buffer_GetLine(buffer, 0);
+        Slice text = Line_GetText(line);
+        assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
+        assert(l == 0 && c == 1);
+
+        assert(Buffer_Redo(buffer, &l, &c) == true);
+        assert(Buffer_GetLineCount(buffer) == 2);
+        Line* redoneLine0 = Buffer_GetLine(buffer, 0);
+        Line* redoneLine1 = Buffer_GetLine(buffer, 1);
+        Slice l0Text = Line_GetText(redoneLine0);
+        Slice l1Text = Line_GetText(redoneLine1);
+        assert(l0Text.size == 1 && memcmp(l0Text.data, "a", 1) == 0);
+        assert(l1Text.size == 2 && memcmp(l1Text.data, "bc", 2) == 0);
+        assert(l == 1 && c == 0);
+
+        Buffer_Free(buffer);
+    }
+
+    // ACTION_JOIN_LINE
+    {
+        Buffer* buffer = Buffer_New();
+        Buffer_InsertLine(buffer, 1);
+        Buffer_InsertChar(buffer, 0, 0, 'a');
+        Buffer_InsertChar(buffer, 1, 0, 'b');
+        Buffer_JoinLine(buffer, 0); // "a", "b" -> "ab"
+        assert(Buffer_GetLineCount(buffer) == 1);
+
+        size_t l = SIZE_MAX, c = SIZE_MAX;
+        assert(Buffer_Undo(buffer, &l, &c) == true);
+        assert(Buffer_GetLineCount(buffer) == 2);
+        Line* line0 = Buffer_GetLine(buffer, 0);
+        Line* line1 = Buffer_GetLine(buffer, 1);
+        Slice l0Text = Line_GetText(line0);
+        Slice l1Text = Line_GetText(line1);
+        assert(l0Text.size == 1 && memcmp(l0Text.data, "a", 1) == 0);
+        assert(l1Text.size == 1 && memcmp(l1Text.data, "b", 1) == 0);
+        assert(l == 1 && c == 0);
+
+        assert(Buffer_Redo(buffer, &l, &c) == true);
+        assert(Buffer_GetLineCount(buffer) == 1);
+        Line* joinedLine = Buffer_GetLine(buffer, 0);
+        Slice joinedText = Line_GetText(joinedLine);
+        assert(joinedText.size == 2 && memcmp(joinedText.data, "ab", 2) == 0);
+        assert(l == 0 && c == 1);
+
+        Buffer_Free(buffer);
+    }
+}
+
+static void test_buffer_undo_then_new_edit_clears_redo(void)
+{
+    Buffer* buffer = Buffer_New();
+    Buffer_InsertChar(buffer, 0, 0, 'a');
+
+    size_t l = SIZE_MAX, c = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+
+    // A fresh edit after an undo must clear the redo stack.
+    Buffer_InsertChar(buffer, 0, 0, 'x');
+    assert(Buffer_Redo(buffer, &l, &c) == false);
+
+    Buffer_Free(buffer);
+}
+
+// Regression test for commit 8cdea10 (stack node leak when the same
+// ActionGroup is undone more than once via undo -> redo -> undo). ASan
+// (enabled by default in `make test`) catches any reintroduced leak or
+// double-free of the group's snapshotAfter.
+static void test_buffer_redo_stack_reused_group_no_leak(void)
+{
+    Buffer* buffer = Buffer_New();
+    Buffer_InsertChar(buffer, 0, 0, 'a');
+
+    size_t l = SIZE_MAX, c = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+    Line* line = Buffer_GetLine(buffer, 0);
+    assert(Line_Length(line) == 0);
+
+    assert(Buffer_Redo(buffer, &l, &c) == true);
+    line = Buffer_GetLine(buffer, 0);
+    assert(Line_Length(line) == 1);
+
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+    line = Buffer_GetLine(buffer, 0);
+    assert(Line_Length(line) == 0);
+
+    Buffer_Free(buffer);
+}
+
+static void test_buffer_undo_redo_empty_stacks(void)
+{
+    Buffer* buffer = Buffer_New();
+
+    size_t l = SIZE_MAX, c = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &l, &c) == false);
+    assert(l == SIZE_MAX && c == SIZE_MAX);
+
+    assert(Buffer_Redo(buffer, &l, &c) == false);
+    assert(l == SIZE_MAX && c == SIZE_MAX);
+
+    Buffer_Free(buffer);
+}
+
+static void test_buffer_undo_respects_limit(void)
+{
+    Buffer* buffer = Buffer_New();
+    buffer->history.undoLimit = 2;
+
+    for (size_t i = 1; i < 5; i++) {
+        Buffer_InsertLine(buffer, i);
+    }
+    for (size_t i = 0; i < 5; i++) {
+        // Each edit is on a different line, so every one becomes its own group.
+        Buffer_InsertChar(buffer, i, 0, (char)('0' + i));
+    }
+
+    assert(buffer->history.undoStack.size == 2);
+
+    size_t l = SIZE_MAX, c = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+    assert(Buffer_Undo(buffer, &l, &c) == true);
+    assert(Buffer_Undo(buffer, &l, &c) == false); // Earlier groups were evicted by the limit.
+
+    // The evicted groups' edits remain applied -- only their undo history was dropped.
+    Line* line0 = Buffer_GetLine(buffer, 0);
+    assert(Line_Length(line0) == 1);
+
+    Buffer_Free(buffer);
+}
+
