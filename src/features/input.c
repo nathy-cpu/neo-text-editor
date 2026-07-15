@@ -497,8 +497,10 @@ void Editor_ToggleFold(Editor* editor)
     if (Line_IsFoldable(tab->buffer, lineIndex, tab->config->tabSize)) {
         bool wasFolded = line->isFolded;
         line->isFolded = !line->isFolded;
-        if (line->isFolded && !wasFolded) tab->buffer->foldedLineCount++;
-        else if (!line->isFolded && wasFolded) tab->buffer->foldedLineCount--;
+        if (line->isFolded && !wasFolded)
+            tab->buffer->foldedLineCount++;
+        else if (!line->isFolded && wasFolded)
+            tab->buffer->foldedLineCount--;
         LOG_INFO("Toggled fold on line %zu to %d", lineIndex + 1, line->isFolded);
         Editor_ScrollTab(editor, tab);
     } else {
@@ -529,8 +531,10 @@ void Editor_ToggleAllFolds(Editor* editor)
         if (line && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
             bool wasFolded = line->isFolded;
             line->isFolded = anyUnfolded;
-            if (line->isFolded && !wasFolded) tab->buffer->foldedLineCount++;
-            else if (!line->isFolded && wasFolded) tab->buffer->foldedLineCount--;
+            if (line->isFolded && !wasFolded)
+                tab->buffer->foldedLineCount++;
+            else if (!line->isFolded && wasFolded)
+                tab->buffer->foldedLineCount--;
         }
     }
 

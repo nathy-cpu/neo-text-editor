@@ -1172,7 +1172,6 @@ size_t Tab_GetCursorVRowIdx(const Tab* tab);
  */
 size_t Tab_GetVisualRowCount(const Tab* tab);
 
-
 /**
  * @brief Retrieves the visual column offset of the cursor in a specific visual row.
  * @param tab Pointer to the Tab.

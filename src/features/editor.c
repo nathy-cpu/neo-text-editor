@@ -377,7 +377,8 @@ static void AppendWrappedRowsForLine(Array* out, const Tab* tab, Line* line, siz
     }
 
     if (col >= startCol) {
-        VisualRow vr = { .lineIndex = lineIndex, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
+        VisualRow vr
+            = { .lineIndex = lineIndex, .startCol = startCol, .length = col - startCol, .isWrapped = isWrapped };
         Array_Append(out, &vr, 1);
     }
 }
@@ -406,7 +407,8 @@ static size_t VisualRows_LowerBound(const Array* visualRows, size_t targetLineIn
 // changed since the last build (only editVersion moved). Returns false if the
 // incremental path can't be used, in which case the caller must fall back to
 // a full rebuild.
-static bool Tab_TryUpdateVisualRowsIncremental(Tab* tab, size_t usableColumns, size_t editVersion, size_t foldedLineCount)
+static bool Tab_TryUpdateVisualRowsIncremental(
+    Tab* tab, size_t usableColumns, size_t editVersion, size_t foldedLineCount)
 {
     if (foldedLineCount != 0 || tab->visualRowsFoldedCount != 0) {
         return false;

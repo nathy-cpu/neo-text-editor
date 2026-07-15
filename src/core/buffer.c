@@ -37,10 +37,7 @@ static void LineCache_Insert(LineCache* lc, Line* line)
     GapBuffer_InsertSlice(&lc->lines, GapBuffer_Size(&lc->lines), Slice_Make(line, sizeof(Line)));
 }
 
-static Line* LineCache_At(const LineCache* lc, size_t index)
-{
-    return (Line*)GapBuffer_At(&lc->lines, index);
-}
+static Line* LineCache_At(const LineCache* lc, size_t index) { return (Line*)GapBuffer_At(&lc->lines, index); }
 
 // ============================================================================
 // PIECE TABLE HELPERS
@@ -217,8 +214,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                             lineIdx++;
                             // Clear pointers so they are not freed when savedLines is freed
                             savedLines[reuseIdx].text = NULL;
-                            savedLines[reuseIdx].styles = (Array){ 0 };
-                            savedLines[reuseIdx].testText = (Array){ 0 };
+                            savedLines[reuseIdx].styles = (Array) { 0 };
+                            savedLines[reuseIdx].testText = (Array) { 0 };
                             savedLines[reuseIdx].renderCheckpoints = NULL;
                         }
                         aligned = true;
@@ -395,7 +392,8 @@ static void Buffer_Defragment(Buffer* buffer)
 
 DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer)
 {
-    LOG_DEBUG("DocumentSnapshot_Copy: creating snapshot of buffer %p (totalBytes=%zu)", (void*)buffer, buffer->totalBytes);
+    LOG_DEBUG(
+        "DocumentSnapshot_Copy: creating snapshot of buffer %p (totalBytes=%zu)", (void*)buffer, buffer->totalBytes);
     DocumentSnapshot* snap = malloc(sizeof(DocumentSnapshot));
     assert(snap);
 
@@ -406,7 +404,8 @@ DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer)
     // must be copied separately.
     size_t pieceCount = GapBuffer_Size(&buffer->pieces);
     GapBuffer_Init(&snap->pieces, sizeof(Piece), pieceCount, alignof(Piece));
-    GapBuffer_InsertSlice(&snap->pieces, 0, Slice_Make(buffer->pieces.data.data, buffer->pieces.gapStart * sizeof(Piece)));
+    GapBuffer_InsertSlice(
+        &snap->pieces, 0, Slice_Make(buffer->pieces.data.data, buffer->pieces.gapStart * sizeof(Piece)));
     GapBuffer_InsertSlice(&snap->pieces, GapBuffer_Size(&snap->pieces),
         Slice_Make((char*)buffer->pieces.data.data + buffer->pieces.gapEnd * sizeof(Piece),
             (pieceCount - buffer->pieces.gapStart) * sizeof(Piece)));
@@ -426,7 +425,8 @@ void DocumentSnapshot_Free(DocumentSnapshot* snap)
 void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t rangeStartOffset)
 {
     assert(buffer && snap);
-    LOG_DEBUG("Buffer_RestoreSnapshot: restoring snapshot %p to buffer %p (totalBytes=%zu)", (void*)snap, (void*)buffer, snap->totalBytes);
+    LOG_DEBUG("Buffer_RestoreSnapshot: restoring snapshot %p to buffer %p (totalBytes=%zu)", (void*)snap, (void*)buffer,
+        snap->totalBytes);
 
     size_t oldTotalBytes = buffer->totalBytes;
 
@@ -436,7 +436,8 @@ void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t range
     // around its own gap, so copy each segment separately.
     size_t pieceCount = GapBuffer_Size(&snap->pieces);
     GapBuffer_Init(&buffer->pieces, sizeof(Piece), pieceCount, alignof(Piece));
-    GapBuffer_InsertSlice(&buffer->pieces, 0, Slice_Make(snap->pieces.data.data, snap->pieces.gapStart * sizeof(Piece)));
+    GapBuffer_InsertSlice(
+        &buffer->pieces, 0, Slice_Make(snap->pieces.data.data, snap->pieces.gapStart * sizeof(Piece)));
     GapBuffer_InsertSlice(&buffer->pieces, GapBuffer_Size(&buffer->pieces),
         Slice_Make((char*)snap->pieces.data.data + snap->pieces.gapEnd * sizeof(Piece),
             (pieceCount - snap->pieces.gapStart) * sizeof(Piece)));
@@ -631,8 +632,8 @@ Line* Buffer_GetLine(const Buffer* buffer, size_t lineNumber)
 Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber)
 {
     assert(buffer);
-    LOG_DEBUG("Buffer_InsertLine: inserting line at index %zu (totalLines=%zu)",
-        lineNumber, Buffer_GetLineCount(buffer));
+    LOG_DEBUG(
+        "Buffer_InsertLine: inserting line at index %zu (totalLines=%zu)", lineNumber, Buffer_GetLineCount(buffer));
     size_t offset = 0;
     size_t totalLines = Buffer_GetLineCount(buffer);
     if (lineNumber > 0) {
@@ -653,8 +654,8 @@ Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber)
 void Buffer_DeleteLine(Buffer* buffer, size_t lineNumber)
 {
     assert(buffer);
-    LOG_DEBUG("Buffer_DeleteLine: deleting line at index %zu (totalLines=%zu)",
-        lineNumber, Buffer_GetLineCount(buffer));
+    LOG_DEBUG(
+        "Buffer_DeleteLine: deleting line at index %zu (totalLines=%zu)", lineNumber, Buffer_GetLineCount(buffer));
     Line* line = Buffer_GetLine(buffer, lineNumber);
     if (!line)
         return;

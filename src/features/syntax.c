@@ -214,7 +214,8 @@ void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
     // beyond the high-water mark (shouldn't normally happen -- editing a line
     // requires it to be visible, which requires prior coverage there) still
     // resumes from the mark rather than skipping ahead to the edit.
-    size_t startLine = (hasPendingEdit && dirtyStart < tab->syntaxHighWaterMark) ? dirtyStart : tab->syntaxHighWaterMark;
+    size_t startLine
+        = (hasPendingEdit && dirtyStart < tab->syntaxHighWaterMark) ? dirtyStart : tab->syntaxHighWaterMark;
     if (startLine >= lineCount) {
         return;
     }
