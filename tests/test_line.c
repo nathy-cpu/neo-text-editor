@@ -1,7 +1,8 @@
 #include "../src/neo.h"
 #include <assert.h>
-#include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static void test_line_basic(void)
 {
@@ -158,4 +159,97 @@ static void test_line_render_x_edges(void)
     Line_InsertText(line, 0, "\t\t", 2); // two tabs, TAB_STOP 4 -> columns 0..3, 4..7
     assert(Line_GetRenderX(line, 10, 4) == 8);
     Line_Free(line);
+}
+
+static size_t NaiveRenderX(const char* text, size_t textLen, size_t cursorX, size_t tabSize)
+{
+    size_t rx = 0;
+    for (size_t i = 0; i < cursorX && i < textLen; i++) {
+        if (text[i] == '\t')
+            rx += (tabSize - 1) - (rx % tabSize);
+        rx++;
+    }
+    return rx;
+}
+
+// Regression test for the render-checkpoint index: for lines above the
+// checkpoint threshold, Line_GetRenderX switches from an O(length) direct
+// walk to a checkpoint-lookup + short local walk. Results must match an
+// independently-computed naive walk exactly, including right at checkpoint
+// stride boundaries where an off-by-one would be easy to introduce.
+static void test_line_render_x_huge_line(void)
+{
+    Line* line = Line_New(16);
+
+    const size_t length = 20000; // well above the render-checkpoint threshold
+    char* content = malloc(length);
+    assert(content);
+    for (size_t i = 0; i < length; i++) {
+        // Tab period (37) deliberately doesn't evenly divide the checkpoint
+        // stride, so boundary columns don't all land on the same tab-stop phase.
+        content[i] = (i % 37 == 0) ? '\t' : 'x';
+    }
+    Line_InsertText(line, 0, content, length);
+    assert(Line_Length(line) == length);
+
+    size_t tabSize = 4;
+    size_t checkCols[]
+        = { 0, 1, 36, 37, 4095, 4096, 4097, 8192, 8193, 12288, 16384, 19999, 20000, 25000 };
+    for (size_t c = 0; c < sizeof(checkCols) / sizeof(checkCols[0]); c++) {
+        size_t expected = NaiveRenderX(content, length, checkCols[c], tabSize);
+        assert(Line_GetRenderX(line, checkCols[c], tabSize) == expected);
+    }
+
+    // Rebuilding for a different tab size must invalidate the cached
+    // checkpoints rather than silently reusing stale render columns.
+    size_t otherTabSize = 8;
+    size_t expectedOther = NaiveRenderX(content, length, 4096, otherTabSize);
+    assert(Line_GetRenderX(line, 4096, otherTabSize) == expectedOther);
+
+    free(content);
+    Line_Free(line);
+}
+
+// Regression test for Line_GetTextRange: sub-ranges must match substrings of
+// the full Line_GetText output, including ranges that span multiple
+// piece-table pieces (forced here via several separate inserts).
+static void test_line_get_text_range(void)
+{
+    Buffer* buffer = Buffer_New();
+    Line* line = Buffer_GetLine(buffer, 0);
+
+    Line_InsertText(line, 0, "HelloWorld", 10);
+    line = Buffer_GetLine(buffer, 0);
+    Line_InsertText(line, 5, ", ", 2); // "Hello, World"
+    line = Buffer_GetLine(buffer, 0);
+    Line_InsertText(line, 12, "!!!", 3); // "Hello, World!!!"
+
+    line = Buffer_GetLine(buffer, 0);
+    Slice full = Line_GetText(line);
+    assert(full.size == 15 && memcmp(full.data, "Hello, World!!!", 15) == 0);
+
+    struct {
+        size_t start, length;
+    } ranges[] = {
+        { 0, 5 }, // "Hello" -- first piece only
+        { 0, 15 }, // whole line
+        { 3, 4 }, // spans first insert + second insert
+        { 5, 10 }, // spans second + third insert
+        { 12, 3 }, // "!!!" -- third piece only
+        { 10, 100 }, // length clamped to available bytes
+        { 20, 5 }, // start past end -> empty
+    };
+    for (size_t i = 0; i < sizeof(ranges) / sizeof(ranges[0]); i++) {
+        Slice range = Line_GetTextRange(line, ranges[i].start, ranges[i].length);
+        size_t expectedLen = ranges[i].start >= full.size ? 0 : full.size - ranges[i].start;
+        if (expectedLen > ranges[i].length) {
+            expectedLen = ranges[i].length;
+        }
+        assert(range.size == expectedLen);
+        if (expectedLen > 0) {
+            assert(memcmp(range.data, (const char*)full.data + ranges[i].start, expectedLen) == 0);
+        }
+    }
+
+    Buffer_Free(buffer);
 }

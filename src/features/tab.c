@@ -41,6 +41,7 @@ void Tab_Init(Tab* tab)
     }
 
     tab->syntax = NULL;
+    tab->syntaxHighWaterMark = 0;
 
     // Cursor state
     tab->cursorX = 0;
@@ -66,6 +67,8 @@ void Tab_Init(Tab* tab)
     tab->hasSelection = false;
     tab->selectStartX = 0;
     tab->selectStartY = 0;
+
+    tab->wrapLinesDisabledForSize = false;
 
     tab->config = &defaultTestConfig;
     tab->buffer->history.undoLimit = tab->config->undoLimit;
@@ -109,6 +112,10 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->filename = strdup(path);
     tab->isSaved = true;
 
+    // The buffer changed, so nothing has been highlighted in it yet -- actual
+    // highlighting is deferred to the render/scroll path, extended lazily as
+    // the viewport moves, instead of covering the whole file up front here.
+    tab->syntaxHighWaterMark = 0;
     Tab_SetSyntaxHighlight(tab);
 
     // Reset view state
@@ -121,7 +128,21 @@ void Tab_LoadFile(Tab* tab, const char* path)
     tab->visualRowsUsableColumns = SIZE_MAX;
     tab->visualRowsLineCount = SIZE_MAX;
 
-    LOG_INFO("Loaded tab content from file: %s (lines: %zu)", path, Buffer_GetLineCount(tab->buffer));
+    size_t lineCount = Buffer_GetLineCount(tab->buffer);
+    tab->wrapLinesDisabledForSize
+        = tab->config->wrapDisableLineThreshold > 0 && lineCount > tab->config->wrapDisableLineThreshold;
+    if (tab->wrapLinesDisabledForSize) {
+        LOG_INFO("Tab_LoadFile: word-wrap auto-disabled for '%s' (%zu lines exceeds threshold %zu)", path, lineCount,
+            tab->config->wrapDisableLineThreshold);
+    }
+
+    LOG_INFO("Loaded tab content from file: %s (lines: %zu)", path, lineCount);
+}
+
+bool Tab_ShouldWrapLines(const Tab* tab)
+{
+    assert(tab && tab->config);
+    return tab->config->wrapLines && !tab->wrapLinesDisabledForSize;
 }
 
 // Save tab content to file

@@ -425,6 +425,60 @@ static void test_tab_visual_rows_incremental(void)
     Tab_Free(&tab);
 }
 
+// Regression test: a single line longer than LINE_HUGE_THRESHOLD must be
+// treated as one unwrapped visual row even when the tab's word-wrap setting
+// is on, avoiding an O(length) tab-stop walk and a huge VisualRow array for
+// that one line. Neighboring normal-sized lines must still wrap normally.
+static void test_tab_visual_rows_huge_line_bypasses_wrap(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+    assert(tab.config->wrapLines == true);
+
+    Buffer_InsertLine(tab.buffer, 1);
+    Buffer_InsertLine(tab.buffer, 2);
+
+    Line* line0 = Buffer_GetLine(tab.buffer, 0);
+    Buffer_InsertText(tab.buffer, line0->offset, "0123456789ABCDEFGHIJ", 20); // 20 chars, wraps at width 10
+
+    size_t hugeLength = LINE_HUGE_THRESHOLD + 100;
+    char* hugeContent = malloc(hugeLength);
+    assert(hugeContent);
+    memset(hugeContent, 'a', hugeLength);
+    Line* line1 = Buffer_GetLine(tab.buffer, 1);
+    Buffer_InsertText(tab.buffer, line1->offset, hugeContent, hugeLength);
+    free(hugeContent);
+
+    Line* line2 = Buffer_GetLine(tab.buffer, 2);
+    Buffer_InsertText(tab.buffer, line2->offset, "0123456789ABCDEFGHIJ", 20);
+
+    assert(Buffer_GetLineCount(tab.buffer) == 3);
+
+    size_t usableColumns = 10;
+    Tab_UpdateVisualRows((const Editor*)NULL, &tab, usableColumns);
+
+    // Line 0 (20 chars, width 10) wraps into 2 rows as usual.
+    size_t rowIdx = 0;
+    VisualRow* vr = (VisualRow*)Array_At(&tab.visualRows, rowIdx++);
+    assert(vr->lineIndex == 0 && vr->isWrapped == false);
+    vr = (VisualRow*)Array_At(&tab.visualRows, rowIdx++);
+    assert(vr->lineIndex == 0 && vr->isWrapped == true);
+
+    // The huge line collapses to exactly one unwrapped row covering its full length.
+    vr = (VisualRow*)Array_At(&tab.visualRows, rowIdx++);
+    assert(vr->lineIndex == 1 && vr->startCol == 0 && vr->length == hugeLength && vr->isWrapped == false);
+
+    // Line 2 wraps normally again, unaffected by the huge line before it.
+    vr = (VisualRow*)Array_At(&tab.visualRows, rowIdx++);
+    assert(vr->lineIndex == 2 && vr->isWrapped == false);
+    vr = (VisualRow*)Array_At(&tab.visualRows, rowIdx++);
+    assert(vr->lineIndex == 2 && vr->isWrapped == true);
+
+    assert(Array_Size(&tab.visualRows) == rowIdx);
+
+    Tab_Free(&tab);
+}
+
 static void test_buffer_piece_table(void)
 {
     const char* path = "test_temp_piece_table.txt";
@@ -650,6 +704,71 @@ static void test_buffer_redo_stack_reused_group_no_leak(void)
     assert(Buffer_Undo(buffer, &l, &c) == true);
     line = Buffer_GetLine(buffer, 0);
     assert(Line_Length(line) == 0);
+
+    Buffer_Free(buffer);
+}
+
+// Regression test for the perf fix in Buffer_RestoreSnapshot: undo/redo of a
+// localized edit deep in a large file must only invalidate the line cache
+// from the touched line onward, not wipe and rebuild the entire cache.
+static void test_buffer_undo_redo_scoped_invalidation(void)
+{
+    Buffer* buffer = Buffer_New();
+    const size_t lineCount = 1000;
+    for (size_t i = 1; i < lineCount; i++) {
+        Buffer_InsertLine(buffer, i);
+    }
+    for (size_t i = 0; i < lineCount; i++) {
+        char text[16];
+        int n = snprintf(text, sizeof(text), "line%zu", i);
+        Line* line = Buffer_GetLine(buffer, i);
+        Buffer_InsertText(buffer, line->offset, text, (size_t)n);
+    }
+    assert(Buffer_GetLineCount(buffer) == lineCount);
+
+    // Warm the cache for an unrelated line far from the upcoming edit, and
+    // remember its cached text pointer.
+    Line* unrelatedLine = Buffer_GetLine(buffer, 10);
+    Slice unrelatedText = Line_GetText(unrelatedLine);
+    const void* unrelatedTextPtr = unrelatedText.data;
+    assert(unrelatedTextPtr != NULL);
+
+    // Edit deep in the middle of the file -- a single ACTION_INSERT_CHAR group.
+    Buffer_InsertChar(buffer, 500, 0, 'X');
+    assert(Buffer_GetLineCount(buffer) == lineCount);
+
+    size_t undoLine = SIZE_MAX, undoColumn = SIZE_MAX;
+    assert(Buffer_Undo(buffer, &undoLine, &undoColumn) == true);
+
+    // The dirty range must be tight around line 500, not a full wipe from 0.
+    assert(Buffer_PeekDirtyLineStart(buffer) == 500);
+
+    // The unrelated, unaffected line's cached text must survive untouched --
+    // proving it wasn't discarded by a full line-cache wipe.
+    Line* unrelatedLineAfterUndo = Buffer_GetLine(buffer, 10);
+    Slice unrelatedTextAfterUndo = Line_GetText(unrelatedLineAfterUndo);
+    assert(unrelatedTextAfterUndo.data == unrelatedTextPtr);
+    assert(unrelatedTextAfterUndo.size == unrelatedText.size);
+
+    Line* editedLine = Buffer_GetLine(buffer, 500);
+    Slice editedText = Line_GetText(editedLine);
+    char expected[16];
+    int n = snprintf(expected, sizeof(expected), "line%d", 500);
+    assert(editedText.size == (size_t)n && memcmp(editedText.data, expected, (size_t)n) == 0);
+
+    // Symmetric check for redo.
+    size_t redoLine = SIZE_MAX, redoColumn = SIZE_MAX;
+    assert(Buffer_Redo(buffer, &redoLine, &redoColumn) == true);
+    assert(Buffer_PeekDirtyLineStart(buffer) == 500);
+
+    Line* unrelatedLineAfterRedo = Buffer_GetLine(buffer, 10);
+    Slice unrelatedTextAfterRedo = Line_GetText(unrelatedLineAfterRedo);
+    assert(unrelatedTextAfterRedo.data == unrelatedTextPtr);
+
+    editedLine = Buffer_GetLine(buffer, 500);
+    editedText = Line_GetText(editedLine);
+    n = snprintf(expected, sizeof(expected), "Xline%d", 500);
+    assert(editedText.size == (size_t)n && memcmp(editedText.data, expected, (size_t)n) == 0);
 
     Buffer_Free(buffer);
 }

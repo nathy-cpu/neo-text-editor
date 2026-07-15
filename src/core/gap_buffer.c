@@ -12,6 +12,7 @@ static void EnsureGapCapacity(GapBuffer* gb, size_t required)
 
     size_t newCapacity = gb->data.capacity * 2 + required;
     size_t newGapSize = newCapacity - gb->data.size;
+    size_t afterGapCount = gb->data.size - gb->gapStart;
 
     LOG_DEBUG("EnsureGapCapacity: expanding gap buffer capacity from %zu to %zu (required=%zu)", gb->data.capacity,
         newCapacity, required);
@@ -21,8 +22,14 @@ static void EnsureGapCapacity(GapBuffer* gb, size_t required)
 
     // Copy data before gap
     Array_Append(&newData, gb->data.data, gb->gapStart);
-    // Copy data after gap
-    Array_Append(&newData, (char*)gb->data.data + (gb->gapEnd * gb->data.itemSize), gb->data.size - gb->gapStart);
+    // Copy data after gap directly to its correct physical offset (gapStart +
+    // newGapSize, i.e. right after the new, larger gap). Array_Append always
+    // writes at the current size, which would place this segment immediately
+    // after the before-gap one with no gap between them, orphaning it outside
+    // where GapBuffer_At/GapBuffer_MoveGap expect to find it.
+    memcpy((char*)newData.data + (gb->gapStart + newGapSize) * newData.itemSize,
+        (char*)gb->data.data + (gb->gapEnd * gb->data.itemSize), afterGapCount * gb->data.itemSize);
+    newData.size = gb->data.size;
 
     Array_Free(&gb->data);
     gb->data = newData;

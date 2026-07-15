@@ -1,6 +1,7 @@
 #include "../src/neo.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void test_get_syntax_color_defaults(void)
@@ -41,7 +42,7 @@ static void test_syntax_highlight_c_file(void)
     const char* code = "int x = 42; // comment";
     Line* line = Buffer_GetLine(tab->buffer, 0);
     Line_InsertText(line, 0, code, strlen(code));
-    Tab_UpdateSyntax(tab);
+    Tab_UpdateSyntax(tab, SIZE_MAX);
 
     line = Buffer_GetLine(tab->buffer, 0);
     Slice stylesSlice = Array_ToSlice(&line->styles);
@@ -81,7 +82,7 @@ static void test_syntax_highlight_strings_and_chars(void)
     char fullText[64];
     int fullLength = snprintf(fullText, sizeof(fullText), "%s\n%s", text0, text1);
     Line_InsertText(line0, 0, fullText, (size_t)fullLength);
-    Tab_UpdateSyntax(&tab);
+    Tab_UpdateSyntax(&tab, SIZE_MAX);
 
     line0 = Buffer_GetLine(tab.buffer, 0);
     Slice styles0Slice = Array_ToSlice(&line0->styles);
@@ -127,7 +128,7 @@ static void test_syntax_highlight_multiline_comment(void)
     char fullText[64];
     int fullLength = snprintf(fullText, sizeof(fullText), "%s\n%s", text0, text1);
     Line_InsertText(line0, 0, fullText, (size_t)fullLength);
-    Tab_UpdateSyntax(&tab);
+    Tab_UpdateSyntax(&tab, SIZE_MAX);
 
     line0 = Buffer_GetLine(tab.buffer, 0);
     assert(line0->commentStateOutValid == true);
@@ -148,6 +149,114 @@ static void test_syntax_highlight_multiline_comment(void)
     for (size_t i = 6; i < strlen(text1); i++) {
         assert(styles1[i] != HIGHLIGHT_COMMENT); // trailing "int y;" is no longer commented out
     }
+
+    Tab_Free(&tab);
+}
+
+// Regression test for the perf fix deferring syntax highlighting to a lazy,
+// scroll-driven high-water mark instead of highlighting the whole file
+// synchronously on load: Tab_UpdateSyntax(tab, maxLine) must only highlight
+// up to maxLine when there's no pending edit, extend monotonically on
+// subsequent calls with a larger bound, and never redo lines already covered.
+static void test_tab_update_syntax_lazy_high_water_mark(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+
+    Syntax syntax;
+    memset(&syntax, 0, sizeof(syntax));
+    tab.syntax = &syntax;
+
+    const size_t lineCount = 2000;
+    for (size_t i = 1; i < lineCount; i++) {
+        Buffer_InsertLine(tab.buffer, i);
+    }
+    for (size_t i = 0; i < lineCount; i++) {
+        char text[16];
+        int n = snprintf(text, sizeof(text), "int x%zu;", i);
+        Line* line = Buffer_GetLine(tab.buffer, i);
+        Buffer_InsertText(tab.buffer, line->offset, text, (size_t)n);
+    }
+    assert(Buffer_GetLineCount(tab.buffer) == lineCount);
+    // Cache must be clean here so the next call takes the lazy, no-pending-
+    // edit path rather than the re-highlight-from-the-edit path.
+    assert(Buffer_PeekDirtyLineStart(tab.buffer) == SIZE_MAX);
+
+    // Simulate the scroll path extending coverage to a bounded viewport.
+    Tab_UpdateSyntax(&tab, 50);
+
+    Line* line0 = Buffer_GetLine(tab.buffer, 0);
+    assert(line0->styles.data != NULL);
+    Line* line49 = Buffer_GetLine(tab.buffer, 49);
+    assert(line49->styles.data != NULL);
+    Line* line50 = Buffer_GetLine(tab.buffer, 50);
+    assert(line50->styles.data == NULL); // Beyond the bound -- never touched.
+
+    const void* line0StylesPtr = line0->styles.data;
+
+    // A call with a smaller (already-covered) bound must be a no-op.
+    Tab_UpdateSyntax(&tab, 10);
+    line0 = Buffer_GetLine(tab.buffer, 0);
+    assert(line0->styles.data == line0StylesPtr);
+
+    // Extending further covers more lines without redoing or disturbing what
+    // was already highlighted.
+    Tab_UpdateSyntax(&tab, 100);
+    line50 = Buffer_GetLine(tab.buffer, 50);
+    assert(line50->styles.data != NULL);
+    Line* line99 = Buffer_GetLine(tab.buffer, 99);
+    assert(line99->styles.data != NULL);
+    Line* line100 = Buffer_GetLine(tab.buffer, 100);
+    assert(line100->styles.data == NULL);
+    line0 = Buffer_GetLine(tab.buffer, 0);
+    assert(line0->styles.data == line0StylesPtr);
+
+    Tab_Free(&tab);
+}
+
+// Regression test for skipping highlighting on huge lines: styles must stay
+// unallocated (the renderer already treats that as all-normal) rather than
+// paying for an O(length) scan plus a full-length styles array, and adjacent
+// normal-sized lines must still be highlighted correctly around it.
+static void test_tab_update_syntax_skips_huge_line(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+
+    Syntax syntax;
+    memset(&syntax, 0, sizeof(syntax));
+    tab.syntax = &syntax;
+
+    Buffer_InsertLine(tab.buffer, 1);
+    Buffer_InsertLine(tab.buffer, 2);
+
+    Line* line0 = Buffer_GetLine(tab.buffer, 0);
+    Buffer_InsertText(tab.buffer, line0->offset, "int x;", 6);
+
+    size_t hugeLength = LINE_HUGE_THRESHOLD + 100;
+    char* hugeContent = malloc(hugeLength);
+    assert(hugeContent);
+    memset(hugeContent, 'a', hugeLength);
+    Line* line1 = Buffer_GetLine(tab.buffer, 1);
+    Buffer_InsertText(tab.buffer, line1->offset, hugeContent, hugeLength);
+    free(hugeContent);
+
+    Line* line2 = Buffer_GetLine(tab.buffer, 2);
+    Buffer_InsertText(tab.buffer, line2->offset, "int y;", 6);
+
+    assert(Buffer_GetLineCount(tab.buffer) == 3);
+    Tab_UpdateSyntax(&tab, SIZE_MAX);
+
+    line0 = Buffer_GetLine(tab.buffer, 0);
+    assert(line0->styles.data != NULL);
+
+    line1 = Buffer_GetLine(tab.buffer, 1);
+    assert(Line_Length(line1) == hugeLength);
+    assert(line1->styles.data == NULL); // Skipped -- too large to highlight.
+    assert(line1->commentStateOutValid == false);
+
+    line2 = Buffer_GetLine(tab.buffer, 2);
+    assert(line2->styles.data != NULL); // Still highlighted normally.
 
     Tab_Free(&tab);
 }

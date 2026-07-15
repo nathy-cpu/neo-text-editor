@@ -1,6 +1,10 @@
 #include "../neo.h"
+#include <errno.h>
 #include <fcntl.h>
+#include <libgen.h>
+#include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -52,6 +56,24 @@ bool FileIoRead(const char* path, Array* out)
     return true;
 }
 
+bool FileIoWriteChunk(int fileDescriptor, const void* data, size_t len)
+{
+    const char* cursor = (const char*)data;
+    size_t remaining = len;
+    while (remaining > 0) {
+        ssize_t written = write(fileDescriptor, cursor, remaining);
+        if (written < 0) {
+            if (errno == EINTR)
+                continue;
+            LOG_ERROR("FileIoWriteChunk: write() failed: %s", strerror(errno));
+            return false;
+        }
+        cursor += written;
+        remaining -= (size_t)written;
+    }
+    return true;
+}
+
 bool FileIoWrite(const char* path, Slice content)
 {
     int fileDescriptor = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -60,15 +82,72 @@ bool FileIoWrite(const char* path, Slice content)
         return false;
     }
 
-    ssize_t written = write(fileDescriptor, content.data, content.size);
+    bool ok = FileIoWriteChunk(fileDescriptor, content.data, content.size);
     close(fileDescriptor);
 
-    if (written != (ssize_t)content.size) {
-        LOG_ERROR("Failed to write entire content to file: %s (wrote %zd of %zu bytes)", path, written, content.size);
+    if (!ok) {
+        LOG_ERROR("Failed to write entire content to file: %s", path);
         return false;
     }
 
     LOG_INFO("Successfully wrote file: %s (%zu bytes)", path, content.size);
+    return true;
+}
+
+int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tempPathOutSize)
+{
+    char dirBuf[PATH_MAX];
+    char baseBuf[PATH_MAX];
+    if (strlen(path) >= sizeof(dirBuf)) {
+        LOG_ERROR("FileIoOpenTempForAtomicWrite: path too long: %s", path);
+        return -1;
+    }
+    strcpy(dirBuf, path);
+    strcpy(baseBuf, path);
+    const char* dir = dirname(dirBuf);
+    const char* base = basename(baseBuf);
+
+    int written = snprintf(tempPathOut, tempPathOutSize, "%s/.%s.neo-tmp-XXXXXX", dir, base);
+    if (written < 0 || (size_t)written >= tempPathOutSize) {
+        LOG_ERROR("FileIoOpenTempForAtomicWrite: temp path too long for: %s", path);
+        return -1;
+    }
+
+    int fileDescriptor = mkstemp(tempPathOut);
+    if (fileDescriptor == -1) {
+        LOG_ERROR("FileIoOpenTempForAtomicWrite: mkstemp failed for '%s': %s", tempPathOut, strerror(errno));
+        return -1;
+    }
+
+    // mkstemp creates the file with mode 0600; match FileIoWrite's conventional 0644.
+    fchmod(fileDescriptor, 0644);
+    return fileDescriptor;
+}
+
+void FileIoAbortAtomicWrite(int fileDescriptor, const char* tempPath)
+{
+    if (fileDescriptor != -1)
+        close(fileDescriptor);
+    unlink(tempPath);
+}
+
+bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath)
+{
+    if (fsync(fileDescriptor) != 0) {
+        LOG_ERROR("FileIoCommitAtomicWrite: fsync failed for '%s': %s", tempPath, strerror(errno));
+        close(fileDescriptor);
+        unlink(tempPath);
+        return false;
+    }
+    close(fileDescriptor);
+
+    if (rename(tempPath, finalPath) != 0) {
+        LOG_ERROR("FileIoCommitAtomicWrite: rename '%s' -> '%s' failed: %s", tempPath, finalPath, strerror(errno));
+        unlink(tempPath);
+        return false;
+    }
+
+    LOG_INFO("FileIoCommitAtomicWrite: atomically wrote '%s'", finalPath);
     return true;
 }
 

@@ -308,6 +308,21 @@ typedef struct {
 
 struct Buffer;
 
+// Lines longer than this are considered "huge" throughout rendering: they
+// skip word-wrap (one unwrapped visual row instead of an O(length) tab-stop
+// walk to find wrap points), skip syntax highlighting, use a checkpoint index
+// for Line_GetRenderX instead of an O(length) walk, and are rendered via
+// Line_GetTextRange (a bounded sub-range) rather than materializing/caching
+// the whole line via Line_GetText.
+#define LINE_HUGE_THRESHOLD 8192
+
+// A lazily-built prefix-sum checkpoint for Line_GetRenderX on huge lines:
+// renderCol is the tab-expanded render column at raw byte offset rawCol.
+typedef struct {
+    size_t rawCol;
+    size_t renderCol;
+} RenderCheckpoint;
+
 // Line - Represents a single line in the text buffer
 typedef struct Line {
     struct Buffer* buffer; // Parent buffer (NULL for standalone tests)
@@ -321,6 +336,12 @@ typedef struct Line {
     Array testText; // Standalone test text buffer
     bool commentStateOut; // Multi-line-comment state after this line, for incremental syntax updates
     bool commentStateOutValid; // Whether commentStateOut reflects the line's current content
+    // Render-column checkpoints for huge lines (NULL until built; only built
+    // above a size threshold -- see Line_GetRenderX). Rebuilt if the tab size
+    // it was built for no longer matches.
+    RenderCheckpoint* renderCheckpoints;
+    size_t renderCheckpointCount;
+    size_t renderCheckpointTabSize;
 } Line;
 
 typedef struct {
@@ -414,6 +435,19 @@ size_t Line_Length(Line* line);
  * @return A slice of the line's text buffer.
  */
 Slice Line_GetText(Line* line);
+
+/**
+ * @brief Returns a Slice covering just [start, start+length) of the line's
+ * text, clamped to the line's actual length. Unlike Line_GetText, this never
+ * materializes/caches the line's full content -- intended for rendering only
+ * a visible sub-range of a huge line. The returned slice is only valid until
+ * the next call to Line_GetTextRange (it may reuse an internal scratch buffer).
+ * @param line Pointer to the line.
+ * @param start Byte offset into the line to start at.
+ * @param length Number of bytes to return.
+ * @return A slice of at most `length` bytes.
+ */
+Slice Line_GetTextRange(Line* line, size_t start, size_t length);
 
 /**
  * @brief Converts a logical byte position to a visual render column, accounting for tab stops.
@@ -536,6 +570,17 @@ size_t Buffer_GetTotalBytes(const Buffer* buffer);
 Slice Buffer_ToSlice(const Buffer* buffer);
 
 /**
+ * @brief Writes the buffer's content to `path` by streaming each piece
+ * directly to a temp file (no intermediate full-document allocation) and
+ * atomically renaming it into place on success. On failure, `path` is left
+ * completely untouched.
+ * @param buffer Pointer to the buffer.
+ * @param path Destination path.
+ * @return True on success, false on failure.
+ */
+bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path);
+
+/**
  * @brief Undoes the last action or action group.
  * @param buffer Pointer to the buffer.
  * @param outLineNumber Out: line the cursor should move to, if a group was undone.
@@ -560,7 +605,13 @@ Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename);
 void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffset, size_t oldTotalBytes);
 DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer);
 void DocumentSnapshot_Free(DocumentSnapshot* snap);
-void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap);
+// Restores `snap` into `buffer`. `rangeStartOffset` is a byte offset, in the
+// buffer's current (pre-restore) coordinate space, below which content is
+// known to be unchanged between the current buffer and the restored
+// snapshot - only the line cache from that point onward is invalidated,
+// instead of the whole cache. Pass SIZE_MAX if no such bound is known, to
+// fall back to discarding the entire line cache.
+void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t rangeStartOffset);
 void Buffer_OnSave(Buffer* buffer, const char* path);
 
 // ============================================================================
@@ -671,12 +722,55 @@ void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
 bool FileIoRead(const char* path, Array* out);
 
 /**
- * @brief Writes a slice of data atomically to a file.
+ * @brief Writes a full slice of data to a file, truncating any existing content.
+ * Not atomic - a crash or write failure partway through can leave the file
+ * truncated/corrupted. Prefer FileIoOpenTempForAtomicWrite + FileIoWriteChunk +
+ * FileIoCommitAtomicWrite for saving over an existing file safely.
  * @param path Path to write to.
  * @param content The slice containing the data to write.
  * @return True on success, false on failure.
  */
 bool FileIoWrite(const char* path, Slice content);
+
+/**
+ * @brief Writes exactly `len` bytes to an open file descriptor, looping over
+ * short writes and retrying on EINTR.
+ * @param fileDescriptor Open, writable file descriptor.
+ * @param data Bytes to write.
+ * @param len Number of bytes to write.
+ * @return True if all bytes were written, false on error.
+ */
+bool FileIoWriteChunk(int fileDescriptor, const void* data, size_t len);
+
+/**
+ * @brief Opens a new temp file in the same directory as `path` (so a later
+ * rename() onto `path` is atomic), for streaming content into before
+ * committing it as the new content of `path`.
+ * @param path Final destination path the temp file will eventually replace.
+ * @param tempPathOut Buffer to receive the temp file's path.
+ * @param tempPathOutSize Size of tempPathOut.
+ * @return An open, writable file descriptor, or -1 on failure.
+ */
+int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tempPathOutSize);
+
+/**
+ * @brief Abandons an in-progress atomic write: closes the descriptor and
+ * removes the temp file, leaving the original destination file untouched.
+ * @param fileDescriptor The temp file's descriptor (may be -1 if already closed).
+ * @param tempPath The temp file's path, as returned by FileIoOpenTempForAtomicWrite.
+ */
+void FileIoAbortAtomicWrite(int fileDescriptor, const char* tempPath);
+
+/**
+ * @brief Durably commits a completed atomic write: fsyncs and closes the temp
+ * file, then atomically renames it onto `finalPath`. On failure the temp file
+ * is removed and `finalPath` is left untouched.
+ * @param fileDescriptor The temp file's descriptor, as returned by FileIoOpenTempForAtomicWrite.
+ * @param tempPath The temp file's path.
+ * @param finalPath The destination path to atomically replace.
+ * @return True on success, false on failure.
+ */
+bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath);
 
 // Memory-mapped file variant (zero-copy for large files)
 
@@ -735,6 +829,11 @@ typedef struct {
     int tabSize;
     bool showLineNumbers;
     bool wrapLines;
+    // Auto-disables word-wrap for a file whose line count exceeds this, since
+    // wrapping requires an eager full-document pass to materialize every
+    // line's text and compute wrap segments. 0 disables this override
+    // entirely (always respect wrapLines regardless of file size).
+    size_t wrapDisableLineThreshold;
     bool syntaxEnabled;
     int statusTimeout;
     char* syntaxColors[9]; // Map of HighlightType enum
@@ -805,6 +904,10 @@ typedef struct {
 
     // Syntax Highlighting
     Syntax* syntax;
+    // Exclusive bound: lines [0, syntaxHighWaterMark) have been highlighted at
+    // least once. Lets Tab_UpdateSyntax extend coverage lazily as the
+    // viewport scrolls, instead of highlighting the whole file at load.
+    size_t syntaxHighWaterMark;
 
     // Cursor state
     size_t cursorX;
@@ -830,6 +933,10 @@ typedef struct {
     size_t visualRowsFoldedCount; // Buffer foldedLineCount visualRows was last built for
     size_t visualRowsUsableColumns; // usableColumns visualRows was last built for
     size_t visualRowsLineCount; // Buffer line count visualRows was last built for
+
+    // True if this tab's line count exceeded config->wrapDisableLineThreshold
+    // at load time, overriding config->wrapLines to false for this tab only.
+    bool wrapLinesDisabledForSize;
 
     // Pointer to active configuration
     Config* config;
@@ -983,16 +1090,31 @@ void Tab_LoadFile(Tab* tab, const char* path);
 void Tab_SaveFile(Tab* tab);
 
 /**
+ * @brief Whether this tab should currently word-wrap its lines, combining the
+ * global config->wrapLines setting with this tab's per-file size override
+ * (see Tab.wrapLinesDisabledForSize).
+ * @param tab Pointer to the Tab.
+ * @return True if lines should be word-wrapped.
+ */
+bool Tab_ShouldWrapLines(const Tab* tab);
+
+/**
  * @brief Triggers a syntax highlight update for the entire tab.
  * @param tab Pointer to the Tab.
  */
 void Tab_SetSyntaxHighlight(Tab* tab);
 
 /**
- * @brief Re-evaluates syntax highlighting for the current lines.
+ * @brief Re-evaluates syntax highlighting, extending coverage as needed.
+ * If a pending edit exists, re-highlights from the touched line forward
+ * (bounded by the usual early-exit once comment state restabilizes).
+ * Otherwise, lazily extends coverage from the current high-water mark up to
+ * `maxLine` (a no-op if that range is already covered) -- pass SIZE_MAX to
+ * always cover the whole buffer regardless of viewport.
  * @param tab Pointer to the Tab.
+ * @param maxLine Exclusive upper bound on lines to newly highlight.
  */
-void Tab_UpdateSyntax(Tab* tab);
+void Tab_UpdateSyntax(Tab* tab, size_t maxLine);
 
 /**
  * @brief Retrieves the ANSI color code for a specific highlight type.

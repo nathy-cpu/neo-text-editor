@@ -62,6 +62,7 @@ void Config_InitDefaults(Config* config)
     config->tabSize = 4;
     config->showLineNumbers = true;
     config->wrapLines = true;
+    config->wrapDisableLineThreshold = 50000;
     config->syntaxEnabled = true;
     config->statusTimeout = 5;
 
@@ -431,6 +432,8 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->tabSize = GetLuaInt(luaState, "tab_size", config->tabSize);
     config->showLineNumbers = GetLuaBool(luaState, "show_line_numbers", config->showLineNumbers);
     config->wrapLines = GetLuaBool(luaState, "wrap_lines", config->wrapLines);
+    config->wrapDisableLineThreshold
+        = (size_t)GetLuaInt(luaState, "wrap_disable_line_threshold", (int)config->wrapDisableLineThreshold);
     config->syntaxEnabled = GetLuaBool(luaState, "syntax_enabled", config->syntaxEnabled);
     config->statusTimeout = GetLuaInt(luaState, "status_timeout", config->statusTimeout);
 

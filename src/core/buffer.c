@@ -1,5 +1,6 @@
 #include "../neo.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,6 +26,7 @@ static void LineCache_Free(LineCache* lc)
             free(line->text);
             Array_Free(&line->styles);
             Array_Free(&line->testText);
+            free(line->renderCheckpoints);
         }
     }
     GapBuffer_Free(&lc->lines);
@@ -124,6 +126,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             oldLine->text = NULL;
             oldLine->styles = (Array) { 0 };
             oldLine->testText = (Array) { 0 };
+            oldLine->renderCheckpoints = NULL;
         }
     }
 
@@ -137,6 +140,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         discardedLine->text = NULL;
         Array_Free(&discardedLine->styles);
         Array_Free(&discardedLine->testText);
+        free(discardedLine->renderCheckpoints);
+        discardedLine->renderCheckpoints = NULL;
     }
     buffer->lineCache.lines.gapEnd = buffer->lineCache.lines.data.capacity;
     buffer->lineCache.lines.data.size = lineIdx;
@@ -182,7 +187,10 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                     .isFolded = false,
                     .foldLevel = 0,
                     .styles = { 0 },
-                    .testText = { 0 } };
+                    .testText = { 0 },
+                    .renderCheckpoints = NULL,
+                    .renderCheckpointCount = 0,
+                    .renderCheckpointTabSize = 0 };
                 LineCache_Insert(&buffer->lineCache, &newLine);
                 lineIdx++;
                 scanOffset += (foundIdx - j) + 1;
@@ -211,6 +219,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                             savedLines[reuseIdx].text = NULL;
                             savedLines[reuseIdx].styles = (Array){ 0 };
                             savedLines[reuseIdx].testText = (Array){ 0 };
+                            savedLines[reuseIdx].renderCheckpoints = NULL;
                         }
                         aligned = true;
                         break;
@@ -236,7 +245,10 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             .isFolded = false,
             .foldLevel = 0,
             .styles = { 0 },
-            .testText = { 0 } };
+            .testText = { 0 },
+            .renderCheckpoints = NULL,
+            .renderCheckpointCount = 0,
+            .renderCheckpointTabSize = 0 };
         LineCache_Insert(&buffer->lineCache, &newLine);
         lineIdx++;
     }
@@ -276,6 +288,11 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             free(savedLines[i].text);
             Array_Free(&savedLines[i].styles);
             Array_Free(&savedLines[i].testText);
+            // Unlike styles/fold state, render checkpoints from a freshly
+            // rescanned line aren't correlated back onto the new Line above
+            // (kept simple/conservative) -- they're just discarded here and
+            // lazily rebuilt on next need.
+            free(savedLines[i].renderCheckpoints);
         }
         free(savedLines);
     }
@@ -406,10 +423,12 @@ void DocumentSnapshot_Free(DocumentSnapshot* snap)
     free(snap);
 }
 
-void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap)
+void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t rangeStartOffset)
 {
     assert(buffer && snap);
     LOG_DEBUG("Buffer_RestoreSnapshot: restoring snapshot %p to buffer %p (totalBytes=%zu)", (void*)snap, (void*)buffer, snap->totalBytes);
+
+    size_t oldTotalBytes = buffer->totalBytes;
 
     GapBuffer_Free(&buffer->pieces);
 
@@ -424,17 +443,25 @@ void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap)
 
     buffer->totalBytes = snap->totalBytes;
 
-    // A snapshot restore swaps in an unrelated document version rather than
-    // applying a local edit, so none of the old cached lines' offsets, fold
-    // state, or styles can be assumed to correspond to anything in the
-    // restored document (unlike Buffer_InvalidateLineCache's usual callers,
-    // where an edit's unaffected tail shifts by a uniform delta). Reset the
-    // line cache to empty so the next access rebuilds it from scratch instead
-    // of risking reuse of stale, unrelated lines.
-    LineCache_Free(&buffer->lineCache);
-    LineCache_Init(&buffer->lineCache);
-    buffer->foldedLineCount = 0;
-    buffer->editVersion++;
+    if (rangeStartOffset == SIZE_MAX || rangeStartOffset > oldTotalBytes) {
+        // No valid lower bound on the touched region is known (e.g. an empty
+        // action group) - fall back to discarding the whole line cache, safe
+        // if not incremental.
+        LineCache_Free(&buffer->lineCache);
+        LineCache_Init(&buffer->lineCache);
+        buffer->foldedLineCount = 0;
+        buffer->editVersion++;
+    } else {
+        // Every action group's actions share a single lineNumber (see
+        // CanGroupActions), and undo/redo's LIFO discipline guarantees the
+        // buffer is in exactly the state the group last left it in when this
+        // runs - so everything before that line is byte-identical between
+        // the current buffer and the restored snapshot. Reuse the same
+        // incremental invalidation ordinary edits use (Buffer_DeleteRange
+        // does the same zero-width-range call) instead of discarding every
+        // cached line.
+        Buffer_InvalidateLineCache(buffer, rangeStartOffset, rangeStartOffset, oldTotalBytes);
+    }
 }
 
 // ============================================================================
@@ -519,7 +546,10 @@ Buffer* Buffer_New(void)
         .isFolded = false,
         .foldLevel = 0,
         .styles = { 0 },
-        .testText = { 0 } };
+        .testText = { 0 },
+        .renderCheckpoints = NULL,
+        .renderCheckpointCount = 0,
+        .renderCheckpointTabSize = 0 };
     LineCache_Insert(&buffer->lineCache, &initialLine);
     buffer->lineCache.dirtyLineStart = SIZE_MAX;
 
@@ -904,6 +934,30 @@ Slice Buffer_ToSlice(const Buffer* buffer)
     return (Slice) { .data = content, .size = buffer->totalBytes };
 }
 
+bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path)
+{
+    assert(buffer);
+
+    char tempPath[PATH_MAX];
+    int fileDescriptor = FileIoOpenTempForAtomicWrite(path, tempPath, sizeof(tempPath));
+    if (fileDescriptor == -1)
+        return false;
+
+    size_t pieceCount = GapBuffer_Size(&buffer->pieces);
+    for (size_t i = 0; i < pieceCount; i++) {
+        Piece* p = (Piece*)GapBuffer_At(&buffer->pieces, i);
+        const char* src
+            = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
+        if (!FileIoWriteChunk(fileDescriptor, src + p->start, p->length)) {
+            LOG_ERROR("Buffer_WriteToFileStreaming: failed writing piece %zu of %zu to '%s'", i, pieceCount, tempPath);
+            FileIoAbortAtomicWrite(fileDescriptor, tempPath);
+            return false;
+        }
+    }
+
+    return FileIoCommitAtomicWrite(fileDescriptor, tempPath, path);
+}
+
 // Computes where the cursor should land right before (afterAction=false) or
 // right after (afterAction=true) a single action's effect, so undo/redo can
 // place the cursor at the edit they just reverted/replayed instead of merely
@@ -955,6 +1009,15 @@ bool Buffer_Undo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
         return false;
     }
 
+    Action* firstAction = Array_Size(&group->actions) > 0 ? (Action*)Array_At(&group->actions, 0) : NULL;
+    size_t rangeStartOffset = SIZE_MAX;
+    if (firstAction) {
+        Line* line = Buffer_GetLine(buffer, firstAction->lineNumber);
+        if (line) {
+            rangeStartOffset = line->offset;
+        }
+    }
+
     buffer->history.isUndoRedoing = true;
 
     // A group can be undone more than once (undo -> redo -> undo), so drop
@@ -962,12 +1025,11 @@ bool Buffer_Undo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
     // replacing it.
     DocumentSnapshot_Free(group->snapshotAfter);
     group->snapshotAfter = DocumentSnapshot_Copy(buffer);
-    Buffer_RestoreSnapshot(buffer, group->snapshotBefore);
+    Buffer_RestoreSnapshot(buffer, group->snapshotBefore, rangeStartOffset);
 
     buffer->history.isUndoRedoing = false;
 
-    if (Array_Size(&group->actions) > 0) {
-        Action* firstAction = (Action*)Array_At(&group->actions, 0);
+    if (firstAction) {
         Action_GetCursorPosition(firstAction, false, outLineNumber, outColumn);
     }
 
@@ -988,14 +1050,24 @@ bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
         return false;
     }
 
+    size_t actionCount = Array_Size(&group->actions);
+    Action* firstAction = actionCount > 0 ? (Action*)Array_At(&group->actions, 0) : NULL;
+    size_t rangeStartOffset = SIZE_MAX;
+    if (firstAction) {
+        Line* line = Buffer_GetLine(buffer, firstAction->lineNumber);
+        if (line) {
+            rangeStartOffset = line->offset;
+        }
+    }
+
     buffer->history.isUndoRedoing = true;
 
-    Buffer_RestoreSnapshot(buffer, group->snapshotAfter);
+    Buffer_RestoreSnapshot(buffer, group->snapshotAfter, rangeStartOffset);
 
     buffer->history.isUndoRedoing = false;
 
-    if (Array_Size(&group->actions) > 0) {
-        Action* lastAction = (Action*)Array_At(&group->actions, Array_Size(&group->actions) - 1);
+    if (actionCount > 0) {
+        Action* lastAction = (Action*)Array_At(&group->actions, actionCount - 1);
         Action_GetCursorPosition(lastAction, true, outLineNumber, outColumn);
     }
 
@@ -1006,14 +1078,11 @@ bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
 
 void Buffer_OnSave(Buffer* buffer, const char* path)
 {
-    Slice content = Buffer_ToSlice(buffer);
-    LOG_INFO("Buffer_OnSave: saving buffer to '%s' (size=%zu bytes)", path, content.size);
-    if (!FileIoWrite(path, content)) {
+    LOG_INFO("Buffer_OnSave: saving buffer to '%s' (size=%zu bytes)", path, buffer->totalBytes);
+    if (!Buffer_WriteToFileStreaming(buffer, path)) {
         LOG_ERROR("Buffer_OnSave: failed to write file to '%s'", path);
-        free((void*)content.data);
         return;
     }
-    free((void*)content.data);
 
     MappedFile_Unmap(&buffer->mappedFile);
 
@@ -1032,6 +1101,5 @@ void Buffer_OnSave(Buffer* buffer, const char* path)
     }
 
     Array_Clear(&buffer->bufferAdd);
-    buffer->lineCache.dirtyLineStart = 0;
     buffer->isModified = false;
 }

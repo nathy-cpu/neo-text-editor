@@ -199,7 +199,7 @@ size_t Tab_GetGutterWidth(const Tab* tab)
 
 size_t Tab_GetVisualRowCount(const Tab* tab)
 {
-    if (!tab->config || !tab->config->wrapLines) {
+    if (!tab->config || !Tab_ShouldWrapLines(tab)) {
         if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
             return tab->buffer ? Buffer_GetLineCount(tab->buffer) : 0;
         }
@@ -209,7 +209,7 @@ size_t Tab_GetVisualRowCount(const Tab* tab)
 
 size_t Tab_GetCursorVRowIdx(const Tab* tab)
 {
-    if (!tab->config || !tab->config->wrapLines) {
+    if (!tab->config || !Tab_ShouldWrapLines(tab)) {
         if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
             return tab->cursorY;
         }
@@ -250,7 +250,7 @@ size_t Tab_GetCursorVRowIdx(const Tab* tab)
 
 size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
 {
-    if (!tab->config || !tab->config->wrapLines) {
+    if (!tab->config || !Tab_ShouldWrapLines(tab)) {
         if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
             Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
             return line ? Line_GetRenderX(line, tab->cursorX, tab->config->tabSize) : 0;
@@ -273,7 +273,7 @@ size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
 
 void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCol)
 {
-    bool useDirect = !tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0);
+    bool useDirect = !Tab_ShouldWrapLines(tab) && (!tab->buffer || tab->buffer->foldedLineCount == 0);
     size_t totalVRows = useDirect ? Buffer_GetLineCount(tab->buffer) : Array_Size(&tab->visualRows);
     if (targetVRowIdx >= totalVRows)
         return;
@@ -326,16 +326,21 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
 // splice paths of Tab_UpdateVisualRows so they can never drift apart.
 static void AppendWrappedRowsForLine(Array* out, const Tab* tab, Line* line, size_t lineIndex, size_t usableColumns)
 {
-    Slice text = Line_GetText(line);
-    size_t size = text.size;
-    const char* str = (const char*)text.data;
+    size_t lineLength = Line_Length(line);
 
-    if (!tab->config->wrapLines) {
-        // Unwrapped mode: one visual row per line
-        VisualRow vr = { .lineIndex = lineIndex, .startCol = 0, .length = size, .isWrapped = false };
+    if (!Tab_ShouldWrapLines(tab) || lineLength > LINE_HUGE_THRESHOLD) {
+        // Unwrapped mode, or a single line too large to wrap: one visual row
+        // per line. For a huge line this also skips Line_GetText below,
+        // avoiding materializing/caching the whole line just to find wrap
+        // points via an O(length) tab-stop walk.
+        VisualRow vr = { .lineIndex = lineIndex, .startCol = 0, .length = lineLength, .isWrapped = false };
         Array_Append(out, &vr, 1);
         return;
     }
+
+    Slice text = Line_GetText(line);
+    size_t size = text.size;
+    const char* str = (const char*)text.data;
 
     if (size == 0 || usableColumns == 0) {
         VisualRow vr = { .lineIndex = lineIndex, .startCol = 0, .length = 0, .isWrapped = false };
@@ -464,7 +469,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
 {
     (void)editor;
 
-    if (!tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0)) {
+    if (!Tab_ShouldWrapLines(tab) && (!tab->buffer || tab->buffer->foldedLineCount == 0)) {
         Array_Clear(&tab->visualRows);
         return;
     }
@@ -540,7 +545,7 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     // 1. Update wrapping segments
     Tab_UpdateVisualRows(editor, tab, usableColumns);
 
-    bool useDirect = !tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0);
+    bool useDirect = !Tab_ShouldWrapLines(tab) && (!tab->buffer || tab->buffer->foldedLineCount == 0);
 
     // Snap cursor if it became hidden
     if (!useDirect && Array_Size(&tab->visualRows) > 0) {
@@ -570,7 +575,7 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
         tab->rowOffset = cursorVRowIdx - editor->screenRows + 1;
     }
 
-    if (tab->config->wrapLines) {
+    if (Tab_ShouldWrapLines(tab)) {
         // Horizontal scroll is disabled when wrapping
         tab->columnOffset = 0;
         // Visual column position on this visual row segment
@@ -588,6 +593,12 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
             tab->columnOffset = tab->renderX - usableColumns + 1;
         }
     }
+
+    // Keep syntax highlighting just ahead of the viewport. This is a cheap
+    // no-op once the visible range (plus lookahead margin) is already
+    // covered, so it's safe to call every frame -- it's what lets opening a
+    // huge file skip highlighting the entire document up front.
+    Tab_UpdateSyntax(tab, tab->rowOffset + editor->screenRows * 2);
 }
 
 void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
@@ -599,7 +610,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
     size_t gutterWidth = Tab_GetGutterWidth(tab);
     size_t digits = Tab_GetGutterDigits(tab);
     size_t usableColumns = (editor->screenColumns > gutterWidth) ? (editor->screenColumns - gutterWidth) : 0;
-    bool useDirect = !tab->config->wrapLines && (!tab->buffer || tab->buffer->foldedLineCount == 0);
+    bool useDirect = !Tab_ShouldWrapLines(tab) && (!tab->buffer || tab->buffer->foldedLineCount == 0);
     size_t totalVRows = useDirect ? Buffer_GetLineCount(tab->buffer) : Array_Size(&tab->visualRows);
 
     for (size_t i = 0; i < editor->screenRows; i++) {
@@ -702,7 +713,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                         }
 
                         bool isVisible = true;
-                        if (!tab->config->wrapLines) {
+                        if (!Tab_ShouldWrapLines(tab)) {
                             if (rx + charWidth <= tab->columnOffset) {
                                 isVisible = false;
                             }
@@ -717,7 +728,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                                 Array_Append(screenBuffer, "\x1b[7m", 4);
 
                             if (textData[j] == '\t') {
-                                if (!tab->config->wrapLines) {
+                                if (!Tab_ShouldWrapLines(tab)) {
                                     for (size_t s = 0; s < charWidth; s++) {
                                         if (rx + s >= tab->columnOffset && rx + s < tab->columnOffset + usableColumns) {
                                             Array_Append(screenBuffer, " ", 1);
@@ -772,7 +783,7 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     size_t logicalSize = Line_Length(line);
                     if (vr->startCol + vr->length == logicalSize) {
                         if (IsSelected(tab, vr->lineIndex, logicalSize)) {
-                            if (!tab->config->wrapLines) {
+                            if (!Tab_ShouldWrapLines(tab)) {
                                 if (rx >= tab->columnOffset && rx < tab->columnOffset + usableColumns) {
                                     Array_Append(screenBuffer, "\x1b[7m \x1b[27m", 10);
                                 }
@@ -942,7 +953,7 @@ void Editor_RefreshScreen(Editor* editor)
         size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
         size_t visualCursorX
-            = activeTab->config->wrapLines ? activeTab->renderX : (activeTab->renderX - activeTab->columnOffset);
+            = Tab_ShouldWrapLines(activeTab) ? activeTab->renderX : (activeTab->renderX - activeTab->columnOffset);
         snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (cursorVRowIdx - activeTab->rowOffset) + cursorRowOffset,
             visualCursorX + 1 + gutterWidth);
 

@@ -182,7 +182,7 @@ static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineCommen
     }
 }
 
-void Tab_UpdateSyntax(Tab* tab)
+void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
 {
     if (!tab->config || !tab->config->syntaxEnabled || tab->syntax == NULL) {
         // Neither syntaxEnabled nor tab->syntax can change at runtime once this tab
@@ -194,15 +194,37 @@ void Tab_UpdateSyntax(Tab* tab)
         return;
     }
 
+    // Peek the pending edit's dirty line before any Buffer_GetLine/GetLineCount call
+    // triggers a line cache rebuild and clears it.
+    size_t dirtyStart = Buffer_PeekDirtyLineStart(tab->buffer);
+    size_t lineCount = Buffer_GetLineCount(tab->buffer);
+    bool hasPendingEdit = dirtyStart != SIZE_MAX && dirtyStart < lineCount;
+
+    if (!hasPendingEdit && maxLine <= tab->syntaxHighWaterMark) {
+        // Nothing dirty, and the requested range is already covered -- this
+        // is what makes it safe/cheap to call every frame from the scroll path.
+        return;
+    }
+
     LOG_DEBUG("Tab_UpdateSyntax: updating syntax highlighting for tab '%s' using '%s'",
         tab->filename ? tab->filename : "<scratch>", tab->syntax->fileType);
 
-    // Peek the pending edit's dirty line before any Buffer_GetLine/GetLineCount call
-    // triggers a line cache rebuild and clears it.
-    size_t startLine = Buffer_PeekDirtyLineStart(tab->buffer);
-    size_t lineCount = Buffer_GetLineCount(tab->buffer);
-    if (startLine == SIZE_MAX || startLine >= lineCount) {
-        startLine = 0;
+    // Never leave a gap between what's already covered and where we resume:
+    // a pending edit inside already-covered territory restarts there, but one
+    // beyond the high-water mark (shouldn't normally happen -- editing a line
+    // requires it to be visible, which requires prior coverage there) still
+    // resumes from the mark rather than skipping ahead to the edit.
+    size_t startLine = (hasPendingEdit && dirtyStart < tab->syntaxHighWaterMark) ? dirtyStart : tab->syntaxHighWaterMark;
+    if (startLine >= lineCount) {
+        return;
+    }
+
+    size_t endLine = maxLine > tab->syntaxHighWaterMark ? maxLine : tab->syntaxHighWaterMark;
+    if (endLine > lineCount) {
+        endLine = lineCount;
+    }
+    if (endLine <= startLine) {
+        endLine = startLine + 1;
     }
 
     bool inMultiLineComment = false;
@@ -213,7 +235,8 @@ void Tab_UpdateSyntax(Tab* tab)
         }
     }
 
-    for (size_t i = startLine; i < lineCount; i++) {
+    size_t highestTouched = startLine;
+    for (size_t i = startLine; i < endLine; i++) {
         Line* line = Buffer_GetLine(tab->buffer, i);
         if (!line)
             continue;
@@ -221,15 +244,32 @@ void Tab_UpdateSyntax(Tab* tab)
         bool oldStateValid = line->commentStateOutValid;
         bool oldState = line->commentStateOut;
 
+        if (Line_Length(line) > LINE_HUGE_THRESHOLD) {
+            // Too large to highlight cheaply -- leave styles unallocated; the
+            // renderer already treats that as all-normal. We can't scan it to
+            // know whether it opens/closes a multi-line comment, so carry the
+            // incoming state through unchanged (a documented, cosmetic-only
+            // trade-off for huge lines, same spirit as the lazy high-water-mark
+            // jump case above).
+            line->commentStateOutValid = false;
+            highestTouched = i + 1;
+            continue;
+        }
+
         UpdateLineSyntax(line, tab->syntax, &inMultiLineComment);
 
         line->commentStateOut = inMultiLineComment;
         line->commentStateOutValid = true;
+        highestTouched = i + 1;
 
         // Lines beyond the edit whose exit state didn't change are unaffected downstream.
         if (i > startLine && oldStateValid && oldState == inMultiLineComment) {
             break;
         }
+    }
+
+    if (highestTouched > tab->syntaxHighWaterMark) {
+        tab->syntaxHighWaterMark = highestTouched;
     }
 }
 
@@ -249,7 +289,9 @@ void Tab_SetSyntaxHighlight(Tab* tab)
                 || (!isExt && strstr(tab->filename, syn->fileMatch[i]))) {
                 tab->syntax = syn;
                 LOG_INFO("Tab_SetSyntaxHighlight: detected '%s' syntax for file '%s'", syn->fileType, tab->filename);
-                Tab_UpdateSyntax(tab);
+                // Actual highlighting is deferred to the render/scroll path
+                // (Tab_UpdateSyntax), which extends coverage lazily instead
+                // of highlighting the whole file synchronously here.
                 return;
             }
         }

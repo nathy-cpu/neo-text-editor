@@ -137,6 +137,43 @@ static void test_gap_buffer_clear(void)
     GapBuffer_Free(&gb);
 }
 
+// Regression test for a capacity-growth bug: growing the backing array while
+// the gap sits in the middle (content exists both before and after it) must
+// relocate the after-gap segment to its correct physical offset, not just
+// place it immediately after the before-gap segment with no gap left between
+// them (which orphans it outside where GapBuffer_At/MoveGap expect to find
+// it). This only manifests when growth is triggered by an insert that isn't
+// at the very end, so it's easy to miss with append-only test patterns.
+static void test_gap_buffer_capacity_growth_mid_gap(void)
+{
+    GapBuffer gb;
+    GapBuffer_Init(&gb, sizeof(char), 4, 64); // capacity = 4 + MIN_GAP_SIZE = 68
+
+    char expected[69];
+    for (int i = 0; i < 68; i++) {
+        expected[i] = (char)('A' + (i % 26));
+    }
+    GapBuffer_InsertSlice(&gb, 0, Slice_Make(expected, 68));
+    assert(GapBuffer_Size(&gb) == 68);
+
+    // Buffer is exactly at capacity (gap is empty), so inserting anywhere
+    // forces a capacity-growing reallocation. Insert in the middle (not at
+    // the end) so the reallocation must relocate a non-empty after-gap segment.
+    GapBuffer_InsertChar(&gb, 10, 'X');
+    memmove(expected + 11, expected + 10, 58);
+    expected[10] = 'X';
+
+    assert(GapBuffer_Size(&gb) == 69);
+    for (size_t i = 0; i < 69; i++) {
+        assert(*(char*)GapBuffer_At(&gb, i) == expected[i]);
+    }
+
+    Slice slice = GapBuffer_ToSlice(&gb);
+    assert(slice.size == 69 && memcmp(slice.data, expected, 69) == 0);
+
+    GapBuffer_Free(&gb);
+}
+
 static void test_gap_buffer_to_slice_after_delete_mid_buffer(void)
 {
     GapBuffer gb;

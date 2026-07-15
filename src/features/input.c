@@ -356,7 +356,7 @@ void Editor_ProcessInput(Editor* editor, int input)
     }
 
     if (modified) {
-        Tab_UpdateSyntax(tab);
+        Tab_UpdateSyntax(tab, SIZE_MAX);
     }
 }
 

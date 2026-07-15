@@ -76,6 +76,7 @@ int main(void) {
     LOG_INFO("Starting gap buffer tests...");
     test_gap_buffer_basic();
     test_gap_buffer_capacity_growth();
+    test_gap_buffer_capacity_growth_mid_gap();
     test_gap_buffer_move_gap_edges();
     test_gap_buffer_zero_size_noops();
     test_gap_buffer_clear();
@@ -116,6 +117,8 @@ int main(void) {
     test_line_buffer_backed_delegation();
     test_line_render_x();
     test_line_render_x_edges();
+    test_line_render_x_huge_line();
+    test_line_get_text_range();
     printf("All line tests passed!\n\r");
     LOG_INFO("All line tests passed!");
 
@@ -142,12 +145,14 @@ int main(void) {
     test_buffer_piece_table();
     test_buffer_last_rebuild_range();
     test_tab_visual_rows_incremental();
+    test_tab_visual_rows_huge_line_bypasses_wrap();
     test_buffer_undo_redo_insert_char();
     test_buffer_undo_redo_grouping_boundary();
     test_buffer_undo_redo_delete_split_join();
     test_buffer_undo_then_new_edit_clears_redo();
     test_buffer_redo_stack_reused_group_no_leak();
     test_buffer_undo_redo_empty_stacks();
+    test_buffer_undo_redo_scoped_invalidation();
     test_buffer_undo_respects_limit();
     printf("All buffer tests passed!\n\r");
     LOG_INFO("All buffer tests passed!");
@@ -169,6 +174,8 @@ int main(void) {
     test_syntax_highlight_c_file();
     test_syntax_highlight_strings_and_chars();
     test_syntax_highlight_multiline_comment();
+    test_tab_update_syntax_lazy_high_water_mark();
+    test_tab_update_syntax_skips_huge_line();
     test_syntax_no_match_leaves_syntax_null();
     printf("All syntax tests passed!\n\r");
     LOG_INFO("All syntax tests passed!");
