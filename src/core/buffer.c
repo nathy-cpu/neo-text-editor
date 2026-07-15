@@ -132,9 +132,22 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     // Freshly-scanned replacement lines accumulate here -- NOT yet touching
     // buffer->lineCache.lines, so its untouched tail stays exactly where it
     // is (and remains valid to binary-search against) until we know exactly
-    // how much of it we get to keep.
+    // how much of it we get to keep. When there's no old tail at all to
+    // realign with (oldRangeCount == 0 -- true on the very first build, or
+    // when appending past the end of everything cached so far), the scan is
+    // guaranteed to run to EOF with no early exit, so size this generously
+    // up front: growing it one line at a time via geometric doubling means
+    // O(log n) full-array reallocate-and-copy passes, which alone can
+    // dominate a large initial file load. The normal small-edit path (a
+    // realign after 1-2 lines) is unaffected -- it never reaches a size
+    // where doubling matters.
+    size_t initialCapacity = 4;
+    if (oldRangeCount == 0) {
+        size_t remainingBytes = (buffer->totalBytes > currentOffset) ? (buffer->totalBytes - currentOffset) : 0;
+        initialCapacity = remainingBytes / 8 + 16; // assume >= ~8 bytes/line on average
+    }
     Array newLines;
-    Array_InitStruct(&newLines, Line, 4);
+    Array_InitStruct(&newLines, Line, initialCapacity);
 
     size_t scanOffset = currentOffset;
     size_t lineStartOffset = currentOffset;
@@ -256,17 +269,29 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         free(oldLine->renderCheckpoints);
     }
 
-    // Splice: replace old [dirtyStart, oldRangeEnd) with the freshly-scanned
-    // lines. The untouched tail beyond oldRangeEnd is never moved out and
-    // back in -- GapBuffer_Delete/InsertSlice only need to shift the gap
-    // across it, not copy each line individually.
-    if (numOldReplaced > 0) {
-        GapBuffer_Delete(&buffer->lineCache.lines, dirtyStart, numOldReplaced);
+    if (dirtyStart == 0 && oldTotal == 0) {
+        // Nothing existed in the line cache before this call at all (the very
+        // first rebuild after loading a file) -- transplant newLines' backing
+        // storage directly into the line cache instead of bulk-copying it in,
+        // avoiding a second full pass over memory we just finished writing.
+        GapBuffer_Free(&buffer->lineCache.lines);
+        buffer->lineCache.lines.data = newLines;
+        buffer->lineCache.lines.gapStart = numNew;
+        buffer->lineCache.lines.gapEnd = newLines.capacity;
+    } else {
+        // Splice: replace old [dirtyStart, oldRangeEnd) with the freshly-scanned
+        // lines. The untouched tail beyond oldRangeEnd is never moved out and
+        // back in -- GapBuffer_Delete/InsertSlice only need to shift the gap
+        // across it, not copy each line individually.
+        if (numOldReplaced > 0) {
+            GapBuffer_Delete(&buffer->lineCache.lines, dirtyStart, numOldReplaced);
+        }
+        if (numNew > 0) {
+            GapBuffer_InsertSlice(
+                &buffer->lineCache.lines, dirtyStart, Slice_Make(newLines.data, numNew * sizeof(Line)));
+        }
+        Array_Free(&newLines);
     }
-    if (numNew > 0) {
-        GapBuffer_InsertSlice(&buffer->lineCache.lines, dirtyStart, Slice_Make(newLines.data, numNew * sizeof(Line)));
-    }
-    Array_Free(&newLines);
 
     // Patch the reused tail's absolute offsets (and line numbers, if the
     // total line count changed) in place -- no move, no per-line reinsert.
