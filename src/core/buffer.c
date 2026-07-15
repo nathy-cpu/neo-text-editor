@@ -76,15 +76,18 @@ static Line* Buffer_GetCachedLine(Buffer* buffer, size_t lineNumber)
 // LAZY REBUILDING SCANNERS
 // ============================================================================
 
-static size_t FindSavedLineByOffset(const Line* savedLines, size_t count, size_t targetOffset)
+// Binary-searches old lines [rangeStart, rangeStart+rangeCount) directly on
+// the live (not-yet-touched) line cache for one with the given offset.
+static size_t FindOldLineIndexByOffset(const Buffer* buffer, size_t rangeStart, size_t rangeCount, size_t targetOffset)
 {
     size_t low = 0;
-    size_t high = count;
+    size_t high = rangeCount;
     while (low < high) {
         size_t mid = low + (high - low) / 2;
-        if (savedLines[mid].offset == targetOffset) {
+        size_t off = LineCache_At(&buffer->lineCache, rangeStart + mid)->offset;
+        if (off == targetOffset) {
             return mid;
-        } else if (savedLines[mid].offset < targetOffset) {
+        } else if (off < targetOffset) {
             low = mid + 1;
         } else {
             high = mid;
@@ -93,6 +96,12 @@ static size_t FindSavedLineByOffset(const Line* savedLines, size_t count, size_t
     return SIZE_MAX;
 }
 
+// Rebuilds the line cache from the dirty point forward. Scans (via memchr)
+// only until it can realign with the existing cache's untouched tail -- at
+// that point the tail is left exactly where it is (not copied out and
+// reinserted), and only its offset/lineNumber fields are patched in place,
+// since re-materializing every remaining line on every edit made editing cost
+// O(lines after the edit) instead of O(lines actually touched).
 static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 {
     if (buffer->lineCache.dirtyLineStart == SIZE_MAX) {
@@ -102,67 +111,36 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         return;
     }
 
-    size_t lineIdx = buffer->lineCache.dirtyLineStart;
-    size_t rebuildOldStart = lineIdx;
-
-    // Save old lines for preserving state
+    size_t dirtyStart = buffer->lineCache.dirtyLineStart;
     size_t oldTotal = GapBuffer_Size(&buffer->lineCache.lines);
-    size_t numOldLinesToSave = (oldTotal > lineIdx) ? (oldTotal - lineIdx) : 0;
-    Line* savedLines = NULL;
-    size_t oldFolded = 0;
-    if (numOldLinesToSave > 0) {
-        savedLines = malloc(sizeof(Line) * numOldLinesToSave);
-        assert(savedLines);
-        for (size_t i = 0; i < numOldLinesToSave; i++) {
-            Line* oldLine = LineCache_At(&buffer->lineCache, lineIdx + i);
-            savedLines[i] = *oldLine;
-            if (oldLine->isFolded) {
-                oldFolded++;
-            }
-            // Clear style/text pointers so they don't get double-freed when moving the gap
-            oldLine->text = NULL;
-            oldLine->styles = (Array) { 0 };
-            oldLine->testText = (Array) { 0 };
-            oldLine->renderCheckpoints = NULL;
-        }
-    }
+    size_t oldRangeCount = (oldTotal > dirtyStart) ? (oldTotal - dirtyStart) : 0;
+    size_t delta = buffer->totalBytes - buffer->lineCache.oldTotalBytes;
 
-    // Truncate the lineCache to lineIdx
-    GapBuffer_MoveGap(&buffer->lineCache.lines, lineIdx);
-
-    // Free elements after gap
-    for (size_t i = buffer->lineCache.lines.gapEnd; i < buffer->lineCache.lines.data.capacity; i++) {
-        Line* discardedLine = (Line*)Array_RawAt(&buffer->lineCache.lines.data, i);
-        free(discardedLine->text);
-        discardedLine->text = NULL;
-        Array_Free(&discardedLine->styles);
-        Array_Free(&discardedLine->testText);
-        free(discardedLine->renderCheckpoints);
-        discardedLine->renderCheckpoints = NULL;
-    }
-    buffer->lineCache.lines.gapEnd = buffer->lineCache.lines.data.capacity;
-    buffer->lineCache.lines.data.size = lineIdx;
-
-    // Find starting offset for scanning
+    // Find starting offset for scanning, from the untouched line just before
+    // the dirty range (still valid -- nothing before dirtyStart is touched).
     size_t currentOffset = 0;
-    if (lineIdx > 0) {
-        Line* prevLine = LineCache_At(&buffer->lineCache, lineIdx - 1);
+    if (dirtyStart > 0) {
+        Line* prevLine = LineCache_At(&buffer->lineCache, dirtyStart - 1);
         currentOffset = prevLine->offset + prevLine->length + 1; // +1 for the newline
     }
-
-    // Calculate delta for shifted lines
-    size_t delta = buffer->totalBytes - buffer->lineCache.oldTotalBytes;
 
     PiecePosition pos = Buffer_FindPiecePosition(buffer, currentOffset);
     size_t pieceIdx = pos.pieceIndex;
     size_t localOffset = pos.localOffset;
     size_t pieceCount = GapBuffer_Size(&buffer->pieces);
 
+    // Freshly-scanned replacement lines accumulate here -- NOT yet touching
+    // buffer->lineCache.lines, so its untouched tail stays exactly where it
+    // is (and remains valid to binary-search against) until we know exactly
+    // how much of it we get to keep.
+    Array newLines;
+    Array_InitStruct(&newLines, Line, 4);
+
     size_t scanOffset = currentOffset;
     size_t lineStartOffset = currentOffset;
+    size_t scanLineIdx = dirtyStart;
     bool aligned = false;
-    size_t k = SIZE_MAX;
-    size_t discardedFoldedCount = 0;
+    size_t alignedOldIdx = SIZE_MAX; // old index (absolute) where the untouched tail begins
 
     while (pieceIdx < pieceCount && !aligned) {
         Piece* p = Buffer_GetPiece(buffer, pieceIdx);
@@ -180,7 +158,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                     .offset = lineStartOffset,
                     .length = lineLen,
                     .text = NULL,
-                    .lineNumber = lineIdx,
+                    .lineNumber = scanLineIdx,
                     .isFolded = false,
                     .foldLevel = 0,
                     .styles = { 0 },
@@ -188,36 +166,18 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                     .renderCheckpoints = NULL,
                     .renderCheckpointCount = 0,
                     .renderCheckpointTabSize = 0 };
-                LineCache_Insert(&buffer->lineCache, &newLine);
-                lineIdx++;
+                Array_Append(&newLines, &newLine, 1);
+                scanLineIdx++;
                 scanOffset += (foundIdx - j) + 1;
                 lineStartOffset = scanOffset;
                 j = foundIdx + 1;
 
                 // Check for alignment
-                if (lineStartOffset >= buffer->lineCache.dirtyOffsetEnd && savedLines) {
+                if (lineStartOffset >= buffer->lineCache.dirtyOffsetEnd && oldRangeCount > 0) {
                     size_t targetOldOffset = lineStartOffset - delta;
-                    k = FindSavedLineByOffset(savedLines, numOldLinesToSave, targetOldOffset);
+                    size_t k = FindOldLineIndexByOffset(buffer, dirtyStart, oldRangeCount, targetOldOffset);
                     if (k != SIZE_MAX) {
-                        // Count discarded folded lines
-                        for (size_t idx = 0; idx < k; idx++) {
-                            if (savedLines[idx].isFolded) {
-                                discardedFoldedCount++;
-                            }
-                        }
-                        // Found alignment! Restore rest of lines
-                        for (size_t reuseIdx = k; reuseIdx < numOldLinesToSave; reuseIdx++) {
-                            Line rl = savedLines[reuseIdx];
-                            rl.offset += delta;
-                            rl.lineNumber = lineIdx;
-                            LineCache_Insert(&buffer->lineCache, &rl);
-                            lineIdx++;
-                            // Clear pointers so they are not freed when savedLines is freed
-                            savedLines[reuseIdx].text = NULL;
-                            savedLines[reuseIdx].styles = (Array) { 0 };
-                            savedLines[reuseIdx].testText = (Array) { 0 };
-                            savedLines[reuseIdx].renderCheckpoints = NULL;
-                        }
+                        alignedOldIdx = dirtyStart + k;
                         aligned = true;
                         break;
                     }
@@ -238,7 +198,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             .offset = lineStartOffset,
             .length = lineLen,
             .text = NULL,
-            .lineNumber = lineIdx,
+            .lineNumber = scanLineIdx,
             .isFolded = false,
             .foldLevel = 0,
             .styles = { 0 },
@@ -246,71 +206,85 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             .renderCheckpoints = NULL,
             .renderCheckpointCount = 0,
             .renderCheckpointTabSize = 0 };
-        LineCache_Insert(&buffer->lineCache, &newLine);
-        lineIdx++;
+        Array_Append(&newLines, &newLine, 1);
+        scanLineIdx++;
     }
 
-    // Copy back preserved folding & style state
-    size_t newTotal = GapBuffer_Size(&buffer->lineCache.lines);
-    size_t stateCopyLimit = aligned ? (newTotal - (numOldLinesToSave - k)) : newTotal;
+    size_t oldRangeEnd = aligned ? alignedOldIdx : oldTotal; // exclusive; old lines [dirtyStart, oldRangeEnd) are replaced
+    size_t numOldReplaced = oldRangeEnd - dirtyStart;
+    size_t numNew = Array_Size(&newLines);
 
     // Record the touched range so incremental consumers (e.g. visual row wrapping)
     // can splice just the affected span instead of rebuilding from scratch.
-    buffer->lastRebuiltOldStart = rebuildOldStart;
-    buffer->lastRebuiltOldEnd = aligned ? (rebuildOldStart + k) : oldTotal;
-    buffer->lastRebuiltNewEnd = stateCopyLimit;
+    buffer->lastRebuiltOldStart = dirtyStart;
+    buffer->lastRebuiltOldEnd = oldRangeEnd;
+    buffer->lastRebuiltNewEnd = dirtyStart + numNew;
     buffer->lastRebuildOccurred = true;
 
-    for (size_t i = buffer->lineCache.dirtyLineStart; i < stateCopyLimit; i++) {
-        size_t oldIdx = i - newTotal + oldTotal;
-        if (oldIdx >= buffer->lineCache.dirtyLineStart && oldIdx < oldTotal) {
-            size_t savedIdx = oldIdx - buffer->lineCache.dirtyLineStart;
-            if (savedIdx < numOldLinesToSave) {
-                Line* newLine = LineCache_At(&buffer->lineCache, i);
-                newLine->isFolded = savedLines[savedIdx].isFolded;
-                newLine->foldLevel = savedLines[savedIdx].foldLevel;
-                newLine->commentStateOut = savedLines[savedIdx].commentStateOut;
-                newLine->commentStateOutValid = savedLines[savedIdx].commentStateOutValid;
-                // Move styles array (shallow copy)
-                Array_Free(&newLine->styles);
-                newLine->styles = savedLines[savedIdx].styles;
-                savedLines[savedIdx].styles.data = NULL; // prevent double-free
-            }
+    // Copy back preserved fold/style/comment state where a freshly-scanned
+    // line positionally correlates with an old one (aligning from the tail
+    // of the replaced range, since a line-count-changing edit happens near
+    // its start) -- scoped to [dirtyStart, oldRangeEnd), not the whole file.
+    for (size_t i = dirtyStart; i < dirtyStart + numNew; i++) {
+        size_t oldIdx = i - numNew + numOldReplaced;
+        if (oldIdx >= dirtyStart && oldIdx < oldRangeEnd) {
+            Line* oldLine = LineCache_At(&buffer->lineCache, oldIdx);
+            Line* newLine = (Line*)Array_At(&newLines, i - dirtyStart);
+            newLine->isFolded = oldLine->isFolded;
+            newLine->foldLevel = oldLine->foldLevel;
+            newLine->commentStateOut = oldLine->commentStateOut;
+            newLine->commentStateOutValid = oldLine->commentStateOutValid;
+            // Move styles array (shallow copy)
+            Array_Free(&newLine->styles);
+            newLine->styles = oldLine->styles;
+            oldLine->styles = (Array) { 0 }; // ownership transferred; prevent double-free below
         }
     }
 
-    // Free the remaining savedLines memory
-    if (savedLines) {
-        for (size_t i = 0; i < numOldLinesToSave; i++) {
-            free(savedLines[i].text);
-            Array_Free(&savedLines[i].styles);
-            Array_Free(&savedLines[i].testText);
-            // Unlike styles/fold state, render checkpoints from a freshly
-            // rescanned line aren't correlated back onto the new Line above
-            // (kept simple/conservative) -- they're just discarded here and
-            // lazily rebuilt on next need.
-            free(savedLines[i].renderCheckpoints);
+    // Free the old lines actually being replaced/discarded (styles already
+    // transferred above where correlated). Scoped to the replaced range only
+    // -- the untouched reused tail beyond oldRangeEnd is never touched here.
+    size_t discardedFoldedCount = 0;
+    for (size_t i = dirtyStart; i < oldRangeEnd; i++) {
+        Line* oldLine = LineCache_At(&buffer->lineCache, i);
+        if (oldLine->isFolded) {
+            discardedFoldedCount++;
         }
-        free(savedLines);
+        free(oldLine->text);
+        Array_Free(&oldLine->styles);
+        Array_Free(&oldLine->testText);
+        free(oldLine->renderCheckpoints);
+    }
+
+    // Splice: replace old [dirtyStart, oldRangeEnd) with the freshly-scanned
+    // lines. The untouched tail beyond oldRangeEnd is never moved out and
+    // back in -- GapBuffer_Delete/InsertSlice only need to shift the gap
+    // across it, not copy each line individually.
+    if (numOldReplaced > 0) {
+        GapBuffer_Delete(&buffer->lineCache.lines, dirtyStart, numOldReplaced);
+    }
+    if (numNew > 0) {
+        GapBuffer_InsertSlice(&buffer->lineCache.lines, dirtyStart, Slice_Make(newLines.data, numNew * sizeof(Line)));
+    }
+    Array_Free(&newLines);
+
+    // Patch the reused tail's absolute offsets (and line numbers, if the
+    // total line count changed) in place -- no move, no per-line reinsert.
+    size_t newTotal = GapBuffer_Size(&buffer->lineCache.lines);
+    for (size_t i = dirtyStart + numNew; i < newTotal; i++) {
+        Line* line = (Line*)GapBuffer_At(&buffer->lineCache.lines, i);
+        line->offset += delta;
+        line->lineNumber = i;
     }
 
     // Recompute folded lines in the modified range
     size_t newFolded = 0;
-    if (aligned) {
-        for (size_t i = buffer->lineCache.dirtyLineStart; i < stateCopyLimit; i++) {
-            if (LineCache_At(&buffer->lineCache, i)->isFolded) {
-                newFolded++;
-            }
+    for (size_t i = dirtyStart; i < dirtyStart + numNew; i++) {
+        if (LineCache_At(&buffer->lineCache, i)->isFolded) {
+            newFolded++;
         }
-        buffer->foldedLineCount = buffer->foldedLineCount - discardedFoldedCount + newFolded;
-    } else {
-        for (size_t i = buffer->lineCache.dirtyLineStart; i < GapBuffer_Size(&buffer->lineCache.lines); i++) {
-            if (LineCache_At(&buffer->lineCache, i)->isFolded) {
-                newFolded++;
-            }
-        }
-        buffer->foldedLineCount = buffer->foldedLineCount - oldFolded + newFolded;
     }
+    buffer->foldedLineCount = buffer->foldedLineCount - discardedFoldedCount + newFolded;
 
     buffer->lineCache.dirtyLineStart = SIZE_MAX;
     buffer->lineCache.dirtyOffsetEnd = SIZE_MAX;
