@@ -143,8 +143,33 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     // where doubling matters.
     size_t initialCapacity = 4;
     if (oldRangeCount == 0) {
-        size_t remainingBytes = (buffer->totalBytes > currentOffset) ? (buffer->totalBytes - currentOffset) : 0;
-        initialCapacity = remainingBytes / 8 + 16; // assume >= ~8 bytes/line on average
+        // Pre-count newlines to exactly size the newLines array. 
+        // Previously, we guessed 8 bytes per line, which wildly over-allocated 
+        // memory for large files (allocating gigabytes of RAM for the 152-byte Line structs).
+        // It also avoided geometric array growth (O(log N) copies) which slowed down file loading.
+        // The memchr pass is SIMD-optimized and extremely fast, making this upfront cost negligible.
+        size_t exactLineCount = 0;
+        size_t pIdx = pieceIdx;
+        while (pIdx < pieceCount) {
+            Piece* p = Buffer_GetPiece(buffer, pIdx);
+            const char* src
+                = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
+            const char* pieceText = src + p->start;
+            size_t j = (pIdx == pieceIdx) ? localOffset : 0;
+            const char* end = pieceText + p->length;
+            const char* curr = pieceText + j;
+            while (curr < end) {
+                curr = memchr(curr, '\n', end - curr);
+                if (curr) {
+                    exactLineCount++;
+                    curr++;
+                } else {
+                    break;
+                }
+            }
+            pIdx++;
+        }
+        initialCapacity = exactLineCount + 1;
     }
     Array newLines;
     Array_InitStruct(&newLines, Line, initialCapacity);
