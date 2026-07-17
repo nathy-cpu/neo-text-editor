@@ -297,3 +297,73 @@ static void test_toggle_fold_on_foldable_and_non_foldable_line(void)
 
     Editor_Free(&editor);
 }
+
+static void test_auto_unfold_on_edit_or_movement(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Line* line0 = Buffer_GetLine(tab->buffer, 0);
+    Buffer_InsertText(tab->buffer, line0->offset, "if (cond) {", 11);
+
+    Buffer_InsertLine(tab->buffer, 1);
+    Line* line1 = Buffer_GetLine(tab->buffer, 1);
+    Buffer_InsertText(tab->buffer, line1->offset, "    foo();", 10);
+
+    Buffer_InsertLine(tab->buffer, 2);
+    Line* line2 = Buffer_GetLine(tab->buffer, 2);
+    Buffer_InsertText(tab->buffer, line2->offset, "}", 1);
+
+    tab->cursorY = 0;
+    Editor_ToggleFold(&editor);
+    line0 = Buffer_GetLine(tab->buffer, 0);
+    assert(line0->isFolded == true);
+    assert(tab->buffer->foldedLineCount == 1);
+
+    Buffer_EnsureLineVisible(tab->buffer, 1, tab->config->tabSize);
+    line0 = Buffer_GetLine(tab->buffer, 0);
+    assert(line0->isFolded == false);
+    assert(tab->buffer->foldedLineCount == 0);
+
+    Editor_Free(&editor);
+}
+
+static void test_visual_rows_cache_updates_on_unfold(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+    tab->config->wrapLines = false;
+
+    Line* line0 = Buffer_GetLine(tab->buffer, 0);
+    Buffer_InsertText(tab->buffer, line0->offset, "if (cond) {", 11);
+
+    Buffer_InsertLine(tab->buffer, 1);
+    Line* line1 = Buffer_GetLine(tab->buffer, 1);
+    Buffer_InsertText(tab->buffer, line1->offset, "    foo();", 10);
+
+    Buffer_InsertLine(tab->buffer, 2);
+    Line* line2 = Buffer_GetLine(tab->buffer, 2);
+    Buffer_InsertText(tab->buffer, line2->offset, "}", 1);
+
+    Tab_UpdateVisualRows(&editor, tab, 80);
+    assert(tab->visualRowsFoldedCount == 0);
+
+    tab->cursorY = 0;
+    Editor_ToggleFold(&editor);
+    assert(tab->buffer->foldedLineCount == 1);
+
+    Tab_UpdateVisualRows(&editor, tab, 80);
+    assert(tab->visualRowsFoldedCount == 1);
+
+    Editor_ToggleFold(&editor);
+    assert(tab->buffer->foldedLineCount == 0);
+
+    Tab_UpdateVisualRows(&editor, tab, 80);
+    assert(tab->visualRowsFoldedCount == 0);
+
+    Editor_Free(&editor);
+}

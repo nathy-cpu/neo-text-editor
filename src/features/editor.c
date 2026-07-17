@@ -464,13 +464,17 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
 {
     (void)editor;
 
-    if (!Tab_ShouldWrapLines(tab) && (!tab->buffer || tab->buffer->foldedLineCount == 0)) {
+    size_t foldedLineCount = tab->buffer ? tab->buffer->foldedLineCount : 0;
+    size_t editVersion = tab->buffer ? tab->buffer->editVersion : 0;
+
+    if (!Tab_ShouldWrapLines(tab) && (foldedLineCount == 0)) {
         Array_Clear(&tab->visualRows);
+        tab->visualRowsEditVersion = editVersion;
+        tab->visualRowsFoldedCount = foldedLineCount;
+        tab->visualRowsUsableColumns = usableColumns;
+        tab->visualRowsLineCount = tab->buffer ? Buffer_GetLineCount(tab->buffer) : 0;
         return;
     }
-
-    size_t foldedLineCount = tab->buffer->foldedLineCount;
-    size_t editVersion = tab->buffer->editVersion;
     if (tab->visualRowsEditVersion == editVersion && tab->visualRowsFoldedCount == foldedLineCount
         && tab->visualRowsUsableColumns == usableColumns) {
         // Nothing that affects layout changed since the last build; reuse tab->visualRows as-is.
@@ -521,8 +525,16 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         AppendWrappedRowsForLine(&tab->visualRows, tab, line, i, usableColumns);
 
         // Check if we should start hiding next lines
-        if (line->isFolded && Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
-            hiddenUntilIndent = indent;
+        if (line->isFolded) {
+            if (Line_IsFoldable(tab->buffer, i, tab->config->tabSize)) {
+                hiddenUntilIndent = indent;
+            } else {
+                line->isFolded = false;
+                if (tab->buffer->foldedLineCount > 0) {
+                    tab->buffer->foldedLineCount--;
+                    foldedLineCount = tab->buffer->foldedLineCount;
+                }
+            }
         }
     }
 
@@ -775,8 +787,8 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
                     if (currentColor != HIGHLIGHT_NORMAL) {
                         Array_Append(screenBuffer, "\x1b[39m", 5);
                     }
-                    if (line->isFolded) {
-                        Array_Append(screenBuffer, "\x1b[90m [...]\x1b[m", 15);
+                    if (line->isFolded && (vr->startCol + vr->length == Line_Length(line))) {
+                        Array_Append(screenBuffer, "\x1b[90m [...]\x1b[m", sizeof("\x1b[90m [...]\x1b[m") - 1);
                     }
 
                     size_t logicalSize = Line_Length(line);

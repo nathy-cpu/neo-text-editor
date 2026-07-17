@@ -190,24 +190,19 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
 void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
 {
     if (!tab->config || !tab->config->syntaxEnabled || tab->syntax == NULL) {
-        // Neither syntaxEnabled nor tab->syntax can change at runtime once this tab
-        // exists (both are decided once, at load time, in Tab_SetSyntaxHighlight),
-        // so a tab that reaches here has never had real highlight data written into
-        // any line's styles -- there is nothing to clear. Lines' styles arrays are
-        // left untouched (never even allocated, see UpdateLineSyntax), and the
-        // renderer already treats an empty/undersized styles array as all-normal.
+        if (tab->buffer) {
+            tab->buffer->syntaxDirtyLineStart = SIZE_MAX;
+        }
         return;
     }
 
-    // Peek the pending edit's dirty line before any Buffer_GetLine/GetLineCount call
-    // triggers a line cache rebuild and clears it.
-    size_t dirtyStart = Buffer_PeekDirtyLineStart(tab->buffer);
+    size_t dirtyStart = tab->buffer->syntaxDirtyLineStart;
     size_t lineCount = Buffer_GetLineCount(tab->buffer);
     bool hasPendingEdit = dirtyStart != SIZE_MAX && dirtyStart < lineCount;
 
     if (!hasPendingEdit && maxLine <= tab->syntaxHighWaterMark) {
-        // Nothing dirty, and the requested range is already covered -- this
-        // is what makes it safe/cheap to call every frame from the scroll path.
+        // Clear syntaxDirtyLineStart just in case
+        tab->buffer->syntaxDirtyLineStart = SIZE_MAX;
         return;
     }
 
@@ -222,6 +217,7 @@ void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
     size_t startLine
         = (hasPendingEdit && dirtyStart < tab->syntaxHighWaterMark) ? dirtyStart : tab->syntaxHighWaterMark;
     if (startLine >= lineCount) {
+        tab->buffer->syntaxDirtyLineStart = SIZE_MAX;
         return;
     }
 
@@ -277,6 +273,8 @@ void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
     if (highestTouched > tab->syntaxHighWaterMark) {
         tab->syntaxHighWaterMark = highestTouched;
     }
+
+    tab->buffer->syntaxDirtyLineStart = SIZE_MAX;
 }
 
 void Tab_SetSyntaxHighlight(Tab* tab)

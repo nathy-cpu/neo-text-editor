@@ -215,6 +215,7 @@ void Editor_ProcessInput(Editor* editor, int input)
                 if (rowZ && tab->cursorX > Line_Length(rowZ)) {
                     tab->cursorX = Line_Length(rowZ);
                 }
+                Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
             }
             break;
 
@@ -234,6 +235,7 @@ void Editor_ProcessInput(Editor* editor, int input)
                 if (rowY && tab->cursorX > Line_Length(rowY)) {
                     tab->cursorX = Line_Length(rowY);
                 }
+                Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
             }
             break;
 
@@ -266,22 +268,34 @@ void Editor_ProcessInput(Editor* editor, int input)
                 Editor_DeleteSelection(editor);
                 modified = true;
             } else {
-                if (input == DELETE_KEY)
-                    Editor_MoveCursor(editor, ARROW_RIGHT);
-
-                if (tab->cursorX > 0) {
-                    Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
-                    tab->cursorX--;
-                    tab->isSaved = false;
-                    modified = true;
-                } else if (tab->cursorY > 0) {
-                    Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
-                    size_t previousLength = previousRow ? Line_Length(previousRow) : 0;
-                    Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
-                    tab->cursorY--;
-                    tab->cursorX = previousLength;
-                    tab->isSaved = false;
-                    modified = true;
+                if (input == DELETE_KEY) {
+                    Line* currLine = Buffer_GetLine(tab->buffer, tab->cursorY);
+                    if (currLine) {
+                        if (tab->cursorX < Line_Length(currLine)) {
+                            Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX);
+                            tab->isSaved = false;
+                            modified = true;
+                        } else if (tab->cursorY < Buffer_GetLineCount(tab->buffer) - 1) {
+                            Buffer_JoinLine(tab->buffer, tab->cursorY);
+                            tab->isSaved = false;
+                            modified = true;
+                        }
+                    }
+                } else {
+                    if (tab->cursorX > 0) {
+                        Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
+                        tab->cursorX--;
+                        tab->isSaved = false;
+                        modified = true;
+                    } else if (tab->cursorY > 0) {
+                        Line* previousRow = Buffer_GetLine(tab->buffer, tab->cursorY - 1);
+                        size_t previousLength = previousRow ? Line_Length(previousRow) : 0;
+                        Buffer_JoinLine(tab->buffer, tab->cursorY - 1);
+                        tab->cursorY--;
+                        tab->cursorX = previousLength;
+                        tab->isSaved = false;
+                        modified = true;
+                    }
                 }
             }
             break;
@@ -356,6 +370,7 @@ void Editor_ProcessInput(Editor* editor, int input)
     }
 
     if (modified) {
+        Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
         Tab_UpdateSyntax(tab, SIZE_MAX);
     }
 }

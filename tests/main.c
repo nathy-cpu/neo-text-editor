@@ -174,6 +174,7 @@ int main(void) {
     test_tab_update_syntax_lazy_high_water_mark();
     test_tab_update_syntax_skips_huge_line();
     test_syntax_no_match_leaves_syntax_null();
+    test_syntax_dirty_preserved_on_cache_rebuild();
     printf("All syntax tests passed!\n\r");
     LOG_INFO("All syntax tests passed!");
 
@@ -186,6 +187,8 @@ int main(void) {
     test_get_selection_normalizes_direction();
     test_delete_selection_single_and_multi_line();
     test_toggle_fold_on_foldable_and_non_foldable_line();
+    test_auto_unfold_on_edit_or_movement();
+    test_visual_rows_cache_updates_on_unfold();
     printf("All input tests passed!\n\r");
     LOG_INFO("All input tests passed!");
 

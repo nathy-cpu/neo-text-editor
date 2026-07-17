@@ -275,3 +275,43 @@ static void test_syntax_no_match_leaves_syntax_null(void)
 
     Editor_Free(&editor);
 }
+
+static void test_syntax_dirty_preserved_on_cache_rebuild(void)
+{
+    Tab tab;
+    Tab_Init(&tab);
+
+    Syntax syntax;
+    memset(&syntax, 0, sizeof(syntax));
+    tab.syntax = &syntax;
+
+    Buffer_InsertLine(tab.buffer, 1);
+    Buffer_InsertLine(tab.buffer, 2);
+    Buffer_InsertLine(tab.buffer, 3);
+    Buffer_InsertLine(tab.buffer, 4);
+
+    Line* line0 = Buffer_GetLine(tab.buffer, 0);
+    Buffer_InsertText(tab.buffer, line0->offset, "int x;", 6);
+
+    Tab_UpdateSyntax(&tab, SIZE_MAX);
+    assert(tab.syntaxHighWaterMark == 5);
+    line0 = Buffer_GetLine(tab.buffer, 0);
+    assert(line0->styles != NULL);
+
+    Buffer_DeleteRange(tab.buffer, 0, 3); // Delete "int" -> " x;"
+
+    size_t lineCount = Buffer_GetLineCount(tab.buffer);
+    (void)lineCount;
+
+    Tab_UpdateSyntax(&tab, SIZE_MAX);
+
+    line0 = Buffer_GetLine(tab.buffer, 0);
+    assert(line0->styles != NULL);
+    Slice stylesSlice = Array_ToSlice(line0->styles);
+    char* styles = (char*)stylesSlice.data;
+    assert(stylesSlice.size == 3);
+    assert(styles[0] == HIGHLIGHT_NORMAL);
+    assert(styles[1] == HIGHLIGHT_NORMAL);
+
+    Tab_Free(&tab);
+}

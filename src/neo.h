@@ -351,6 +351,7 @@ typedef struct Buffer {
     History history; // History stack
     size_t foldedLineCount; // Number of folded lines in the document
     size_t editVersion; // Incremented on every content-mutating edit, for cache invalidation
+    size_t syntaxDirtyLineStart; // Minimum line index of any edits since last syntax highlighting run
 
     // Line range touched by the most recent Buffer_RebuildLineCache call, so
     // other incremental consumers (e.g. visual row wrapping) can splice just
@@ -557,6 +558,7 @@ void DocumentSnapshot_Free(DocumentSnapshot* snap);
 // instead of the whole cache. Pass SIZE_MAX if no such bound is known, to
 // fall back to discarding the entire line cache.
 void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t rangeStartOffset);
+void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize);
 void Buffer_OnSave(Buffer* buffer, const char* path);
 
 // ============================================================================

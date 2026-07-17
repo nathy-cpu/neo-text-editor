@@ -357,6 +357,10 @@ void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffs
         }
     }
 
+    if (buffer->syntaxDirtyLineStart == SIZE_MAX || lineIdx < buffer->syntaxDirtyLineStart) {
+        buffer->syntaxDirtyLineStart = lineIdx;
+    }
+
     if (buffer->lineCache.dirtyLineStart == SIZE_MAX) {
         buffer->lineCache.dirtyLineStart = lineIdx;
         buffer->lineCache.dirtyOffsetEnd = newEndOffset;
@@ -468,6 +472,7 @@ void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t range
         LineCache_Init(&buffer->lineCache);
         buffer->foldedLineCount = 0;
         buffer->editVersion++;
+        buffer->syntaxDirtyLineStart = 0;
     } else {
         // Every action group's actions share a single lineNumber (see
         // CanGroupActions), and undo/redo's LIFO discipline guarantees the
@@ -566,6 +571,7 @@ Buffer* Buffer_New(void)
         .commentStateOutValid = false };
     LineCache_Insert(&buffer->lineCache, &initialLine);
     buffer->lineCache.dirtyLineStart = SIZE_MAX;
+    buffer->syntaxDirtyLineStart = 0;
 
     LOG_INFO("Buffer_New: Created empty buffer instance.");
     return buffer;
@@ -595,6 +601,7 @@ Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename)
     buffer->lineCache.dirtyLineStart = 0;
     buffer->lineCache.dirtyOffsetEnd = buffer->totalBytes;
     buffer->lineCache.oldTotalBytes = buffer->totalBytes;
+    buffer->syntaxDirtyLineStart = 0;
 
     History_Init(&buffer->history);
 
@@ -1116,4 +1123,49 @@ void Buffer_OnSave(Buffer* buffer, const char* path)
 
     Array_Clear(&buffer->bufferAdd);
     buffer->isModified = false;
+}
+
+void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize)
+{
+    if (lineIndex == 0 || buffer->foldedLineCount == 0)
+        return;
+
+    size_t totalLines = Buffer_GetLineCount(buffer);
+    if (lineIndex >= totalLines)
+        return;
+
+    // Scan backwards to find any folded line that is hiding lineIndex
+    for (size_t f = lineIndex; f > 0; f--) {
+        size_t idx = f - 1;
+        Line* line = Buffer_GetLine(buffer, idx);
+        if (!line) continue;
+
+        if (Line_IsBlank(line, buffer)) {
+            continue;
+        }
+
+        // We found a non-blank line. Let's see if it is folded and is folding lineIndex.
+        if (line->isFolded && Line_IsFoldable(buffer, idx, tabSize)) {
+            // Let's verify if the block of idx actually extends to lineIndex.
+            // It extends if there is no non-blank line between idx and lineIndex with indent <= idx's indent.
+            size_t idxIndent = Line_GetIndentation(line, buffer, tabSize);
+            bool isHiding = true;
+            for (size_t j = idx + 1; j < lineIndex; j++) {
+                Line* midLine = Buffer_GetLine(buffer, j);
+                if (midLine && !Line_IsBlank(midLine, buffer)) {
+                    size_t midIndent = Line_GetIndentation(midLine, buffer, tabSize);
+                    if (midIndent <= idxIndent) {
+                        isHiding = false;
+                        break;
+                    }
+                }
+            }
+            if (isHiding) {
+                // Unfold this line!
+                line->isFolded = false;
+                buffer->foldedLineCount--;
+                LOG_INFO("Auto-unfolded line %zu to keep line %zu visible", idx + 1, lineIndex + 1);
+            }
+        }
+    }
 }
