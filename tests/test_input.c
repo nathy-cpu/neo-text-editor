@@ -10,7 +10,7 @@ static void test_move_cursor_left_right_within_line(void)
     Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
     Line* line = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line, 0, "hello", 5);
+    Buffer_InsertText(tab->buffer, line->offset, "hello", 5);
     tab->cursorX = 0;
     tab->cursorY = 0;
 
@@ -41,10 +41,10 @@ static void test_move_cursor_left_right_across_lines(void)
     Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
     Line* line0 = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line0, 0, "hello", 5);
+    Buffer_InsertText(tab->buffer, line0->offset, "hello", 5);
     Buffer_InsertLine(tab->buffer, 1);
     Line* line1 = Buffer_GetLine(tab->buffer, 1);
-    Line_InsertText(line1, 0, "hi", 2);
+    Buffer_InsertText(tab->buffer, line1->offset, "hi", 2);
 
     tab->cursorY = 1;
     tab->cursorX = 0;
@@ -67,10 +67,10 @@ static void test_move_cursor_up_down_clamps_column(void)
     Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
     Line* line0 = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line0, 0, "hello", 5);
+    Buffer_InsertText(tab->buffer, line0->offset, "hello", 5);
     Buffer_InsertLine(tab->buffer, 1);
     Line* line1 = Buffer_GetLine(tab->buffer, 1);
-    Line_InsertText(line1, 0, "hi", 2);
+    Buffer_InsertText(tab->buffer, line1->offset, "hi", 2);
 
     Tab_UpdateVisualRows((const Editor*)NULL, tab, 80);
 
@@ -96,7 +96,7 @@ static void test_move_cursor_word_right_left(void)
 
     const char* text = "  foo   bar";
     Line* line0 = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line0, 0, text, strlen(text));
+    Buffer_InsertText(tab->buffer, line0->offset, text, strlen(text));
 
     tab->cursorY = 0;
     tab->cursorX = 0;
@@ -179,7 +179,7 @@ static void test_delete_selection_single_and_multi_line(void)
         Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
         Line* line0 = Buffer_GetLine(tab->buffer, 0);
-        Line_InsertText(line0, 0, "hello world", 11);
+        Buffer_InsertText(tab->buffer, line0->offset, "hello world", 11);
 
         tab->selectStartY = 0;
         tab->selectStartX = 0;
@@ -190,7 +190,7 @@ static void test_delete_selection_single_and_multi_line(void)
         Editor_DeleteSelection(&editor);
 
         Line* line = Buffer_GetLine(tab->buffer, 0);
-        Slice text = Line_GetText(line);
+        Slice text = Line_GetText(line, tab->buffer);
         assert(text.size == 6 && memcmp(text.data, " world", 6) == 0);
         assert(tab->hasSelection == false);
 
@@ -205,10 +205,10 @@ static void test_delete_selection_single_and_multi_line(void)
         Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
         Line* line0 = Buffer_GetLine(tab->buffer, 0);
-        Line_InsertText(line0, 0, "foo", 3);
+        Buffer_InsertText(tab->buffer, line0->offset, "foo", 3);
         Buffer_InsertLine(tab->buffer, 1);
         Line* line1 = Buffer_GetLine(tab->buffer, 1);
-        Line_InsertText(line1, 0, "bar", 3);
+        Buffer_InsertText(tab->buffer, line1->offset, "bar", 3);
 
         tab->selectStartY = 0;
         tab->selectStartX = 1; // Selects "o" (line 0) through "b" (line 1).
@@ -220,7 +220,7 @@ static void test_delete_selection_single_and_multi_line(void)
 
         assert(Buffer_GetLineCount(tab->buffer) == 1);
         Line* line = Buffer_GetLine(tab->buffer, 0);
-        Slice text = Line_GetText(line);
+        Slice text = Line_GetText(line, tab->buffer);
         assert(text.size == 3 && memcmp(text.data, "far", 3) == 0);
         assert(tab->hasSelection == false);
 
@@ -235,7 +235,7 @@ static void test_delete_selection_single_and_multi_line(void)
         Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
         Line* line0 = Buffer_GetLine(tab->buffer, 0);
-        Line_InsertText(line0, 0, "hello", 5);
+        Buffer_InsertText(tab->buffer, line0->offset, "hello", 5);
         tab->buffer->isReadOnly = true;
 
         tab->selectStartY = 0;
@@ -247,7 +247,7 @@ static void test_delete_selection_single_and_multi_line(void)
         Editor_DeleteSelection(&editor);
 
         Line* line = Buffer_GetLine(tab->buffer, 0);
-        Slice text = Line_GetText(line);
+        Slice text = Line_GetText(line, tab->buffer);
         assert(text.size == 5 && memcmp(text.data, "hello", 5) == 0);
         assert(tab->hasSelection == true);
 
@@ -263,15 +263,15 @@ static void test_toggle_fold_on_foldable_and_non_foldable_line(void)
     Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
     Line* line0 = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line0, 0, "if (cond) {", 11);
+    Buffer_InsertText(tab->buffer, line0->offset, "if (cond) {", 11);
 
     Buffer_InsertLine(tab->buffer, 1);
     Line* line1 = Buffer_GetLine(tab->buffer, 1);
-    Line_InsertText(line1, 0, "    foo();", 10);
+    Buffer_InsertText(tab->buffer, line1->offset, "    foo();", 10);
 
     Buffer_InsertLine(tab->buffer, 2);
     Line* line2 = Buffer_GetLine(tab->buffer, 2);
-    Line_InsertText(line2, 0, "}", 1);
+    Buffer_InsertText(tab->buffer, line2->offset, "}", 1);
 
     assert(Line_IsFoldable(tab->buffer, 0, tab->config->tabSize) == true);
     assert(Line_IsFoldable(tab->buffer, 1, tab->config->tabSize) == false);

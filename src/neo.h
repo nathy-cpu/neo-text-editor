@@ -21,6 +21,7 @@
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <termios.h>
 #include <time.h>
@@ -79,10 +80,10 @@ Slice Slice_Subslice(Slice slice, size_t start, size_t end);
 // Array - Type-agnostic arraylist
 typedef struct {
     void* data;
-    size_t size;
-    size_t capacity;
-    size_t itemSize;
-    size_t alignment;
+    uint32_t size;
+    uint32_t capacity;
+    uint32_t itemSize;
+    uint32_t alignment;
 } Array;
 
 /**
@@ -174,8 +175,8 @@ Slice Array_ToSlice(const Array* array);
 // GapBuffer - Type-agnostic gap buffer
 typedef struct {
     Array data;
-    size_t gapStart;
-    size_t gapEnd;
+    uint32_t gapStart;
+    uint32_t gapEnd;
 } GapBuffer;
 
 /**
@@ -243,8 +244,8 @@ typedef enum {
 
 typedef struct {
     ActionType type;
-    size_t lineNumber;
-    size_t column;
+    uint32_t lineNumber;
+    uint32_t column;
 
     union {
         char character;
@@ -302,8 +303,8 @@ typedef enum { PIECE_SOURCE_ORIGINAL, PIECE_SOURCE_ADD } PieceSource;
 
 typedef struct {
     PieceSource source;
+    uint32_t length;
     size_t start;
-    size_t length;
 } Piece;
 
 struct Buffer;
@@ -319,29 +320,21 @@ struct Buffer;
 // A lazily-built prefix-sum checkpoint for Line_GetRenderX on huge lines:
 // renderCol is the tab-expanded render column at raw byte offset rawCol.
 typedef struct {
-    size_t rawCol;
-    size_t renderCol;
+    uint32_t rawCol;
+    uint32_t renderCol;
 } RenderCheckpoint;
 
 // Line - Represents a single line in the text buffer
 typedef struct Line {
-    struct Buffer* buffer; // Parent buffer (NULL for standalone tests)
     size_t offset; // Absolute byte offset in the Piece Table
     size_t length; // Length of the line (excluding trailing newline)
-    char* text; // Flattened/cached text view of the line (lazily loaded, or NULL)
-    Array styles; // Highlighting styles array (dynamic array of char)
-    size_t lineNumber; // 0-based logical line number
+    Array* styles; // Highlighting styles array
+    Array* renderCheckpoints; // Render-column checkpoints for huge lines
+    uint32_t renderCheckpointTabSize;
+    uint16_t foldLevel; // Indentation fold level
     bool isFolded; // Whether line is folded
-    size_t foldLevel; // Indentation fold level
-    Array testText; // Standalone test text buffer
-    bool commentStateOut; // Multi-line-comment state after this line, for incremental syntax updates
+    bool commentStateOut; // Multi-line-comment state after this line
     bool commentStateOutValid; // Whether commentStateOut reflects the line's current content
-    // Render-column checkpoints for huge lines (NULL until built; only built
-    // above a size threshold -- see Line_GetRenderX). Rebuilt if the tab size
-    // it was built for no longer matches.
-    RenderCheckpoint* renderCheckpoints;
-    size_t renderCheckpointCount;
-    size_t renderCheckpointTabSize;
 } Line;
 
 typedef struct {
@@ -389,39 +382,6 @@ Line* Line_New(size_t initialCapacity);
  * @param line Pointer to the line.
  */
 void Line_Free(Line* line);
-
-/**
- * @brief Inserts a character at the specified byte position.
- * @param line Pointer to the line.
- * @param position Byte index to insert at.
- * @param character Character to insert.
- */
-void Line_InsertChar(Line* line, size_t position, char character);
-
-/**
- * @brief Deletes a character at the specified byte position.
- * @param line Pointer to the line.
- * @param position Byte index of the character to delete.
- */
-void Line_DeleteChar(Line* line, size_t position);
-
-/**
- * @brief Inserts a text block at the specified byte position.
- * @param line Pointer to the line.
- * @param position Byte index to insert at.
- * @param text Pointer to the characters.
- * @param length Number of characters to insert.
- */
-void Line_InsertText(Line* line, size_t position, const char* text, size_t length);
-
-/**
- * @brief Deletes a text block from the line.
- * @param line Pointer to the line.
- * @param position Byte index to start deleting.
- * @param length Number of characters to delete.
- */
-void Line_DeleteText(Line* line, size_t position, size_t length);
-
 /**
  * @brief Gets the logical character length of the line.
  * @param line Pointer to the line.
@@ -434,7 +394,7 @@ size_t Line_Length(Line* line);
  * @param line Pointer to the line.
  * @return A slice of the line's text buffer.
  */
-Slice Line_GetText(Line* line);
+Slice Line_GetText(Line* line, struct Buffer* buffer);
 
 /**
  * @brief Returns a Slice covering just [start, start+length) of the line's
@@ -447,7 +407,7 @@ Slice Line_GetText(Line* line);
  * @param length Number of bytes to return.
  * @return A slice of at most `length` bytes.
  */
-Slice Line_GetTextRange(Line* line, size_t start, size_t length);
+Slice Line_GetTextRange(Line* line, struct Buffer* buffer, size_t start, size_t length);
 
 /**
  * @brief Converts a logical byte position to a visual render column, accounting for tab stops.
@@ -456,7 +416,7 @@ Slice Line_GetTextRange(Line* line, size_t start, size_t length);
  * @param tabSize The tab stop size configuration.
  * @return Visual render column index.
  */
-size_t Line_GetRenderX(Line* line, size_t cursorX, size_t tabSize);
+size_t Line_GetRenderX(Line* line, struct Buffer* buffer, size_t cursorX, size_t tabSize);
 
 /**
  * @brief Creates a new empty text Buffer.
@@ -600,7 +560,7 @@ bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn);
 void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len);
 void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end);
 
-char Line_GetChar(Line* line, size_t index);
+char Line_GetChar(Line* line, struct Buffer* buffer, size_t index);
 Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename);
 void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffset, size_t oldTotalBytes);
 DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer);
@@ -1271,14 +1231,14 @@ bool Line_IsFoldable(const Buffer* buffer, size_t lineNumber, size_t tabSize);
  * @param tabSize Tab stop size configuration.
  * @return The indentation size.
  */
-size_t Line_GetIndentation(Line* line, size_t tabSize);
+size_t Line_GetIndentation(Line* line, struct Buffer* buffer, size_t tabSize);
 
 /**
  * @brief Checks if a line consists entirely of whitespace.
  * @param line Pointer to the Line.
  * @return True if blank, false otherwise.
  */
-bool Line_IsBlank(Line* line);
+bool Line_IsBlank(Line* line, struct Buffer* buffer);
 
 /**
  * @brief Checks if a logical line index is currently visible on screen.

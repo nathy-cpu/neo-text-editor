@@ -21,6 +21,9 @@ void Array_Init(Array* array, size_t itemSize, size_t capacity, size_t alignment
 
     // Default to natural alignment if none specified
     alignment = (alignment > 0) ? alignment : alignof(max_align_t);
+    if (alignment < sizeof(void*)) {
+        alignment = sizeof(void*);
+    }
 
     // Ensure the total size is a multiple of alignment
     size_t totalSize = itemSize * capacity;

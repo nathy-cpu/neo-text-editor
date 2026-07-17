@@ -23,10 +23,14 @@ static void LineCache_Free(LineCache* lc)
     for (size_t i = 0; i < lc->lines.data.capacity; i++) {
         if (i < lc->lines.gapStart || i >= lc->lines.gapEnd) {
             Line* line = (Line*)Array_RawAt(&lc->lines.data, i);
-            free(line->text);
-            Array_Free(&line->styles);
-            Array_Free(&line->testText);
-            free(line->renderCheckpoints);
+            if (line->styles) {
+                Array_Free(line->styles);
+                free(line->styles);
+            }
+            if (line->renderCheckpoints) {
+                Array_Free(line->renderCheckpoints);
+                free(line->renderCheckpoints);
+            }
         }
     }
     GapBuffer_Free(&lc->lines);
@@ -143,8 +147,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     // where doubling matters.
     size_t initialCapacity = 4;
     if (oldRangeCount == 0) {
-        // Pre-count newlines to exactly size the newLines array. 
-        // Previously, we guessed 8 bytes per line, which wildly over-allocated 
+        // Pre-count newlines to exactly size the newLines array.
+        // Previously, we guessed 8 bytes per line, which wildly over-allocated
         // memory for large files (allocating gigabytes of RAM for the 152-byte Line structs).
         // It also avoided geometric array growth (O(log N) copies) which slowed down file loading.
         // The memchr pass is SIMD-optimized and extremely fast, making this upfront cost negligible.
@@ -152,8 +156,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         size_t pIdx = pieceIdx;
         while (pIdx < pieceCount) {
             Piece* p = Buffer_GetPiece(buffer, pIdx);
-            const char* src
-                = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
+            const char* src = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data
+                                                                   : (const char*)buffer->bufferAdd.data;
             const char* pieceText = src + p->start;
             size_t j = (pIdx == pieceIdx) ? localOffset : 0;
             const char* end = pieceText + p->length;
@@ -192,18 +196,15 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             if (nextNewline) {
                 size_t foundIdx = nextNewline - pieceText;
                 size_t lineLen = (scanOffset + (foundIdx - j)) - lineStartOffset;
-                Line newLine = { .buffer = buffer,
-                    .offset = lineStartOffset,
+                Line newLine = { .offset = lineStartOffset,
                     .length = lineLen,
-                    .text = NULL,
-                    .lineNumber = scanLineIdx,
-                    .isFolded = false,
-                    .foldLevel = 0,
-                    .styles = { 0 },
-                    .testText = { 0 },
+                    .styles = NULL,
                     .renderCheckpoints = NULL,
-                    .renderCheckpointCount = 0,
-                    .renderCheckpointTabSize = 0 };
+                    .renderCheckpointTabSize = 0,
+                    .foldLevel = 0,
+                    .isFolded = false,
+                    .commentStateOut = false,
+                    .commentStateOutValid = false };
                 Array_Append(&newLines, &newLine, 1);
                 scanLineIdx++;
                 scanOffset += (foundIdx - j) + 1;
@@ -232,23 +233,21 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     // Handle last line if we didn't align
     if (!aligned && lineStartOffset <= buffer->totalBytes) {
         size_t lineLen = buffer->totalBytes - lineStartOffset;
-        Line newLine = { .buffer = buffer,
-            .offset = lineStartOffset,
+        Line newLine = { .offset = lineStartOffset,
             .length = lineLen,
-            .text = NULL,
-            .lineNumber = scanLineIdx,
-            .isFolded = false,
-            .foldLevel = 0,
-            .styles = { 0 },
-            .testText = { 0 },
+            .styles = NULL,
             .renderCheckpoints = NULL,
-            .renderCheckpointCount = 0,
-            .renderCheckpointTabSize = 0 };
+            .renderCheckpointTabSize = 0,
+            .foldLevel = 0,
+            .isFolded = false,
+            .commentStateOut = false,
+            .commentStateOutValid = false };
         Array_Append(&newLines, &newLine, 1);
         scanLineIdx++;
     }
 
-    size_t oldRangeEnd = aligned ? alignedOldIdx : oldTotal; // exclusive; old lines [dirtyStart, oldRangeEnd) are replaced
+    size_t oldRangeEnd
+        = aligned ? alignedOldIdx : oldTotal; // exclusive; old lines [dirtyStart, oldRangeEnd) are replaced
     size_t numOldReplaced = oldRangeEnd - dirtyStart;
     size_t numNew = Array_Size(&newLines);
 
@@ -273,9 +272,13 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             newLine->commentStateOut = oldLine->commentStateOut;
             newLine->commentStateOutValid = oldLine->commentStateOutValid;
             // Move styles array (shallow copy)
-            Array_Free(&newLine->styles);
             newLine->styles = oldLine->styles;
-            oldLine->styles = (Array) { 0 }; // ownership transferred; prevent double-free below
+            oldLine->styles = NULL; // ownership transferred; prevent double-free below
+
+            // Move render checkpoints
+            newLine->renderCheckpoints = oldLine->renderCheckpoints;
+            newLine->renderCheckpointTabSize = oldLine->renderCheckpointTabSize;
+            oldLine->renderCheckpoints = NULL;
         }
     }
 
@@ -288,10 +291,14 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         if (oldLine->isFolded) {
             discardedFoldedCount++;
         }
-        free(oldLine->text);
-        Array_Free(&oldLine->styles);
-        Array_Free(&oldLine->testText);
-        free(oldLine->renderCheckpoints);
+        if (oldLine->styles) {
+            Array_Free(oldLine->styles);
+            free(oldLine->styles);
+        }
+        if (oldLine->renderCheckpoints) {
+            Array_Free(oldLine->renderCheckpoints);
+            free(oldLine->renderCheckpoints);
+        }
     }
 
     if (dirtyStart == 0 && oldTotal == 0) {
@@ -324,7 +331,6 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     for (size_t i = dirtyStart + numNew; i < newTotal; i++) {
         Line* line = (Line*)GapBuffer_At(&buffer->lineCache.lines, i);
         line->offset += delta;
-        line->lineNumber = i;
     }
 
     // Recompute folded lines in the modified range
@@ -563,18 +569,15 @@ Buffer* Buffer_New(void)
 
     History_Init(&buffer->history);
 
-    Line initialLine = { .buffer = buffer,
-        .offset = 0,
+    Line initialLine = { .offset = 0,
         .length = 0,
-        .text = NULL,
-        .lineNumber = 0,
         .isFolded = false,
         .foldLevel = 0,
-        .styles = { 0 },
-        .testText = { 0 },
+        .styles = NULL,
         .renderCheckpoints = NULL,
-        .renderCheckpointCount = 0,
-        .renderCheckpointTabSize = 0 };
+        .renderCheckpointTabSize = 0,
+        .commentStateOut = false,
+        .commentStateOutValid = false };
     LineCache_Insert(&buffer->lineCache, &initialLine);
     buffer->lineCache.dirtyLineStart = SIZE_MAX;
 
@@ -728,7 +731,7 @@ void Buffer_DeleteChar(Buffer* buffer, size_t lineNumber, size_t column)
     LOG_DEBUG("Buffer_DeleteChar: deleting char at line=%zu col=%zu", lineNumber, column);
     Line* line = Buffer_GetLine(buffer, lineNumber);
     if (line && column < line->length) {
-        char c = Line_GetChar(line, column);
+        char c = Line_GetChar(line, buffer, column);
         Action action
             = { .type = ACTION_DELETE_CHAR, .lineNumber = lineNumber, .column = column, .payload = { .character = c } };
         RecordAction(buffer, action);

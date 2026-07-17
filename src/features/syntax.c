@@ -1,4 +1,5 @@
 #include "../neo.h"
+#include <assert.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -35,27 +36,31 @@ char* GetSyntaxColor(const Config* config, HighlightType highlightType)
 
 static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];{}!&|^?:", c) != NULL; }
 
-static void UpdateLineSyntax(Line* line, Syntax* syntax, bool* inMultiLineComment)
+static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, bool* inMultiLineComment)
 {
-    Slice textSlice = Line_GetText(line);
-    size_t length = Line_Length(line);
+    size_t length = line->length;
+    if (length == 0)
+        return;
+    Slice textSlice = Line_GetText(line, buffer);
     char* text = (char*)textSlice.data;
 
     // Lines belonging to a tab with no active syntax are never populated at all
     // (see Tab_UpdateSyntax), so this is the first time this line's styles array
     // is touched -- allocate it lazily, only once real highlighting is needed.
-    if (!line->styles.data) {
-        Array_InitChar(&line->styles, length > 0 ? length : 1);
+    if (!line->styles) {
+        line->styles = calloc(1, sizeof(Array));
+        assert(line->styles != NULL);
+        Array_InitChar(line->styles, length > 0 ? length : 1);
     }
-    Array_Clear(&line->styles);
+    Array_Clear(line->styles);
 
     // Default to HIGHLIGHT_NORMAL
     for (size_t i = 0; i < length; i++) {
         char val = HIGHLIGHT_NORMAL;
-        Array_Append(&line->styles, &val, 1);
+        Array_Append(line->styles, &val, 1);
     }
 
-    Slice stylesSlice = Array_ToSlice(&line->styles);
+    Slice stylesSlice = Array_ToSlice(line->styles);
     char* styles = (char*)stylesSlice.data;
 
     if (syntax == NULL)
@@ -245,7 +250,7 @@ void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
         bool oldStateValid = line->commentStateOutValid;
         bool oldState = line->commentStateOut;
 
-        if (Line_Length(line) > LINE_HUGE_THRESHOLD) {
+        if (line->length > LINE_HUGE_THRESHOLD) {
             // Too large to highlight cheaply -- leave styles unallocated; the
             // renderer already treats that as all-normal. We can't scan it to
             // know whether it opens/closes a multi-line comment, so carry the
@@ -257,7 +262,7 @@ void Tab_UpdateSyntax(Tab* tab, size_t maxLine)
             continue;
         }
 
-        UpdateLineSyntax(line, tab->syntax, &inMultiLineComment);
+        UpdateLineSyntax(line, tab->buffer, tab->syntax, &inMultiLineComment);
 
         line->commentStateOut = inMultiLineComment;
         line->commentStateOutValid = true;

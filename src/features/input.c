@@ -116,13 +116,13 @@ void Editor_MoveCursorWord(Editor* editor, int key)
 
     if (key == CTRL_ARROW_RIGHT) {
         while (tab->cursorX < Line_Length(row)) {
-            char c = Line_GetChar(row, tab->cursorX);
+            char c = Line_GetChar(row, tab->buffer, tab->cursorX);
             if (isspace(c))
                 break;
             tab->cursorX++;
         }
         while (tab->cursorX < Line_Length(row)) {
-            char c = Line_GetChar(row, tab->cursorX);
+            char c = Line_GetChar(row, tab->buffer, tab->cursorX);
             if (!isspace(c))
                 break;
             tab->cursorX++;
@@ -139,13 +139,13 @@ void Editor_MoveCursorWord(Editor* editor, int key)
             return;
         }
         while (tab->cursorX > 0) {
-            char c = Line_GetChar(row, tab->cursorX - 1);
+            char c = Line_GetChar(row, tab->buffer, tab->cursorX - 1);
             if (!isspace(c))
                 break;
             tab->cursorX--;
         }
         while (tab->cursorX > 0) {
-            char c = Line_GetChar(row, tab->cursorX - 1);
+            char c = Line_GetChar(row, tab->buffer, tab->cursorX - 1);
             if (isspace(c))
                 break;
             tab->cursorX--;

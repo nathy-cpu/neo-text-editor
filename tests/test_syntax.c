@@ -41,11 +41,11 @@ static void test_syntax_highlight_c_file(void)
 
     const char* code = "int x = 42; // comment";
     Line* line = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line, 0, code, strlen(code));
+    Buffer_InsertText(tab->buffer, line->offset, code, strlen(code));
     Tab_UpdateSyntax(tab, SIZE_MAX);
 
     line = Buffer_GetLine(tab->buffer, 0);
-    Slice stylesSlice = Array_ToSlice(&line->styles);
+    Slice stylesSlice = (line->styles ? Array_ToSlice(line->styles) : (Slice){0});
     char* styles = (char*)stylesSlice.data;
     assert(stylesSlice.size == strlen(code));
 
@@ -81,11 +81,11 @@ static void test_syntax_highlight_strings_and_chars(void)
     Line* line0 = Buffer_GetLine(tab.buffer, 0);
     char fullText[64];
     int fullLength = snprintf(fullText, sizeof(fullText), "%s\n%s", text0, text1);
-    Line_InsertText(line0, 0, fullText, (size_t)fullLength);
+    Buffer_InsertText(tab.buffer, line0->offset, fullText, (size_t)fullLength);
     Tab_UpdateSyntax(&tab, SIZE_MAX);
 
     line0 = Buffer_GetLine(tab.buffer, 0);
-    Slice styles0Slice = Array_ToSlice(&line0->styles);
+    Slice styles0Slice = (line0->styles ? Array_ToSlice(line0->styles) : (Slice){0});
     char* styles0 = (char*)styles0Slice.data;
     assert(styles0Slice.size == strlen(text0));
     for (size_t i = 0; i <= 3; i++) {
@@ -97,7 +97,7 @@ static void test_syntax_highlight_strings_and_chars(void)
     }
 
     Line* line1 = Buffer_GetLine(tab.buffer, 1);
-    Slice styles1Slice = Array_ToSlice(&line1->styles);
+    Slice styles1Slice = (line1->styles ? Array_ToSlice(line1->styles) : (Slice){0});
     char* styles1 = (char*)styles1Slice.data;
     assert(styles1Slice.size == strlen(text1));
     for (size_t i = 0; i < strlen(text1); i++) {
@@ -127,13 +127,13 @@ static void test_syntax_highlight_multiline_comment(void)
     Line* line0 = Buffer_GetLine(tab.buffer, 0);
     char fullText[64];
     int fullLength = snprintf(fullText, sizeof(fullText), "%s\n%s", text0, text1);
-    Line_InsertText(line0, 0, fullText, (size_t)fullLength);
+    Buffer_InsertText(tab.buffer, line0->offset, fullText, (size_t)fullLength);
     Tab_UpdateSyntax(&tab, SIZE_MAX);
 
     line0 = Buffer_GetLine(tab.buffer, 0);
     assert(line0->commentStateOutValid == true);
     assert(line0->commentStateOut == true); // Line 0 ends still inside the comment.
-    Slice styles0Slice = Array_ToSlice(&line0->styles);
+    Slice styles0Slice = (line0->styles ? Array_ToSlice(line0->styles) : (Slice){0});
     char* styles0 = (char*)styles0Slice.data;
     for (size_t i = 7; i < strlen(text0); i++) {
         assert(styles0[i] == HIGHLIGHT_COMMENT); // "/* start"
@@ -141,7 +141,7 @@ static void test_syntax_highlight_multiline_comment(void)
 
     Line* line1 = Buffer_GetLine(tab.buffer, 1);
     assert(line1->commentStateOut == false); // Comment closes partway through line 1.
-    Slice styles1Slice = Array_ToSlice(&line1->styles);
+    Slice styles1Slice = (line1->styles ? Array_ToSlice(line1->styles) : (Slice){0});
     char* styles1 = (char*)styles1Slice.data;
     for (size_t i = 0; i <= 5; i++) {
         assert(styles1[i] == HIGHLIGHT_COMMENT); // "end */"
@@ -186,30 +186,30 @@ static void test_tab_update_syntax_lazy_high_water_mark(void)
     Tab_UpdateSyntax(&tab, 50);
 
     Line* line0 = Buffer_GetLine(tab.buffer, 0);
-    assert(line0->styles.data != NULL);
+    assert(line0->styles != NULL);
     Line* line49 = Buffer_GetLine(tab.buffer, 49);
-    assert(line49->styles.data != NULL);
+    assert(line49->styles != NULL);
     Line* line50 = Buffer_GetLine(tab.buffer, 50);
-    assert(line50->styles.data == NULL); // Beyond the bound -- never touched.
+    assert(line50->styles == NULL); // Beyond the bound -- never touched.
 
-    const void* line0StylesPtr = line0->styles.data;
+    const void* line0StylesPtr = line0->styles;
 
     // A call with a smaller (already-covered) bound must be a no-op.
     Tab_UpdateSyntax(&tab, 10);
     line0 = Buffer_GetLine(tab.buffer, 0);
-    assert(line0->styles.data == line0StylesPtr);
+    assert(line0->styles == line0StylesPtr);
 
     // Extending further covers more lines without redoing or disturbing what
     // was already highlighted.
     Tab_UpdateSyntax(&tab, 100);
     line50 = Buffer_GetLine(tab.buffer, 50);
-    assert(line50->styles.data != NULL);
+    assert(line50->styles != NULL);
     Line* line99 = Buffer_GetLine(tab.buffer, 99);
-    assert(line99->styles.data != NULL);
+    assert(line99->styles != NULL);
     Line* line100 = Buffer_GetLine(tab.buffer, 100);
-    assert(line100->styles.data == NULL);
+    assert(line100->styles == NULL);
     line0 = Buffer_GetLine(tab.buffer, 0);
-    assert(line0->styles.data == line0StylesPtr);
+    assert(line0->styles == line0StylesPtr);
 
     Tab_Free(&tab);
 }
@@ -248,15 +248,15 @@ static void test_tab_update_syntax_skips_huge_line(void)
     Tab_UpdateSyntax(&tab, SIZE_MAX);
 
     line0 = Buffer_GetLine(tab.buffer, 0);
-    assert(line0->styles.data != NULL);
+    assert(line0->styles != NULL);
 
     line1 = Buffer_GetLine(tab.buffer, 1);
     assert(Line_Length(line1) == hugeLength);
-    assert(line1->styles.data == NULL); // Skipped -- too large to highlight.
+    assert(line1->styles == NULL); // Skipped -- too large to highlight.
     assert(line1->commentStateOutValid == false);
 
     line2 = Buffer_GetLine(tab.buffer, 2);
-    assert(line2->styles.data != NULL); // Still highlighted normally.
+    assert(line2->styles != NULL); // Still highlighted normally.
 
     Tab_Free(&tab);
 }
@@ -271,7 +271,7 @@ static void test_syntax_no_match_leaves_syntax_null(void)
     assert(tab->syntax == NULL);
 
     Line* line = Buffer_GetLine(tab->buffer, 0);
-    assert(line->styles.data == NULL); // Never allocated -- Tab_UpdateSyntax is a no-op without a syntax.
+    assert(line->styles == NULL); // Never allocated -- Tab_UpdateSyntax is a no-op without a syntax.
 
     Editor_Free(&editor);
 }

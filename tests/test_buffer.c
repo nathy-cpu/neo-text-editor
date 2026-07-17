@@ -52,7 +52,7 @@ static void test_buffer_lines(void)
     assert(Buffer_GetLineCount(buffer) == 2);
     
     Line* line = Buffer_GetLine(buffer, 1);
-    Slice text = Line_GetText(line);
+    Slice text = Line_GetText(line, buffer);
     assert(text.size == 1 && ((const char*)text.data)[0] == '3');
     
     Buffer_Free(buffer);
@@ -108,7 +108,7 @@ static void test_tab_wrapping(void)
     // Add text to the first line
     Line* line = Buffer_GetLine(tab.buffer, 0);
     // Insert "abcdef" (length 6)
-    Line_InsertText(line, 0, "abcdef", 6);
+    Buffer_InsertText(tab.buffer, line->offset, "abcdef", 6);
     
     // Usable columns: 3
     Tab_UpdateVisualRows((const Editor*)NULL, &tab, 3);
@@ -171,40 +171,40 @@ static void test_tab_folding(void)
     Tab_Init(&tab);
 
     Line* line0 = Buffer_GetLine(tab.buffer, 0);
-    Line_InsertText(line0, 0, "if (cond) {", 11);
+    Buffer_InsertText(tab.buffer, line0->offset, "if (cond) {", 11);
 
     Buffer_InsertLine(tab.buffer, 1);
     Line* line1 = Buffer_GetLine(tab.buffer, 1);
-    Line_InsertText(line1, 0, "    foo();", 10);
+    Buffer_InsertText(tab.buffer, line1->offset, "    foo();", 10);
 
     Buffer_InsertLine(tab.buffer, 2);
     Line* line2 = Buffer_GetLine(tab.buffer, 2);
-    Line_InsertText(line2, 0, "    bar();", 10);
+    Buffer_InsertText(tab.buffer, line2->offset, "    bar();", 10);
 
     Buffer_InsertLine(tab.buffer, 3);
     Line* line3 = Buffer_GetLine(tab.buffer, 3);
-    Line_InsertText(line3, 0, "}", 1);
+    Buffer_InsertText(tab.buffer, line3->offset, "}", 1);
 
     Buffer_InsertLine(tab.buffer, 4);
     Line* line4 = Buffer_GetLine(tab.buffer, 4);
-    Line_InsertText(line4, 0, "", 0);
+    Buffer_InsertText(tab.buffer, line4->offset, "", 0);
 
     Buffer_InsertLine(tab.buffer, 5);
     Line* line5 = Buffer_GetLine(tab.buffer, 5);
-    Line_InsertText(line5, 0, "else {", 6);
+    Buffer_InsertText(tab.buffer, line5->offset, "else {", 6);
 
     Buffer_InsertLine(tab.buffer, 6);
     Line* line6 = Buffer_GetLine(tab.buffer, 6);
-    Line_InsertText(line6, 0, "    baz();", 10);
+    Buffer_InsertText(tab.buffer, line6->offset, "    baz();", 10);
 
     Buffer_InsertLine(tab.buffer, 7);
     Line* line7 = Buffer_GetLine(tab.buffer, 7);
-    Line_InsertText(line7, 0, "}", 1);
+    Buffer_InsertText(tab.buffer, line7->offset, "}", 1);
 
-    assert(Line_GetIndentation(line0, 4) == 0);
-    assert(Line_GetIndentation(line1, 4) == 4);
-    assert(Line_IsBlank(line4) == true);
-    assert(Line_IsBlank(line0) == false);
+    assert(Line_GetIndentation(line0, tab.buffer, 4) == 0);
+    assert(Line_GetIndentation(line1, tab.buffer, 4) == 4);
+    assert(Line_IsBlank(line4, tab.buffer) == true);
+    assert(Line_IsBlank(line0, tab.buffer) == false);
 
     assert(Line_IsFoldable(tab.buffer, 0, 4) == true);
     assert(Line_IsFoldable(tab.buffer, 1, 4) == false);
@@ -247,31 +247,31 @@ static void test_editor_toggle_all_folds(void)
     Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
 
     Line* line0 = Buffer_GetLine(tab->buffer, 0);
-    Line_InsertText(line0, 0, "if (cond) {", 11);
+    Buffer_InsertText(tab->buffer, line0->offset, "if (cond) {", 11);
 
     Buffer_InsertLine(tab->buffer, 1);
     Line* line1 = Buffer_GetLine(tab->buffer, 1);
-    Line_InsertText(line1, 0, "    foo();", 10);
+    Buffer_InsertText(tab->buffer, line1->offset, "    foo();", 10);
 
     Buffer_InsertLine(tab->buffer, 2);
     Line* line2 = Buffer_GetLine(tab->buffer, 2);
-    Line_InsertText(line2, 0, "    bar();", 10);
+    Buffer_InsertText(tab->buffer, line2->offset, "    bar();", 10);
 
     Buffer_InsertLine(tab->buffer, 3);
     Line* line3 = Buffer_GetLine(tab->buffer, 3);
-    Line_InsertText(line3, 0, "}", 1);
+    Buffer_InsertText(tab->buffer, line3->offset, "}", 1);
 
     Buffer_InsertLine(tab->buffer, 4);
     Line* line4 = Buffer_GetLine(tab->buffer, 4);
-    Line_InsertText(line4, 0, "else {", 6);
+    Buffer_InsertText(tab->buffer, line4->offset, "else {", 6);
 
     Buffer_InsertLine(tab->buffer, 5);
     Line* line5 = Buffer_GetLine(tab->buffer, 5);
-    Line_InsertText(line5, 0, "    baz();", 10);
+    Buffer_InsertText(tab->buffer, line5->offset, "    baz();", 10);
 
     Buffer_InsertLine(tab->buffer, 6);
     Line* line6 = Buffer_GetLine(tab->buffer, 6);
-    Line_InsertText(line6, 0, "}", 1);
+    Buffer_InsertText(tab->buffer, line6->offset, "}", 1);
 
     assert(Line_IsFoldable(tab->buffer, 0, 4) == true);
     assert(Line_IsFoldable(tab->buffer, 4, 4) == true);
@@ -325,10 +325,10 @@ static void test_buffer_last_rebuild_range(void)
     assert(Buffer_GetLineCount(buffer) == 5);
 
     Line* line0 = Buffer_GetLine(buffer, 0);
-    Slice l0Text = Line_GetText(line0);
+    Slice l0Text = Line_GetText(line0, buffer);
     assert(l0Text.size == 2 && memcmp(l0Text.data, "y0", 2) == 0);
     Line* line3 = Buffer_GetLine(buffer, 3);
-    Slice l3Text = Line_GetText(line3);
+    Slice l3Text = Line_GetText(line3, buffer);
     assert(l3Text.size == 2 && memcmp(l3Text.data, "z3", 2) == 0);
 
     assert(Buffer_GetLastRebuildRange(buffer, &oldStart, &oldEnd, &newEnd) == true);
@@ -494,21 +494,21 @@ static void test_buffer_piece_table(void)
 
     Line* line0 = Buffer_GetLine(buffer, 0);
     assert(line0 != NULL);
-    Slice l0Text = Line_GetText(line0);
+    Slice l0Text = Line_GetText(line0, buffer);
     assert(l0Text.size == 13);
     assert(memcmp(l0Text.data, "Hello, World!", 13) == 0);
 
     Buffer_InsertText(buffer, 7, "Beautiful ", 10);
     
     line0 = Buffer_GetLine(buffer, 0);
-    l0Text = Line_GetText(line0);
+    l0Text = Line_GetText(line0, buffer);
     assert(l0Text.size == 23);
     assert(memcmp(l0Text.data, "Hello, Beautiful World!", 23) == 0);
     assert(Buffer_GetTotalBytes(buffer) == 40);
 
     Buffer_DeleteRange(buffer, 7, 17);
     line0 = Buffer_GetLine(buffer, 0);
-    l0Text = Line_GetText(line0);
+    l0Text = Line_GetText(line0, buffer);
     assert(l0Text.size == 13);
     assert(memcmp(l0Text.data, "Hello, World!", 13) == 0);
 
@@ -529,7 +529,7 @@ static void test_buffer_undo_redo_insert_char(void)
     Buffer_InsertChar(buffer, 0, 2, 'c');
 
     Line* line = Buffer_GetLine(buffer, 0);
-    Slice text = Line_GetText(line);
+    Slice text = Line_GetText(line, buffer);
     assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
 
     // Adjacent char inserts coalesce into a single ActionGroup, so one undo
@@ -543,7 +543,7 @@ static void test_buffer_undo_redo_insert_char(void)
     size_t redoLine = SIZE_MAX, redoColumn = SIZE_MAX;
     assert(Buffer_Redo(buffer, &redoLine, &redoColumn) == true);
     line = Buffer_GetLine(buffer, 0);
-    text = Line_GetText(line);
+    text = Line_GetText(line, buffer);
     assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
     assert(redoLine == 0 && redoColumn == 3);
 
@@ -588,19 +588,19 @@ static void test_buffer_undo_redo_delete_split_join(void)
         Buffer_DeleteChar(buffer, 0, 2); // "abc" -> "ab"
 
         Line* line = Buffer_GetLine(buffer, 0);
-        Slice text = Line_GetText(line);
+        Slice text = Line_GetText(line, buffer);
         assert(text.size == 2 && memcmp(text.data, "ab", 2) == 0);
 
         size_t l = SIZE_MAX, c = SIZE_MAX;
         assert(Buffer_Undo(buffer, &l, &c) == true);
         line = Buffer_GetLine(buffer, 0);
-        text = Line_GetText(line);
+        text = Line_GetText(line, buffer);
         assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
         assert(l == 0 && c == 3);
 
         assert(Buffer_Redo(buffer, &l, &c) == true);
         line = Buffer_GetLine(buffer, 0);
-        text = Line_GetText(line);
+        text = Line_GetText(line, buffer);
         assert(text.size == 2 && memcmp(text.data, "ab", 2) == 0);
         assert(l == 0 && c == 2);
 
@@ -620,7 +620,7 @@ static void test_buffer_undo_redo_delete_split_join(void)
         assert(Buffer_Undo(buffer, &l, &c) == true);
         assert(Buffer_GetLineCount(buffer) == 1);
         Line* line = Buffer_GetLine(buffer, 0);
-        Slice text = Line_GetText(line);
+        Slice text = Line_GetText(line, buffer);
         assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);
         assert(l == 0 && c == 1);
 
@@ -628,9 +628,9 @@ static void test_buffer_undo_redo_delete_split_join(void)
         assert(Buffer_GetLineCount(buffer) == 2);
         Line* redoneLine0 = Buffer_GetLine(buffer, 0);
         Line* redoneLine1 = Buffer_GetLine(buffer, 1);
-        Slice l0Text = Line_GetText(redoneLine0);
-        Slice l1Text = Line_GetText(redoneLine1);
+        Slice l0Text = Line_GetText(redoneLine0, buffer);
         assert(l0Text.size == 1 && memcmp(l0Text.data, "a", 1) == 0);
+        Slice l1Text = Line_GetText(redoneLine1, buffer);
         assert(l1Text.size == 2 && memcmp(l1Text.data, "bc", 2) == 0);
         assert(l == 1 && c == 0);
 
@@ -651,16 +651,16 @@ static void test_buffer_undo_redo_delete_split_join(void)
         assert(Buffer_GetLineCount(buffer) == 2);
         Line* line0 = Buffer_GetLine(buffer, 0);
         Line* line1 = Buffer_GetLine(buffer, 1);
-        Slice l0Text = Line_GetText(line0);
-        Slice l1Text = Line_GetText(line1);
+        Slice l0Text = Line_GetText(line0, buffer);
         assert(l0Text.size == 1 && memcmp(l0Text.data, "a", 1) == 0);
+        Slice l1Text = Line_GetText(line1, buffer);
         assert(l1Text.size == 1 && memcmp(l1Text.data, "b", 1) == 0);
         assert(l == 1 && c == 0);
 
         assert(Buffer_Redo(buffer, &l, &c) == true);
         assert(Buffer_GetLineCount(buffer) == 1);
         Line* joinedLine = Buffer_GetLine(buffer, 0);
-        Slice joinedText = Line_GetText(joinedLine);
+        Slice joinedText = Line_GetText(joinedLine, buffer);
         assert(joinedText.size == 2 && memcmp(joinedText.data, "ab", 2) == 0);
         assert(l == 0 && c == 1);
 
@@ -726,12 +726,12 @@ static void test_buffer_undo_redo_scoped_invalidation(void)
     }
     assert(Buffer_GetLineCount(buffer) == lineCount);
 
-    // Warm the cache for an unrelated line far from the upcoming edit, and
-    // remember its cached text pointer.
+    // Warm the cache for an unrelated line far from the upcoming edit.
     Line* unrelatedLine = Buffer_GetLine(buffer, 10);
-    Slice unrelatedText = Line_GetText(unrelatedLine);
-    const void* unrelatedTextPtr = unrelatedText.data;
-    assert(unrelatedTextPtr != NULL);
+    Slice unrelatedText = Line_GetText(unrelatedLine, buffer);
+    char unrelatedData[32];
+    memcpy(unrelatedData, unrelatedText.data, unrelatedText.size);
+    size_t unrelatedSize = unrelatedText.size;
 
     // Edit deep in the middle of the file -- a single ACTION_INSERT_CHAR group.
     Buffer_InsertChar(buffer, 500, 0, 'X');
@@ -743,15 +743,14 @@ static void test_buffer_undo_redo_scoped_invalidation(void)
     // The dirty range must be tight around line 500, not a full wipe from 0.
     assert(Buffer_PeekDirtyLineStart(buffer) == 500);
 
-    // The unrelated, unaffected line's cached text must survive untouched --
-    // proving it wasn't discarded by a full line-cache wipe.
+    // The unrelated, unaffected line must still be retrievable correctly.
     Line* unrelatedLineAfterUndo = Buffer_GetLine(buffer, 10);
-    Slice unrelatedTextAfterUndo = Line_GetText(unrelatedLineAfterUndo);
-    assert(unrelatedTextAfterUndo.data == unrelatedTextPtr);
-    assert(unrelatedTextAfterUndo.size == unrelatedText.size);
+    Slice unrelatedTextAfterUndo = Line_GetText(unrelatedLineAfterUndo, buffer);
+    assert(unrelatedTextAfterUndo.size == unrelatedSize);
+    assert(memcmp(unrelatedTextAfterUndo.data, unrelatedData, unrelatedSize) == 0);
 
     Line* editedLine = Buffer_GetLine(buffer, 500);
-    Slice editedText = Line_GetText(editedLine);
+    Slice editedText = Line_GetText(editedLine, buffer);
     char expected[16];
     int n = snprintf(expected, sizeof(expected), "line%d", 500);
     assert(editedText.size == (size_t)n && memcmp(editedText.data, expected, (size_t)n) == 0);
@@ -762,11 +761,12 @@ static void test_buffer_undo_redo_scoped_invalidation(void)
     assert(Buffer_PeekDirtyLineStart(buffer) == 500);
 
     Line* unrelatedLineAfterRedo = Buffer_GetLine(buffer, 10);
-    Slice unrelatedTextAfterRedo = Line_GetText(unrelatedLineAfterRedo);
-    assert(unrelatedTextAfterRedo.data == unrelatedTextPtr);
+    Slice unrelatedTextAfterRedo = Line_GetText(unrelatedLineAfterRedo, buffer);
+    assert(unrelatedTextAfterRedo.size == unrelatedSize);
+    assert(memcmp(unrelatedTextAfterRedo.data, unrelatedData, unrelatedSize) == 0);
 
     editedLine = Buffer_GetLine(buffer, 500);
-    editedText = Line_GetText(editedLine);
+    editedText = Line_GetText(editedLine, buffer);
     n = snprintf(expected, sizeof(expected), "Xline%d", 500);
     assert(editedText.size == (size_t)n && memcmp(editedText.data, expected, (size_t)n) == 0);
 

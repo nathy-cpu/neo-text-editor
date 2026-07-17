@@ -253,7 +253,7 @@ size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
     if (!tab->config || !Tab_ShouldWrapLines(tab)) {
         if (!tab->buffer || tab->buffer->foldedLineCount == 0) {
             Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
-            return line ? Line_GetRenderX(line, tab->cursorX, tab->config->tabSize) : 0;
+            return line ? Line_GetRenderX(line, tab->buffer, tab->cursorX, tab->config->tabSize) : 0;
         }
     }
 
@@ -266,8 +266,8 @@ size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx)
     if (!line)
         return 0;
 
-    size_t rx = Line_GetRenderX(line, tab->cursorX, tab->config->tabSize);
-    size_t startRx = Line_GetRenderX(line, vr->startCol, tab->config->tabSize);
+    size_t rx = Line_GetRenderX(line, tab->buffer, tab->cursorX, tab->config->tabSize);
+    size_t startRx = Line_GetRenderX(line, tab->buffer, vr->startCol, tab->config->tabSize);
     return (rx >= startRx) ? (rx - startRx) : 0;
 }
 
@@ -297,10 +297,10 @@ void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCo
         return;
     }
 
-    size_t startRx = Line_GetRenderX(line, vr->startCol, tab->config->tabSize);
+    size_t startRx = Line_GetRenderX(line, tab->buffer, vr->startCol, tab->config->tabSize);
     size_t targetRx = startRx + targetVisualCol;
 
-    Slice text = Line_GetText(line);
+    Slice text = Line_GetText(line, tab->buffer);
     size_t col = vr->startCol;
     size_t rx = startRx;
 
@@ -338,7 +338,7 @@ static void AppendWrappedRowsForLine(Array* out, const Tab* tab, Line* line, siz
         return;
     }
 
-    Slice text = Line_GetText(line);
+    Slice text = Line_GetText(line, tab->buffer);
     size_t size = text.size;
     const char* str = (const char*)text.data;
 
@@ -511,8 +511,8 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         bool isBlank = false;
         size_t indent = 0;
         if (hiddenUntilIndent != SIZE_MAX || line->isFolded) {
-            isBlank = Line_IsBlank(line);
-            indent = isBlank ? 0 : Line_GetIndentation(line, tab->config->tabSize);
+            isBlank = Line_IsBlank(line, tab->buffer);
+            indent = isBlank ? 0 : Line_GetIndentation(line, tab->buffer, tab->config->tabSize);
         }
 
         if (hiddenUntilIndent != SIZE_MAX) {
@@ -585,7 +585,7 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     } else {
         // Calculate renderX for the line up to cursorX
         Line* line = Buffer_GetLine(tab->buffer, tab->cursorY);
-        tab->renderX = line ? Line_GetRenderX(line, tab->cursorX, tab->config->tabSize) : 0;
+        tab->renderX = line ? Line_GetRenderX(line, tab->buffer, tab->cursorX, tab->config->tabSize) : 0;
 
         // Adjust horizontal scroll columnOffset
         if (tab->renderX < tab->columnOffset) {
@@ -673,15 +673,19 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
             }
             Line* line = Buffer_GetLine(tab->buffer, vr->lineIndex);
             if (line) {
-                Slice textSlice = Line_GetText(line);
-                Slice styleSlice = Array_ToSlice(&line->styles);
+                bool foldable = false;
+                if (usableColumns > 0 && tab->config->showLineNumbers && !vr->isWrapped) {
+                    foldable = Line_IsFoldable(tab->buffer, vr->lineIndex, tab->config->tabSize);
+                }
+
+                Slice textSlice = Line_GetText(line, tab->buffer);
+                Slice styleSlice = line->styles ? Array_ToSlice(line->styles) : (Slice) { .data = NULL, .size = 0 };
 
                 // Draw styled gutter
                 if (usableColumns > 0) {
                     Array_Append(screenBuffer, "\x1b[90m", 5);
                     if (tab->config->showLineNumbers) {
                         if (!vr->isWrapped) {
-                            bool foldable = Line_IsFoldable(tab->buffer, vr->lineIndex, tab->config->tabSize);
                             char foldChar = ' ';
                             if (foldable) {
                                 foldChar = line->isFolded ? '>' : 'v';
@@ -967,10 +971,10 @@ void Editor_RefreshScreen(Editor* editor)
     Array_Free(&screenBuffer);
 }
 
-size_t Line_GetIndentation(Line* line, size_t tabSize)
+size_t Line_GetIndentation(Line* line, struct Buffer* buffer, size_t tabSize)
 {
     assert(line != NULL);
-    Slice text = Line_GetText(line);
+    Slice text = Line_GetText(line, buffer);
     size_t indent = 0;
     for (size_t i = 0; i < text.size; i++) {
         char c = ((const char*)text.data)[i];
@@ -985,10 +989,10 @@ size_t Line_GetIndentation(Line* line, size_t tabSize)
     return indent;
 }
 
-bool Line_IsBlank(Line* line)
+bool Line_IsBlank(Line* line, struct Buffer* buffer)
 {
     assert(line != NULL);
-    Slice text = Line_GetText(line);
+    Slice text = Line_GetText(line, buffer);
     for (size_t i = 0; i < text.size; i++) {
         char c = ((const char*)text.data)[i];
         if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
@@ -1001,16 +1005,16 @@ bool Line_IsBlank(Line* line)
 bool Line_IsFoldable(const Buffer* buffer, size_t lineNumber, size_t tabSize)
 {
     Line* line = Buffer_GetLine(buffer, lineNumber);
-    if (!line || Line_IsBlank(line))
+    if (!line || Line_IsBlank(line, (struct Buffer*)buffer))
         return false;
 
-    size_t currentIndent = Line_GetIndentation(line, tabSize);
+    size_t currentIndent = Line_GetIndentation(line, (struct Buffer*)buffer, tabSize);
     size_t totalLines = Buffer_GetLineCount(buffer);
 
     for (size_t i = lineNumber + 1; i < totalLines; i++) {
         Line* nextLine = Buffer_GetLine(buffer, i);
-        if (nextLine && !Line_IsBlank(nextLine)) {
-            size_t nextIndent = Line_GetIndentation(nextLine, tabSize);
+        if (nextLine && !Line_IsBlank(nextLine, (struct Buffer*)buffer)) {
+            size_t nextIndent = Line_GetIndentation(nextLine, (struct Buffer*)buffer, tabSize);
             return nextIndent > currentIndent;
         }
     }

@@ -112,10 +112,7 @@ int main(void) {
     LOG_INFO("Starting line tests...");
     test_line_basic();
     test_line_get_char();
-    test_line_insert_position_clamping();
-    test_line_delete_edges();
-    test_line_buffer_backed_delegation();
-    test_line_render_x();
+                test_line_render_x();
     test_line_render_x_edges();
     test_line_render_x_huge_line();
     test_line_get_text_range();
