@@ -430,7 +430,6 @@ void Editor_ProcessKeypress(Editor* editor)
             isQuiting = true;
             return;
         }
-        Terminal_ClearScreen((Terminal*)NULL);
         exit(0);
     } else if (input == RESIZE_EVENT) {
         Editor_UpdateGeometry(editor);

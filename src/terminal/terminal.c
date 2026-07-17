@@ -42,8 +42,9 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     }
     terminal->rawModeEnabled = true;
 
-    // Set cursor to blinking vertical bar
-    write(STDOUT_FILENO, "\x1b[5 q", 5);
+    // Enter alternate screen buffer and set cursor to blinking vertical bar
+    const char* init = "\x1b[?1049h\x1b[5 q";
+    write(STDOUT_FILENO, init, strlen(init));
 
     return true;
 }
@@ -54,6 +55,10 @@ bool Terminal_DisableRawMode(Terminal* terminal)
         LOG_INFO("Disabling raw mode on terminal.");
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->originalTermios);
         terminal->rawModeEnabled = false;
+
+        // Reset cursor style to default, make sure cursor is visible, and exit alternate screen buffer
+        const char* exitSeq = "\x1b[?25h\x1b[0 q\x1b[?1049l";
+        write(STDOUT_FILENO, exitSeq, strlen(exitSeq));
     }
     return true;
 }
@@ -61,9 +66,6 @@ bool Terminal_DisableRawMode(Terminal* terminal)
 bool Terminal_Restore(Terminal* terminal)
 {
     Terminal_DisableRawMode(terminal);
-    // Reset cursor style to default block, move to home, and clear
-    const char* reset = "\x1b[0 q\r\n\x1b[H";
-    write(STDOUT_FILENO, reset, strlen(reset));
     fflush(stdout);
     return true;
 }
