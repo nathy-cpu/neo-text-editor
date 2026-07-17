@@ -103,7 +103,13 @@ void Editor_ReadDir(Editor* editor, const char* path)
         }
 
         ExplorerItem* item = malloc(sizeof(ExplorerItem));
+        if (!item)
+            continue;
         item->name = strdup(itemName);
+        if (!item->name) {
+            free(item);
+            continue;
+        }
         item->isDir = isDir;
         item->mode = st.st_mode;
         item->size = st.st_size;

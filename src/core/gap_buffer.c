@@ -79,7 +79,8 @@ void GapBuffer_MoveGap(GapBuffer* gb, size_t newGapStart)
     void* dest = (newGapStart > gb->gapStart) ? Array_RawAt(&gb->data, gb->gapStart)
                                               : Array_RawAt(&gb->data, newGapStart + gapSize);
 
-    size_t moveSize = abs((int)newGapStart - (int)gb->gapStart) * gb->data.itemSize;
+    size_t diff = (newGapStart > gb->gapStart) ? (newGapStart - gb->gapStart) : (gb->gapStart - newGapStart);
+    size_t moveSize = diff * gb->data.itemSize;
     memmove(dest, src, moveSize);
 
     gb->gapStart = newGapStart;

@@ -48,14 +48,24 @@ bool CliOptions_Parse(CliOptions* options, int argc, char* argv[])
     options->overrideLogToFile = -1;
     options->overrideLogToUi = -1;
     options->overrideLogMaxMessages = -1;
-    options->files = malloc(argc * sizeof(char*));
-    options->fileLines = malloc(argc * sizeof(int));
-    options->fileColumns = malloc(argc * sizeof(int));
+    options->files = NULL;
+    options->fileLines = NULL;
+    options->fileColumns = NULL;
     options->fileCount = 0;
     options->helpRequested = false;
     options->versionRequested = false;
 
+    options->files = malloc(argc * sizeof(char*));
+    options->fileLines = malloc(argc * sizeof(int));
+    options->fileColumns = malloc(argc * sizeof(int));
+
     if (!options->files || !options->fileLines || !options->fileColumns) {
+        free(options->files);
+        free(options->fileLines);
+        free(options->fileColumns);
+        options->files = NULL;
+        options->fileLines = NULL;
+        options->fileColumns = NULL;
         return false;
     }
 

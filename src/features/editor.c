@@ -108,14 +108,7 @@ void Editor_CloseTab(Editor* editor)
     Tab_Free(activeTab);
     free(activeTab);
 
-    // Remove from array (shift remaining elements)
-    for (size_t i = editor->activeTabIndex; i < numTabs - 1; i++) {
-        Tab* nextTab = Array_Get(&editor->tabs, Tab*, i + 1);
-        void* dest = Array_RawAt(&editor->tabs, i);
-        memcpy(dest, &nextTab, sizeof(Tab*));
-    }
-
-    editor->tabs.size--;
+    Array_ReplaceRange(&editor->tabs, editor->activeTabIndex, 1, NULL, 0);
 
     if (editor->tabs.size == 0) {
         // No tabs left, quit application

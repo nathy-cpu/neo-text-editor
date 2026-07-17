@@ -264,15 +264,7 @@ typedef struct ActionGroup {
     DocumentSnapshot* snapshotAfter;
 } ActionGroup;
 
-typedef struct StackNode {
-    ActionGroup* data;
-    struct StackNode* next;
-} StackNode;
-
-typedef struct {
-    StackNode* top;
-    size_t size;
-} Stack;
+typedef Array Stack;
 
 void Stack_Init(Stack* stack);
 void Stack_Push(Stack* stack, void* data);
@@ -369,13 +361,6 @@ typedef struct Buffer {
     size_t lastRebuiltNewEnd; // Exclusive; new lines beyond this are the reused/shifted tail
     bool lastRebuildOccurred; // Whether a rebuild has ever populated the fields above
 } Buffer;
-
-/**
- * @brief Creates a new Line object with the specified initial capacity.
- * @param initialCapacity Initial gap buffer capacity.
- * @return A pointer to the newly allocated Line, or NULL on failure.
- */
-Line* Line_New(size_t initialCapacity);
 
 /**
  * @brief Frees the Line object and its internal gap buffers.

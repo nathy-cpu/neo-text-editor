@@ -7,7 +7,6 @@ static void test_stack_basic(void)
 {
     Stack stack;
     Stack_Init(&stack);
-    assert(stack.top == NULL);
     assert(stack.size == 0);
 
     int a = 1, b = 2, c = 3;
@@ -23,6 +22,7 @@ static void test_stack_basic(void)
 
     assert(Stack_Pop(&stack) == NULL);
     assert(stack.size == 0);
+    Stack_Free(&stack, NULL);
 }
 
 static int freedCount = 0;
@@ -52,6 +52,7 @@ static void test_stack_enforce_limit(void)
     assert(Stack_Pop(&stack) == &values[4]);
     assert(Stack_Pop(&stack) == &values[3]);
     assert(Stack_Pop(&stack) == NULL);
+    Stack_Free(&stack, NULL);
 }
 
 static void CountingFreeAndRelease(void* data)
@@ -75,7 +76,6 @@ static void test_stack_free(void)
     freedCount = 0;
     Stack_Free(&stack, CountingFreeAndRelease);
     assert(freedCount == 3);
-    assert(stack.top == NULL);
     assert(stack.size == 0);
 }
 

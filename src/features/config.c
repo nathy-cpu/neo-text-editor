@@ -22,6 +22,8 @@ static char** CloneStringArray(char** sourceStringArray)
     while (sourceStringArray[count])
         count++;
     char** destinationStringArray = malloc((count + 1) * sizeof(char*));
+    if (!destinationStringArray)
+        return NULL;
     for (size_t index = 0; index < count; index++) {
         destinationStringArray[index] = strdup(sourceStringArray[index]);
     }
@@ -240,6 +242,8 @@ static char** GetLuaStringArray(lua_State* luaState, int stackIndex)
         return NULL;
     size_t count = lua_rawlen(luaState, stackIndex);
     char** stringArray = malloc((count + 1) * sizeof(char*));
+    if (!stringArray)
+        return NULL;
     for (size_t index = 1; index <= count; index++) {
         lua_rawgeti(luaState, stackIndex, index);
         if (lua_isstring(luaState, -1)) {

@@ -23,14 +23,7 @@ static void LineCache_Free(LineCache* lc)
     for (size_t i = 0; i < lc->lines.data.capacity; i++) {
         if (i < lc->lines.gapStart || i >= lc->lines.gapEnd) {
             Line* line = (Line*)Array_RawAt(&lc->lines.data, i);
-            if (line->styles) {
-                Array_Free(line->styles);
-                free(line->styles);
-            }
-            if (line->renderCheckpoints) {
-                Array_Free(line->renderCheckpoints);
-                free(line->renderCheckpoints);
-            }
+            Line_Free(line);
         }
     }
     GapBuffer_Free(&lc->lines);
@@ -291,14 +284,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         if (oldLine->isFolded) {
             discardedFoldedCount++;
         }
-        if (oldLine->styles) {
-            Array_Free(oldLine->styles);
-            free(oldLine->styles);
-        }
-        if (oldLine->renderCheckpoints) {
-            Array_Free(oldLine->renderCheckpoints);
-            free(oldLine->renderCheckpoints);
-        }
+        Line_Free(oldLine);
     }
 
     if (dirtyStart == 0 && oldTotal == 0) {

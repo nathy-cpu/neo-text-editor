@@ -173,3 +173,19 @@ size_t Line_GetRenderX(Line* line, struct Buffer* buffer, size_t cursorX, size_t
     }
     return rx;
 }
+
+void Line_Free(Line* line)
+{
+    if (!line)
+        return;
+    if (line->styles) {
+        Array_Free(line->styles);
+        free(line->styles);
+        line->styles = NULL;
+    }
+    if (line->renderCheckpoints) {
+        Array_Free(line->renderCheckpoints);
+        free(line->renderCheckpoints);
+        line->renderCheckpoints = NULL;
+    }
+}
