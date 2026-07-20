@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "../src/neo.h"
+#include "../src/terminal/terminal.h"
 
 // This test binary's stdin is not attached to a real TTY (make test pipes/
 // redirects it), so Terminal_EnableRawMode is expected to fail via its isatty
@@ -163,6 +163,7 @@ void test_Terminal_GetCursorPosition(void) {
     close(pipefd[1]);
 
     int savedStdin = dup(STDIN_FILENO);
+    assert(savedStdin != -1);
     assert(dup2(pipefd[0], STDIN_FILENO) != -1);
     close(pipefd[0]);
 
@@ -188,6 +189,7 @@ void test_Terminal_GetWindowSize(void) {
     close(pipefd[1]);
 
     int savedStdin = dup(STDIN_FILENO);
+    assert(savedStdin != -1);
     assert(dup2(pipefd[0], STDIN_FILENO) != -1);
     close(pipefd[0]);
 

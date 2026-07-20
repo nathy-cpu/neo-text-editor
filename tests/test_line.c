@@ -1,4 +1,5 @@
-#include "../src/neo.h"
+#include "../src/core/line.h"
+#include "../src/core/buffer.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

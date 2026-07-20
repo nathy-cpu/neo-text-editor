@@ -1,4 +1,7 @@
-#include "../neo.h"
+#include "syntax.h"
+#include "../core/buffer.h"
+#include "../utils/logger.h"
+#include "tab.h"
 #include <assert.h>
 #include <ctype.h>
 #include <stdbool.h>

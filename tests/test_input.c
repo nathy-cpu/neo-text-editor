@@ -1,4 +1,8 @@
-#include "../src/neo.h"
+#include "../src/features/editor.h"
+#include "../src/features/tab.h"
+#include "../src/features/input.h"
+#include "../src/core/buffer.h"
+#include "../src/core/line.h"
 #include <assert.h>
 #include <string.h>
 

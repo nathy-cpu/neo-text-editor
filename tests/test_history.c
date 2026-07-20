@@ -1,4 +1,4 @@
-#include "../src/neo.h"
+#include "../src/core/history.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>

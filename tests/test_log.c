@@ -1,4 +1,5 @@
-#include "../src/neo.h"
+#include "../src/utils/logger.h"
+#include "../src/utils/array.h"
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>

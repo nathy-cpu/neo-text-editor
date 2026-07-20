@@ -1,9 +1,9 @@
 // Must come before any system header (even <stdio.h> below): glibc's
 // <features.h> computes its internal __USE_* visibility macros the first time
 // it's pulled in and then guards against reprocessing, so defining these
-// afterwards -- e.g. only inside neo.h, included transitively by the very
-// next line -- would be too late to unlock POSIX/GNU declarations (strdup,
-// setenv, unsetenv, ...) for the rest of this translation unit.
+// afterwards -- e.g. inside subsystem headers -- would be too late to unlock
+// POSIX/GNU declarations (strdup, setenv, unsetenv, ...) for the rest of this
+// translation unit.
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif

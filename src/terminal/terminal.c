@@ -1,4 +1,5 @@
-#include "../neo.h"
+#include "terminal.h"
+#include "../utils/logger.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>

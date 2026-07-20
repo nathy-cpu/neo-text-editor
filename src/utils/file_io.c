@@ -1,8 +1,20 @@
-#include "../neo.h"
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "file_io.h"
+#include "logger.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -102,8 +114,10 @@ int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tem
         LOG_ERROR("FileIoOpenTempForAtomicWrite: path too long: %s", path);
         return -1;
     }
-    strcpy(dirBuf, path);
-    strcpy(baseBuf, path);
+    strncpy(dirBuf, path, sizeof(dirBuf) - 1);
+    dirBuf[sizeof(dirBuf) - 1] = '\0';
+    strncpy(baseBuf, path, sizeof(baseBuf) - 1);
+    baseBuf[sizeof(baseBuf) - 1] = '\0';
     const char* dir = dirname(dirBuf);
     const char* base = basename(baseBuf);
 

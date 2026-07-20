@@ -1,4 +1,5 @@
-#include "../neo.h"
+#include "gap_buffer.h"
+#include "logger.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>

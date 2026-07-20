@@ -1,5 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
-#include "../neo.h"
+#include "logs_view.h"
+#include "../utils/logger.h"
+#include "editor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

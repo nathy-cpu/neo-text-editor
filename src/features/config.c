@@ -1,9 +1,25 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
-#include "../neo.h"
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "config.h"
+#include "../utils/logger.h"
+#include "editor.h"
+#include "syntax.h"
 #include <ctype.h>
+#include <lua5.4/lauxlib.h>
+#include <lua5.4/lua.h>
+#include <lua5.4/lualib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 

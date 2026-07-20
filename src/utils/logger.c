@@ -1,9 +1,19 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
-#include "../neo.h"
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "logger.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 static char* g_logFilePath = NULL;

@@ -1,4 +1,21 @@
-#include "../neo.h"
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "editor.h"
+#include "tab.h"
+#include "syntax.h"
+#include "explorer.h"
+#include "logs_view.h"
+#include "../terminal/terminal.h"
+#include "../core/line.h"
+#include "../core/buffer.h"
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>

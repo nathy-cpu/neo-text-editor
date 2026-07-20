@@ -1,4 +1,17 @@
-#include "../src/neo.h"
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "../src/features/editor.h"
+#include "../src/features/config.h"
+#include "../src/features/syntax.h"
+#include "../src/utils/array.h"
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>

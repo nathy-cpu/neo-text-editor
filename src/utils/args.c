@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
-#include "../neo.h"
+#include "args.h"
+#include "logger.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>

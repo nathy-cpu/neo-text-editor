@@ -1,4 +1,15 @@
-#include "../neo.h"
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "buffer.h"
+#include "../utils/logger.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -173,7 +184,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 
     size_t scanOffset = currentOffset;
     size_t lineStartOffset = currentOffset;
-    size_t scanLineIdx = dirtyStart;
+
     bool aligned = false;
     size_t alignedOldIdx = SIZE_MAX; // old index (absolute) where the untouched tail begins
 
@@ -199,7 +210,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
                     .commentStateOut = false,
                     .commentStateOutValid = false };
                 Array_Append(&newLines, &newLine, 1);
-                scanLineIdx++;
+
                 scanOffset += (foundIdx - j) + 1;
                 lineStartOffset = scanOffset;
                 j = foundIdx + 1;
@@ -236,7 +247,6 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             .commentStateOut = false,
             .commentStateOutValid = false };
         Array_Append(&newLines, &newLine, 1);
-        scanLineIdx++;
     }
 
     size_t oldRangeEnd
@@ -1138,7 +1148,8 @@ void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize)
     for (size_t f = lineIndex; f > 0; f--) {
         size_t idx = f - 1;
         Line* line = Buffer_GetLine(buffer, idx);
-        if (!line) continue;
+        if (!line)
+            continue;
 
         if (Line_IsBlank(line, buffer)) {
             continue;

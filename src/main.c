@@ -1,5 +1,19 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
-#include "neo.h"
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include "features/config.h"
+#include "features/editor.h"
+#include "features/input.h"
+#include "terminal/terminal.h"
+#include "utils/args.h"
+#include "utils/logger.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>

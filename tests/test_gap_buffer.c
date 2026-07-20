@@ -1,4 +1,5 @@
-#include "../src/neo.h"
+#include "../src/utils/gap_buffer.h"
+#include "../src/utils/slice.h"
 #include <assert.h>
 #include <string.h>
 

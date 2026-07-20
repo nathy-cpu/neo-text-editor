@@ -1,4 +1,4 @@
-#include "../src/neo.h"
+#include "../src/utils/slice.h"
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>

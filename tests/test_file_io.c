@@ -1,4 +1,4 @@
-#include "../src/neo.h"
+#include "../src/utils/file_io.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,7 +18,7 @@ static void CreateTestFile(const char *path, const char *content) {
 }
 
 // Test FileIORead and FileIOWrite
-static void test_read_write() {
+static void test_read_write(void) {
     const char *path = "testfile.txt";
     const char *content = "Hello, world!";
     CreateTestFile(path, content);
@@ -46,7 +46,7 @@ static void test_read_write() {
 }
 
 // Test FileIOMMap
-static void test_mmap() {
+static void test_mmap(void) {
     const char *path = "mmap_test.txt";
     const char *content = "Memory-mapped file test";
     CreateTestFile(path, content);
@@ -61,7 +61,7 @@ static void test_mmap() {
 }
 
 // Test error cases
-static void test_errors() {
+static void test_errors(void) {
     // Nonexistent file
     Array array = {0};
     assert(!FileIoRead("nonexistent.txt", &array) && "Read should fail");
@@ -76,7 +76,7 @@ static void test_errors() {
     unlink(path);
 }
 
-static void test_null_safety() {
+static void test_null_safety(void) {
     // Test Array_Append with NULL
     Array arr = {0};
     Array_InitChar(&arr, 10);
@@ -89,7 +89,7 @@ static void test_null_safety() {
     Array_Free(&arr2);
 }
 
-static void test_mmap_threshold_boundary() {
+static void test_mmap_threshold_boundary(void) {
     // FileIoRead switches from the small-file (read()) path to the mmap path
     // strictly above 1MB; verify both sides of that exact boundary.
     const size_t oneMb = 1024 * 1024;
@@ -125,7 +125,7 @@ static void test_mmap_threshold_boundary() {
     unlink(overThreshold);
 }
 
-static void test_zero_byte_file() {
+static void test_zero_byte_file(void) {
     const char *path = "empty.txt";
     CreateTestFile(path, "");
 
@@ -144,18 +144,18 @@ static void test_zero_byte_file() {
     unlink(path);
 }
 
-static void test_write_failure() {
+static void test_write_failure(void) {
     // The parent directory doesn't exist, so open(..., O_CREAT) must fail.
     Slice content = Slice_From("data");
     assert(!FileIoWrite("no_such_dir/file.txt", content) && "Write to a nonexistent directory should fail");
 }
 
-static void test_mmap_open_failure() {
+static void test_mmap_open_failure(void) {
     MappedFile file = FileIoMmap("nonexistent_for_mmap.txt");
     assert(file.fileDescriptor == -1 && "Mmap of a nonexistent file should fail cleanly");
 }
 
-static void test_mapped_file_unmap_safety() {
+static void test_mapped_file_unmap_safety(void) {
     // Unmapping a MappedFile that was never successfully mapped is a no-op.
     MappedFile neverMapped = { .fileDescriptor = -1 };
     MappedFile_Unmap(&neverMapped);
@@ -175,7 +175,7 @@ static void test_mapped_file_unmap_safety() {
     unlink(path);
 }
 
-static void test_large_file() {
+static void test_large_file(void) {
     const char *path = "largefile.bin";
     const size_t size = 1024 * 1024 * 1024; // 1GB
 

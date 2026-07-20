@@ -1,4 +1,10 @@
-#include "../src/neo.h"
+#include "../src/core/buffer.h"
+#include "../src/core/line.h"
+#include "../src/features/tab.h"
+#include "../src/features/editor.h"
+#include "../src/utils/file_io.h"
+#include "../src/utils/slice.h"
+#include "../src/utils/array.h"
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>

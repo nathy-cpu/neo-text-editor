@@ -1,5 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
-#include "../neo.h"
+#include "tab.h"
+#include "../utils/file_io.h"
+#include "../utils/logger.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>

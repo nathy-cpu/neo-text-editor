@@ -1,4 +1,7 @@
-#include "../src/neo.h"
+#include "../src/features/editor.h"
+#include "../src/features/tab.h"
+#include "../src/features/syntax.h"
+#include "../src/features/config.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
