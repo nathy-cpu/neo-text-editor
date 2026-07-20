@@ -118,7 +118,7 @@ Slice Buffer_ToSlice(const Buffer* buffer);
 /**
  * @brief Writes the buffer's content to `path` by streaming each piece.
  */
-bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path);
+bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path, bool useFsync);
 
 /**
  * @brief Undoes the last action or action group.
@@ -158,4 +158,4 @@ void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize);
 /**
  * @brief Callback for when a buffer is successfully saved to disk.
  */
-void Buffer_OnSave(Buffer* buffer, const char* path);
+void Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync);

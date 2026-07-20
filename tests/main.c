@@ -151,6 +151,7 @@ int main(void) {
     test_buffer_undo_redo_empty_stacks();
     test_buffer_undo_redo_scoped_invalidation();
     test_buffer_undo_respects_limit();
+    test_buffer_save_fsync_options();
     printf("All buffer tests passed!\n\r");
     LOG_INFO("All buffer tests passed!");
 

@@ -518,7 +518,7 @@ static void test_buffer_piece_table(void)
     assert(l0Text.size == 13);
     assert(memcmp(l0Text.data, "Hello, World!", 13) == 0);
 
-    Buffer_OnSave(buffer, path);
+    Buffer_OnSave(buffer, path, true);
     assert(buffer->isModified == false);
     assert(Buffer_GetLineCount(buffer) == 3);
 
@@ -818,5 +818,47 @@ static void test_buffer_undo_respects_limit(void)
     assert(Line_Length(line0) == 1);
 
     Buffer_Free(buffer);
+}
+
+static void test_buffer_save_fsync_options(void)
+{
+    const char* path = "test_temp_fsync_options.txt";
+    Slice content = Slice_Make("Line 1\nLine 2\n", 14);
+    assert(FileIoWrite(path, content));
+
+    MappedFile mapped = FileIoMmap(path);
+    assert(mapped.fileDescriptor != -1);
+
+    Buffer* buffer = Buffer_NewFromMmap(mapped, path);
+    assert(buffer != NULL);
+
+    // Modify buffer
+    Buffer_InsertText(buffer, 7, "Inserted\n", 9);
+
+    // Save with fsync = true
+    Buffer_OnSave(buffer, path, true);
+    assert(buffer->isModified == false);
+
+    // Verify written content
+    MappedFile mapped2 = FileIoMmap(path);
+    assert(mapped2.content.size == 23);
+    assert(memcmp(mapped2.content.data, "Line 1\nInserted\nLine 2\n", 23) == 0);
+    MappedFile_Unmap(&mapped2);
+
+    // Modify again
+    Buffer_InsertText(buffer, 23, "Another", 7);
+
+    // Save with fsync = false
+    Buffer_OnSave(buffer, path, false);
+    assert(buffer->isModified == false);
+
+    // Verify written content
+    MappedFile mapped3 = FileIoMmap(path);
+    assert(mapped3.content.size == 30);
+    assert(memcmp(mapped3.content.data, "Line 1\nInserted\nLine 2\nAnother", 30) == 0);
+    MappedFile_Unmap(&mapped3);
+
+    Buffer_Free(buffer);
+    remove(path);
 }
 

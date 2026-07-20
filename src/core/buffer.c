@@ -965,7 +965,7 @@ Slice Buffer_ToSlice(const Buffer* buffer)
     return (Slice) { .data = content, .size = buffer->totalBytes };
 }
 
-bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path)
+bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path, bool useFsync)
 {
     assert(buffer);
 
@@ -975,18 +975,66 @@ bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path)
         return false;
 
     size_t pieceCount = GapBuffer_Size(&buffer->pieces);
+    
+#define WRITE_BUFFER_SIZE 65536
+    char* writeBuffer = malloc(WRITE_BUFFER_SIZE);
+    if (!writeBuffer) {
+        FileIoAbortAtomicWrite(fileDescriptor, tempPath);
+        return false;
+    }
+    size_t writeBufferUsed = 0;
+    bool success = true;
+
     for (size_t i = 0; i < pieceCount; i++) {
         Piece* p = (Piece*)GapBuffer_At(&buffer->pieces, i);
         const char* src
             = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
-        if (!FileIoWriteChunk(fileDescriptor, src + p->start, p->length)) {
-            LOG_ERROR("Buffer_WriteToFileStreaming: failed writing piece %zu of %zu to '%s'", i, pieceCount, tempPath);
-            FileIoAbortAtomicWrite(fileDescriptor, tempPath);
-            return false;
+        const char* dataPtr = src + p->start;
+        size_t dataLen = p->length;
+
+        if (dataLen >= WRITE_BUFFER_SIZE) {
+            // Flush buffered data first
+            if (writeBufferUsed > 0) {
+                if (!FileIoWriteChunk(fileDescriptor, writeBuffer, writeBufferUsed)) {
+                    success = false;
+                    break;
+                }
+                writeBufferUsed = 0;
+            }
+            // Write large chunk directly
+            if (!FileIoWriteChunk(fileDescriptor, dataPtr, dataLen)) {
+                success = false;
+                break;
+            }
+        } else {
+            // Check if it fits in the buffer
+            if (writeBufferUsed + dataLen > WRITE_BUFFER_SIZE) {
+                if (!FileIoWriteChunk(fileDescriptor, writeBuffer, writeBufferUsed)) {
+                    success = false;
+                    break;
+                }
+                writeBufferUsed = 0;
+            }
+            memcpy(writeBuffer + writeBufferUsed, dataPtr, dataLen);
+            writeBufferUsed += dataLen;
         }
     }
 
-    return FileIoCommitAtomicWrite(fileDescriptor, tempPath, path);
+    if (success && writeBufferUsed > 0) {
+        if (!FileIoWriteChunk(fileDescriptor, writeBuffer, writeBufferUsed)) {
+            success = false;
+        }
+    }
+
+    free(writeBuffer);
+
+    if (!success) {
+        LOG_ERROR("Buffer_WriteToFileStreaming: failed writing to '%s'", tempPath);
+        FileIoAbortAtomicWrite(fileDescriptor, tempPath);
+        return false;
+    }
+
+    return FileIoCommitAtomicWrite(fileDescriptor, tempPath, path, useFsync);
 }
 
 // Computes where the cursor should land right before (afterAction=false) or
@@ -1107,10 +1155,10 @@ bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
     return true;
 }
 
-void Buffer_OnSave(Buffer* buffer, const char* path)
+void Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync)
 {
     LOG_INFO("Buffer_OnSave: saving buffer to '%s' (size=%zu bytes)", path, buffer->totalBytes);
-    if (!Buffer_WriteToFileStreaming(buffer, path)) {
+    if (!Buffer_WriteToFileStreaming(buffer, path, useFsync)) {
         LOG_ERROR("Buffer_OnSave: failed to write file to '%s'", path);
         return;
     }

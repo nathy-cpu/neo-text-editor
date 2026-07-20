@@ -145,13 +145,15 @@ void FileIoAbortAtomicWrite(int fileDescriptor, const char* tempPath)
     unlink(tempPath);
 }
 
-bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath)
+bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath, bool useFsync)
 {
-    if (fsync(fileDescriptor) != 0) {
-        LOG_ERROR("FileIoCommitAtomicWrite: fsync failed for '%s': %s", tempPath, strerror(errno));
-        close(fileDescriptor);
-        unlink(tempPath);
-        return false;
+    if (useFsync) {
+        if (fdatasync(fileDescriptor) != 0) {
+            LOG_ERROR("FileIoCommitAtomicWrite: fdatasync failed for '%s': %s", tempPath, strerror(errno));
+            close(fileDescriptor);
+            unlink(tempPath);
+            return false;
+        }
     }
     close(fileDescriptor);
 

@@ -155,6 +155,7 @@ void Tab_SaveFile(Tab* tab)
         return;
     }
 
-    Buffer_OnSave(tab->buffer, tab->filename);
+    bool useFsync = tab->config ? tab->config->fsyncEnabled : true;
+    Buffer_OnSave(tab->buffer, tab->filename, useFsync);
     tab->isSaved = !tab->buffer->isModified;
 }

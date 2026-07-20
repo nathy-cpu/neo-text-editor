@@ -1,6 +1,7 @@
 tab_size = 4
 show_line_numbers = true
 wrap_lines = false
+fsync_enabled = true
 syntax_enabled = true
 status_timeout = 3
 

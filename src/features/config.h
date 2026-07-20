@@ -50,6 +50,9 @@ typedef struct {
 
     // Undo Configuration
     size_t undoLimit;
+
+    // Fsync Configuration
+    bool fsyncEnabled;
 } Config;
 
 struct Editor; // Forward declaration

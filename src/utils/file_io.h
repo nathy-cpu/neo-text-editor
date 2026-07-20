@@ -39,7 +39,7 @@ void FileIoAbortAtomicWrite(int fileDescriptor, const char* tempPath);
 /**
  * @brief Durably commits a completed atomic write.
  */
-bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath);
+bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath, bool useFsync);
 
 /**
  * @brief Memory-maps a file for zero-copy read access.
