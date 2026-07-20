@@ -8,6 +8,10 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define TAB_STOP 4
 
+#define KEY_MOD_SHIFT 0x10000
+#define KEY_MOD_ALT   0x20000
+#define KEY_MOD_CTRL  0x40000
+
 enum Key {
     BACKSPACE = 127,
     ARROW_LEFT = 2000,
@@ -15,20 +19,34 @@ enum Key {
     ARROW_UP,
     ARROW_DOWN,
     DELETE_KEY,
+    INSERT_KEY,
     HOME_KEY,
     END_KEY,
     PAGE_UP,
     PAGE_DOWN,
     RESIZE_EVENT,
-    ALT_S,
-    ALT_F,
-    CTRL_ARROW_LEFT,
-    CTRL_ARROW_RIGHT,
-    SHIFT_ARROW_UP,
-    SHIFT_ARROW_DOWN,
-    SHIFT_ARROW_LEFT,
-    SHIFT_ARROW_RIGHT
+    KEY_F1,
+    KEY_F2,
+    KEY_F3,
+    KEY_F4,
+    KEY_F5,
+    KEY_F6,
+    KEY_F7,
+    KEY_F8,
+    KEY_F9,
+    KEY_F10,
+    KEY_F11,
+    KEY_F12
 };
+
+#define CTRL_ARROW_LEFT   (ARROW_LEFT | KEY_MOD_CTRL)
+#define CTRL_ARROW_RIGHT  (ARROW_RIGHT | KEY_MOD_CTRL)
+#define SHIFT_ARROW_UP    (ARROW_UP | KEY_MOD_SHIFT)
+#define SHIFT_ARROW_DOWN  (ARROW_DOWN | KEY_MOD_SHIFT)
+#define SHIFT_ARROW_LEFT  (ARROW_LEFT | KEY_MOD_SHIFT)
+#define SHIFT_ARROW_RIGHT (ARROW_RIGHT | KEY_MOD_SHIFT)
+#define ALT_S             ('s' | KEY_MOD_ALT)
+#define ALT_F             ('f' | KEY_MOD_ALT)
 
 extern volatile sig_atomic_t windowResized;
 

@@ -371,3 +371,20 @@ static void test_visual_rows_cache_updates_on_unfold(void)
 
     Editor_Free(&editor);
 }
+
+static void test_input_tab_insertion(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Editor_ProcessInput(&editor, '\t');
+
+    Line* line = Buffer_GetLine(tab->buffer, 0);
+    Slice text = Line_GetText(line, tab->buffer);
+    assert(text.size == 1 && ((const char*)text.data)[0] == '\t');
+    assert(tab->cursorX == 1);
+
+    Editor_Free(&editor);
+}

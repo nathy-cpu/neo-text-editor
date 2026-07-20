@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include "../utils/logger.h"
+#include <ctype.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -43,8 +44,8 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     }
     terminal->rawModeEnabled = true;
 
-    // Enter alternate screen buffer and set cursor to blinking vertical bar
-    const char* init = "\x1b[?1049h\x1b[5 q";
+    // Enter alternate screen buffer, set cursor to blinking vertical bar, and enable modifyOtherKeys level 2
+    const char* init = "\x1b[?1049h\x1b[5 q\x1b[>4;2m";
     write(STDOUT_FILENO, init, strlen(init));
 
     return true;
@@ -57,8 +58,8 @@ bool Terminal_DisableRawMode(Terminal* terminal)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->originalTermios);
         terminal->rawModeEnabled = false;
 
-        // Reset cursor style to default, make sure cursor is visible, and exit alternate screen buffer
-        const char* exitSeq = "\x1b[?25h\x1b[0 q\x1b[?1049l";
+        // Disable modifyOtherKeys, reset cursor style to default, make sure cursor is visible, and exit alternate screen buffer
+        const char* exitSeq = "\x1b[>4;0m\x1b[?25h\x1b[0 q\x1b[?1049l";
         write(STDOUT_FILENO, exitSeq, strlen(exitSeq));
     }
     return true;
@@ -76,6 +77,19 @@ void Terminal_ClearScreen(const Terminal* terminal)
     (void)terminal;
     const char* clear = "\x1b[2J\x1b[H";
     write(STDOUT_FILENO, clear, strlen(clear));
+}
+
+static int GetModifierFlags(int pm)
+{
+    int flags = 0;
+    int val = pm - 1;
+    if (val & 1)
+        flags |= KEY_MOD_SHIFT;
+    if (val & 2)
+        flags |= KEY_MOD_ALT;
+    if (val & 4)
+        flags |= KEY_MOD_CTRL;
+    return flags;
 }
 
 int ReadKey(void)
@@ -101,94 +115,204 @@ int ReadKey(void)
     }
 
     if (input == '\x1b') {
-        char sequence[6];
-
-        if (read(STDIN_FILENO, &sequence[0], 1) != 1)
+        char seq0;
+        if (read(STDIN_FILENO, &seq0, 1) != 1) {
             return '\x1b';
-
-        if (sequence[0] == 's' || sequence[0] == 'S') {
-            return ALT_S;
-        }
-        if (sequence[0] == 'f' || sequence[0] == 'F') {
-            return ALT_F;
         }
 
-        if (read(STDIN_FILENO, &sequence[1], 1) != 1)
+        if (seq0 == 'O') {
+            char seq1;
+            if (read(STDIN_FILENO, &seq1, 1) != 1) {
+                return '\x1b';
+            }
+            switch (seq1) {
+            case 'P': return KEY_F1;
+            case 'Q': return KEY_F2;
+            case 'R': return KEY_F3;
+            case 'S': return KEY_F4;
+            case 'H': return HOME_KEY;
+            case 'F': return END_KEY;
+            }
             return '\x1b';
+        }
 
-        if (sequence[0] == '[') {
-            if (sequence[1] >= '0' && sequence[1] <= '9') {
-                if (read(STDIN_FILENO, &sequence[2], 1) != 1)
+        if (seq0 == '[') {
+            char seq[32];
+            int seq_len = 0;
+            char final_char = 0;
+
+            while (seq_len < (int)sizeof(seq) - 1) {
+                char c;
+                if (read(STDIN_FILENO, &c, 1) != 1) {
                     return '\x1b';
-                if (sequence[2] == '~') {
-                    switch (sequence[1]) {
-                    case '1':
-                        return HOME_KEY;
-                    case '3':
-                        return DELETE_KEY;
-                    case '4':
-                        return END_KEY;
-                    case '5':
-                        return PAGE_UP;
-                    case '6':
-                        return PAGE_DOWN;
-                    case '7':
-                        return HOME_KEY;
-                    case '8':
-                        return END_KEY;
-                    }
-                } else if (sequence[2] == ';') {
-                    if (read(STDIN_FILENO, &sequence[3], 1) != 1)
-                        return '\x1b';
-                    if (read(STDIN_FILENO, &sequence[4], 1) != 1)
-                        return '\x1b';
+                }
+                seq[seq_len++] = c;
+                if (c >= 0x40 && c <= 0x7E) {
+                    final_char = c;
+                    break;
+                }
+            }
+            seq[seq_len] = '\0';
 
-                    if (sequence[3] == '5') {
-                        switch (sequence[4]) {
-                        case 'C':
-                            return CTRL_ARROW_RIGHT;
-                        case 'D':
-                            return CTRL_ARROW_LEFT;
-                        }
-                    } else if (sequence[3] == '2') {
-                        switch (sequence[4]) {
-                        case 'A':
-                            return SHIFT_ARROW_UP;
-                        case 'B':
-                            return SHIFT_ARROW_DOWN;
-                        case 'C':
-                            return SHIFT_ARROW_RIGHT;
-                        case 'D':
-                            return SHIFT_ARROW_LEFT;
-                        }
+            if (final_char == 0) {
+                return '\x1b';
+            }
+
+            int params[8] = {0};
+            int num_params = 0;
+            bool has_param = false;
+
+            for (int i = 0; i < seq_len - 1; i++) {
+                if (seq[i] >= '0' && seq[i] <= '9') {
+                    params[num_params] = params[num_params] * 10 + (seq[i] - '0');
+                    has_param = true;
+                } else if (seq[i] == ';') {
+                    if (num_params < 7) {
+                        num_params++;
                     }
                 }
-            } else {
-                switch (sequence[1]) {
-                case 'A':
-                    return ARROW_UP;
-                case 'B':
-                    return ARROW_DOWN;
-                case 'C':
-                    return ARROW_RIGHT;
-                case 'D':
-                    return ARROW_LEFT;
-                case 'H':
-                    return HOME_KEY;
-                case 'F':
-                    return END_KEY;
+            }
+            if (has_param) {
+                num_params++;
+            }
+
+            if (final_char == '~') {
+                if (num_params >= 1) {
+                    if (params[0] == 27) {
+                        // modifyOtherKeys format: CSI 27 ; <modifier> ; <char_code> ~
+                        int mod_flags = 0;
+                        if (num_params >= 2) {
+                            mod_flags = GetModifierFlags(params[1]);
+                        }
+                        int char_code = (num_params >= 3) ? params[2] : 0;
+
+                        if (mod_flags & KEY_MOD_CTRL) {
+                            if (char_code >= 'a' && char_code <= 'z') {
+                                return CTRL_KEY(char_code) | (mod_flags & ~KEY_MOD_CTRL);
+                            }
+                            if (char_code >= 'A' && char_code <= 'Z') {
+                                return CTRL_KEY(tolower((unsigned char)char_code)) | (mod_flags & ~KEY_MOD_CTRL);
+                            }
+                        }
+                        return char_code | mod_flags;
+                    } else {
+                        int base_key = 0;
+                        switch (params[0]) {
+                        case 1:
+                        case 7:
+                            base_key = HOME_KEY;
+                            break;
+                        case 2:
+                            base_key = INSERT_KEY;
+                            break;
+                        case 3:
+                            base_key = DELETE_KEY;
+                            break;
+                        case 4:
+                        case 8:
+                            base_key = END_KEY;
+                            break;
+                        case 5:
+                            base_key = PAGE_UP;
+                            break;
+                        case 6:
+                            base_key = PAGE_DOWN;
+                            break;
+                        case 15:
+                            base_key = KEY_F5;
+                            break;
+                        case 17:
+                            base_key = KEY_F6;
+                            break;
+                        case 18:
+                            base_key = KEY_F7;
+                            break;
+                        case 19:
+                            base_key = KEY_F8;
+                            break;
+                        case 20:
+                            base_key = KEY_F9;
+                            break;
+                        case 21:
+                            base_key = KEY_F10;
+                            break;
+                        case 23:
+                            base_key = KEY_F11;
+                            break;
+                        case 24:
+                            base_key = KEY_F12;
+                            break;
+                        }
+                        int mod_flags = 0;
+                        if (num_params >= 2) {
+                            mod_flags = GetModifierFlags(params[1]);
+                        }
+                        return base_key | mod_flags;
+                    }
                 }
+            } else if (final_char == 'u') {
+                // CSI u format: CSI <char_code> ; <modifier> u
+                if (num_params >= 2) {
+                    int char_code = params[0];
+                    int mod_flags = GetModifierFlags(params[1]);
+                    if (mod_flags & KEY_MOD_CTRL) {
+                        if (char_code >= 'a' && char_code <= 'z') {
+                            return CTRL_KEY(char_code) | (mod_flags & ~KEY_MOD_CTRL);
+                        }
+                        if (char_code >= 'A' && char_code <= 'Z') {
+                            return CTRL_KEY(tolower((unsigned char)char_code)) | (mod_flags & ~KEY_MOD_CTRL);
+                        }
+                    }
+                    return char_code | mod_flags;
+                }
+            } else if (final_char == 'A' || final_char == 'B' || final_char == 'C' || final_char == 'D') {
+                int base_key = 0;
+                switch (final_char) {
+                case 'A': base_key = ARROW_UP; break;
+                case 'B': base_key = ARROW_DOWN; break;
+                case 'C': base_key = ARROW_RIGHT; break;
+                case 'D': base_key = ARROW_LEFT; break;
+                }
+                int mod_flags = 0;
+                if (num_params >= 2 && params[0] == 1) {
+                    mod_flags = GetModifierFlags(params[1]);
+                }
+                return base_key | mod_flags;
+            } else if (final_char == 'H' || final_char == 'F') {
+                int base_key = (final_char == 'H') ? HOME_KEY : END_KEY;
+                int mod_flags = 0;
+                if (num_params >= 2 && params[0] == 1) {
+                    mod_flags = GetModifierFlags(params[1]);
+                }
+                return base_key | mod_flags;
+            } else if (final_char == 'Z') {
+                // Shift+Tab
+                return '\t' | KEY_MOD_SHIFT;
+            } else if (final_char == 'P' || final_char == 'Q' || final_char == 'R' || final_char == 'S') {
+                // F1 - F4 with modifiers: ESC[1;<modifier>P etc.
+                int base_key = 0;
+                switch (final_char) {
+                case 'P': base_key = KEY_F1; break;
+                case 'Q': base_key = KEY_F2; break;
+                case 'R': base_key = KEY_F3; break;
+                case 'S': base_key = KEY_F4; break;
+                }
+                int mod_flags = 0;
+                if (num_params >= 2 && params[0] == 1) {
+                    mod_flags = GetModifierFlags(params[1]);
+                }
+                return base_key | mod_flags;
             }
-        } else if (sequence[0] == 'O') {
-            switch (sequence[1]) {
-            case 'H':
-                return HOME_KEY;
-            case 'F':
-                return END_KEY;
-            }
+
+            return '\x1b';
         }
 
-        return '\x1b';
+        // It is Alt + seq0
+        int base = seq0;
+        if (base >= 'A' && base <= 'Z') {
+            base = tolower((unsigned char)base);
+        }
+        return base | KEY_MOD_ALT;
     } else {
         return input;
     }

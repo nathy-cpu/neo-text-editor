@@ -46,6 +46,7 @@ int main(void) {
     test_ReadKey_delete_and_page_keys();
     test_ReadKey_ctrl_and_shift_arrows();
     test_ReadKey_alt_s_and_alt_f();
+    test_ReadKey_new_keys_and_modifiers();
     test_ReadKey_lone_escape_returns_escape();
     test_Terminal_GetCursorPosition();
     test_Terminal_GetWindowSize();
@@ -128,6 +129,7 @@ int main(void) {
     test_config_load_missing_file_fails();
     test_config_load_malformed_lua_fails();
     test_config_load_language_replace_and_discard();
+    test_config_ParseKeybinding();
     printf("All config tests passed!\n\r");
     LOG_INFO("All config tests passed!");
 
@@ -190,6 +192,7 @@ int main(void) {
     test_toggle_fold_on_foldable_and_non_foldable_line();
     test_auto_unfold_on_edit_or_movement();
     test_visual_rows_cache_updates_on_unfold();
+    test_input_tab_insertion();
     printf("All input tests passed!\n\r");
     LOG_INFO("All input tests passed!");
 

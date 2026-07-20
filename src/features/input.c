@@ -193,6 +193,19 @@ void Editor_ProcessInput(Editor* editor, int input)
         Editor_ToggleAllFolds(editor);
     } else {
         switch (input) {
+        case '\t':
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            if (tab->hasSelection)
+                Editor_DeleteSelection(editor);
+            Buffer_InsertChar(tab->buffer, tab->cursorY, tab->cursorX, '\t');
+            tab->cursorX++;
+            tab->isSaved = false;
+            modified = true;
+            break;
+
         case '\r':
             if (tab->buffer->isReadOnly) {
                 Editor_SetStatusMessage(editor, "Error: File is read-only");

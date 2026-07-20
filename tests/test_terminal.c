@@ -203,3 +203,53 @@ void test_Terminal_GetWindowSize(void) {
     assert(rows > 0);
     assert(columns > 0);
 }
+
+void test_ReadKey_new_keys_and_modifiers(void) {
+    // F-keys (F1 - F4: SS3 and CSI sequences)
+    assert(ReadKeyFromBytes("\x1bOP", 3) == KEY_F1);
+    assert(ReadKeyFromBytes("\x1bOQ", 3) == KEY_F2);
+    assert(ReadKeyFromBytes("\x1bOR", 3) == KEY_F3);
+    assert(ReadKeyFromBytes("\x1bOS", 3) == KEY_F4);
+
+    assert(ReadKeyFromBytes("\x1b[1;5P", 6) == (KEY_F1 | KEY_MOD_CTRL));
+    assert(ReadKeyFromBytes("\x1b[1;2Q", 6) == (KEY_F2 | KEY_MOD_SHIFT));
+    assert(ReadKeyFromBytes("\x1b[1;3R", 6) == (KEY_F3 | KEY_MOD_ALT));
+    assert(ReadKeyFromBytes("\x1b[1;4S", 6) == (KEY_F4 | KEY_MOD_SHIFT | KEY_MOD_ALT));
+
+    // F-keys (F5 - F12)
+    assert(ReadKeyFromBytes("\x1b[15~", 5) == KEY_F5);
+    assert(ReadKeyFromBytes("\x1b[17~", 5) == KEY_F6);
+    assert(ReadKeyFromBytes("\x1b[18~", 5) == KEY_F7);
+    assert(ReadKeyFromBytes("\x1b[19~", 5) == KEY_F8);
+    assert(ReadKeyFromBytes("\x1b[20~", 5) == KEY_F9);
+    assert(ReadKeyFromBytes("\x1b[21~", 5) == KEY_F10);
+    assert(ReadKeyFromBytes("\x1b[23~", 5) == KEY_F11);
+    assert(ReadKeyFromBytes("\x1b[24~", 5) == KEY_F12);
+
+    assert(ReadKeyFromBytes("\x1b[15;5~", 7) == (KEY_F5 | KEY_MOD_CTRL));
+    assert(ReadKeyFromBytes("\x1b[24;2~", 7) == (KEY_F12 | KEY_MOD_SHIFT));
+
+    // Insert key
+    assert(ReadKeyFromBytes("\x1b[2~", 4) == INSERT_KEY);
+    assert(ReadKeyFromBytes("\x1b[2;5~", 6) == (INSERT_KEY | KEY_MOD_CTRL));
+
+    // Alt-keys general translation
+    assert(ReadKeyFromBytes("\x1b" "a", 2) == ('a' | KEY_MOD_ALT));
+    assert(ReadKeyFromBytes("\x1b" "A", 2) == ('a' | KEY_MOD_ALT));
+    assert(ReadKeyFromBytes("\x1b" "z", 2) == ('z' | KEY_MOD_ALT));
+
+    // modifyOtherKeys format (CSI 27 ; <mod> ; <char> ~)
+    // Ctrl+Tab
+    assert(ReadKeyFromBytes("\x1b[27;5;9~", 9) == ('\t' | KEY_MOD_CTRL));
+    // Ctrl+Shift+a -> CTRL_KEY('a') | KEY_MOD_SHIFT
+    assert(ReadKeyFromBytes("\x1b[27;6;97~", 10) == (CTRL_KEY('a') | KEY_MOD_SHIFT));
+
+    // CSI u format (CSI <char> ; <mod> u)
+    // Ctrl+Tab
+    assert(ReadKeyFromBytes("\x1b[9;5u", 6) == ('\t' | KEY_MOD_CTRL));
+    // Ctrl+Alt+Shift+f
+    assert(ReadKeyFromBytes("\x1b[102;8u", 8) == (CTRL_KEY('f') | KEY_MOD_ALT | KEY_MOD_SHIFT));
+
+    // Shift+Tab (Z)
+    assert(ReadKeyFromBytes("\x1b[Z", 3) == ('\t' | KEY_MOD_SHIFT));
+}

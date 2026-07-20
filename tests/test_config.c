@@ -269,3 +269,30 @@ static void test_config_load_language_replace_and_discard(void)
     Editor_Free(&editor);
     remove(path);
 }
+
+extern int ParseKeybinding(const char* keybindingString, int defaultKeyValue);
+
+static void test_config_ParseKeybinding(void)
+{
+    // Basic modifiers
+    assert(ParseKeybinding("ctrl-s", 0) == CTRL_KEY('s'));
+    assert(ParseKeybinding("alt-s", 0) == ALT_S);
+    assert(ParseKeybinding("shift-arrow_up", 0) == SHIFT_ARROW_UP);
+
+    // Combination modifiers
+    assert(ParseKeybinding("ctrl-alt-s", 0) == ('s' | KEY_MOD_CTRL | KEY_MOD_ALT));
+    assert(ParseKeybinding("ctrl-shift-tab", 0) == ('\t' | KEY_MOD_CTRL | KEY_MOD_SHIFT));
+    assert(ParseKeybinding("ctrl-alt-shift-f5", 0) == (KEY_F5 | KEY_MOD_CTRL | KEY_MOD_ALT | KEY_MOD_SHIFT));
+
+    // Special keys
+    assert(ParseKeybinding("insert", 0) == INSERT_KEY);
+    assert(ParseKeybinding("tab", 0) == '\t');
+
+    // F-keys
+    assert(ParseKeybinding("f1", 0) == KEY_F1);
+    assert(ParseKeybinding("f12", 0) == KEY_F12);
+    assert(ParseKeybinding("f13", 99) == 99); // invalid F-key
+
+    // Invalid/fallback
+    assert(ParseKeybinding("invalid-key-name", 42) == 42);
+}

@@ -207,44 +207,73 @@ void Config_Free(Config* config)
  * @param defaultKeyValue Default value to return if parsing fails.
  * @return Integer key code.
  */
-static int ParseKeybinding(const char* keybindingString, int defaultKeyValue)
+int ParseKeybinding(const char* keybindingString, int defaultKeyValue)
 {
     if (!keybindingString)
         return defaultKeyValue;
-    if (strcasecmp(keybindingString, "backspace") == 0)
-        return BACKSPACE;
-    if (strcasecmp(keybindingString, "delete") == 0)
-        return DELETE_KEY;
-    if (strcasecmp(keybindingString, "home") == 0)
-        return HOME_KEY;
-    if (strcasecmp(keybindingString, "end") == 0)
-        return END_KEY;
-    if (strcasecmp(keybindingString, "pageup") == 0)
-        return PAGE_UP;
-    if (strcasecmp(keybindingString, "pagedown") == 0)
-        return PAGE_DOWN;
-    if (strcasecmp(keybindingString, "arrow_left") == 0)
-        return ARROW_LEFT;
-    if (strcasecmp(keybindingString, "arrow_right") == 0)
-        return ARROW_RIGHT;
-    if (strcasecmp(keybindingString, "arrow_up") == 0)
-        return ARROW_UP;
-    if (strcasecmp(keybindingString, "arrow_down") == 0)
-        return ARROW_DOWN;
 
-    if (strncasecmp(keybindingString, "ctrl-", 5) == 0 && strlen(keybindingString) == 6) {
-        char characterCode = tolower(keybindingString[5]);
-        return CTRL_KEY(characterCode);
-    }
-    if (strncasecmp(keybindingString, "alt-", 4) == 0 && strlen(keybindingString) == 5) {
-        char characterCode = tolower(keybindingString[4]);
-        if (characterCode == 's')
-            return ALT_S;
-        if (characterCode == 'f')
-            return ALT_F;
+    int modifiers = 0;
+    const char* p = keybindingString;
+    while (true) {
+        if (strncasecmp(p, "ctrl-", 5) == 0) {
+            modifiers |= KEY_MOD_CTRL;
+            p += 5;
+        } else if (strncasecmp(p, "alt-", 4) == 0) {
+            modifiers |= KEY_MOD_ALT;
+            p += 4;
+        } else if (strncasecmp(p, "shift-", 6) == 0) {
+            modifiers |= KEY_MOD_SHIFT;
+            p += 6;
+        } else {
+            break;
+        }
     }
 
-    return defaultKeyValue;
+    int base_key = -1;
+    if (strcasecmp(p, "backspace") == 0)
+        base_key = BACKSPACE;
+    else if (strcasecmp(p, "delete") == 0)
+        base_key = DELETE_KEY;
+    else if (strcasecmp(p, "insert") == 0)
+        base_key = INSERT_KEY;
+    else if (strcasecmp(p, "home") == 0)
+        base_key = HOME_KEY;
+    else if (strcasecmp(p, "end") == 0)
+        base_key = END_KEY;
+    else if (strcasecmp(p, "pageup") == 0)
+        base_key = PAGE_UP;
+    else if (strcasecmp(p, "pagedown") == 0)
+        base_key = PAGE_DOWN;
+    else if (strcasecmp(p, "arrow_left") == 0)
+        base_key = ARROW_LEFT;
+    else if (strcasecmp(p, "arrow_right") == 0)
+        base_key = ARROW_RIGHT;
+    else if (strcasecmp(p, "arrow_up") == 0)
+        base_key = ARROW_UP;
+    else if (strcasecmp(p, "arrow_down") == 0)
+        base_key = ARROW_DOWN;
+    else if (strcasecmp(p, "tab") == 0)
+        base_key = '\t';
+    else if (strncasecmp(p, "f", 1) == 0 && strlen(p) >= 2 && strlen(p) <= 3) {
+        int f_num = atoi(p + 1);
+        if (f_num >= 1 && f_num <= 12) {
+            base_key = KEY_F1 + (f_num - 1);
+        }
+    } else if (strlen(p) == 1) {
+        base_key = tolower((unsigned char)p[0]);
+    }
+
+    if (base_key == -1) {
+        return defaultKeyValue;
+    }
+
+    // For backwards compatibility and existing keybindings (e.g. CTRL_KEY('s')),
+    // if only Ctrl is set, and the base key is a letter, return CTRL_KEY(base_key).
+    if (modifiers == KEY_MOD_CTRL && base_key >= 'a' && base_key <= 'z') {
+        return CTRL_KEY(base_key);
+    }
+
+    return base_key | modifiers;
 }
 
 /**
