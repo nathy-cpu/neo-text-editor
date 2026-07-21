@@ -29,7 +29,10 @@ keybindings = {
     save_as = "alt-s",
     show_logs = "ctrl-l",
     toggle_fold = "ctrl-f",
-    toggle_all_folds = "alt-f"
+    toggle_all_folds = "alt-f",
+    copy = "ctrl-c",
+    cut = "ctrl-x",
+    paste = "ctrl-v"
 }
 
 languages = {

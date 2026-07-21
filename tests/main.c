@@ -193,6 +193,10 @@ int main(void) {
     test_auto_unfold_on_edit_or_movement();
     test_visual_rows_cache_updates_on_unfold();
     test_input_tab_insertion();
+    test_clipboard_basic();
+    test_tab_get_selected_text();
+    test_tab_copy_selection();
+    test_paste_undo_grouping();
     printf("All input tests passed!\n\r");
     LOG_INFO("All input tests passed!");
 

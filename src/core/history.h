@@ -52,6 +52,7 @@ typedef struct {
     Stack redoStack;
     ActionGroup* currentGroup;
     bool isUndoRedoing;
+    bool forceGrouping;
     size_t undoLimit;
 } History;
 

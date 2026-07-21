@@ -71,6 +71,7 @@ void History_Init(History* history)
     Stack_Init(&history->redoStack);
     history->currentGroup = NULL;
     history->isUndoRedoing = false;
+    history->forceGrouping = false;
     history->undoLimit = 1000;
 }
 

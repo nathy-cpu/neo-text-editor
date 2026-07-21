@@ -527,7 +527,7 @@ static void RecordAction(Buffer* buffer, Action action)
     ActionGroup* current = buffer->history.currentGroup;
     if (current && Array_Size(&current->actions) > 0) {
         Action* lastAction = (Action*)Array_At(&current->actions, Array_Size(&current->actions) - 1);
-        if (CanGroupActions(lastAction, &action)) {
+        if (buffer->history.forceGrouping || CanGroupActions(lastAction, &action)) {
             Array_Append(&current->actions, &action, 1);
             return;
         }

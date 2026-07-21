@@ -135,6 +135,16 @@ void Tab_UpdateVisualRows(const struct Editor* editor, Tab* tab, size_t usableCo
 void Tab_GetSelection(Tab* tab, size_t* startX, size_t* startY, size_t* endX, size_t* endY);
 
 /**
+ * @brief Retrieves the selected text as a dynamically allocated null-terminated string.
+ */
+char* Tab_GetSelectedText(Tab* tab);
+
+/**
+ * @brief Copies the active selection to the clipboard using the streaming/incremental API (zero-allocation).
+ */
+void Tab_CopySelection(Tab* tab);
+
+/**
  * @brief Checks if a logical line index is currently visible on screen.
  */
 bool Tab_IsLineVisible(const Tab* tab, size_t lineIndex);

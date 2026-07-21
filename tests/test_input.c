@@ -3,6 +3,7 @@
 #include "../src/features/input.h"
 #include "../src/core/buffer.h"
 #include "../src/core/line.h"
+#include "../src/utils/clipboard.h"
 #include <assert.h>
 #include <string.h>
 
@@ -386,5 +387,152 @@ static void test_input_tab_insertion(void)
     assert(text.size == 1 && ((const char*)text.data)[0] == '\t');
     assert(tab->cursorX == 1);
 
+    Editor_Free(&editor);
+}
+
+static void test_clipboard_basic(void)
+{
+    Clipboard_Write("hello clipboard world");
+    Slice s = Clipboard_Read();
+    assert(s.size == 21);
+    assert(strncmp((const char*)s.data, "hello clipboard world", 21) == 0);
+    assert(((const char*)s.data)[21] == '\0');
+
+    Clipboard_Write("short");
+    s = Clipboard_Read();
+    assert(s.size == 5);
+    assert(strncmp((const char*)s.data, "short", 5) == 0);
+    assert(((const char*)s.data)[5] == '\0');
+
+    Clipboard_Write("a much longer string to force expansion of the internal array capacity");
+    s = Clipboard_Read();
+    assert(s.size == 70);
+    assert(strncmp((const char*)s.data, "a much longer string to force expansion of the internal array capacity", 70) == 0);
+    assert(((const char*)s.data)[70] == '\0');
+
+    Clipboard_Free();
+}
+
+static void test_tab_get_selected_text(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Line* line0 = Buffer_GetLine(tab->buffer, 0);
+    Buffer_InsertText(tab->buffer, line0->offset, "hello", 5);
+    Buffer_InsertLine(tab->buffer, 1);
+    Line* line1 = Buffer_GetLine(tab->buffer, 1);
+    Buffer_InsertText(tab->buffer, line1->offset, "world", 5);
+
+    tab->hasSelection = false;
+    char* text = Tab_GetSelectedText(tab);
+    assert(text == NULL);
+
+    tab->hasSelection = true;
+    tab->selectStartY = 0;
+    tab->selectStartX = 1;
+    tab->cursorY = 0;
+    tab->cursorX = 4;
+    text = Tab_GetSelectedText(tab);
+    assert(text != NULL);
+    assert(strcmp(text, "ell") == 0);
+    free(text);
+
+    tab->selectStartY = 0;
+    tab->selectStartX = 3;
+    tab->cursorY = 1;
+    tab->cursorX = 2;
+    text = Tab_GetSelectedText(tab);
+    assert(text != NULL);
+    assert(strcmp(text, "lo\nwo") == 0);
+    free(text);
+
+    Editor_Free(&editor);
+}
+
+static void test_tab_copy_selection(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Line* line0 = Buffer_GetLine(tab->buffer, 0);
+    Buffer_InsertText(tab->buffer, line0->offset, "hello", 5);
+    Buffer_InsertLine(tab->buffer, 1);
+    Line* line1 = Buffer_GetLine(tab->buffer, 1);
+    Buffer_InsertText(tab->buffer, line1->offset, "world", 5);
+
+    tab->hasSelection = true;
+    tab->selectStartY = 0;
+    tab->selectStartX = 3;
+    tab->cursorY = 1;
+    tab->cursorX = 2;
+
+    Tab_CopySelection(tab);
+
+    Slice s = Clipboard_Read();
+    assert(s.size == 5);
+    assert(strncmp((const char*)s.data, "lo\nwo", 5) == 0);
+
+    Clipboard_Free();
+    Editor_Free(&editor);
+}
+
+static void test_paste_undo_grouping(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Line* line0 = Buffer_GetLine(tab->buffer, 0);
+    Buffer_InsertText(tab->buffer, line0->offset, "start", 5);
+    tab->cursorY = 0;
+    tab->cursorX = 5;
+
+    Clipboard_Write("line1\nline2\nline3");
+
+    Editor_ProcessInput(&editor, editor.config.keyPaste);
+
+    assert(Buffer_GetLineCount(tab->buffer) == 3);
+    Line* l2 = Buffer_GetLine(tab->buffer, 2);
+    Slice s2 = Line_GetText(l2, tab->buffer);
+    assert(strncmp((const char*)s2.data, "line3", 5) == 0);
+
+    size_t outLine, outCol;
+    Buffer_Undo(tab->buffer, &outLine, &outCol);
+    assert(Buffer_GetLineCount(tab->buffer) == 1);
+    Line* l0 = Buffer_GetLine(tab->buffer, 0);
+    Slice s0 = Line_GetText(l0, tab->buffer);
+    assert(s0.size == 5);
+    assert(strncmp((const char*)s0.data, "start", 5) == 0);
+
+    Buffer_Redo(tab->buffer, &outLine, &outCol);
+    assert(Buffer_GetLineCount(tab->buffer) == 3);
+    l2 = Buffer_GetLine(tab->buffer, 2);
+    s2 = Line_GetText(l2, tab->buffer);
+    assert(strncmp((const char*)s2.data, "line3", 5) == 0);
+
+    tab->hasSelection = true;
+    tab->selectStartY = 0;
+    tab->selectStartX = 5;
+    tab->cursorY = 2;
+    tab->cursorX = 5;
+    
+    Editor_ProcessInput(&editor, '\x7f');
+    
+    assert(Buffer_GetLineCount(tab->buffer) == 1);
+    l0 = Buffer_GetLine(tab->buffer, 0);
+    s0 = Line_GetText(l0, tab->buffer);
+    assert(s0.size == 5);
+    assert(strncmp((const char*)s0.data, "start", 5) == 0);
+
+    Buffer_Undo(tab->buffer, &outLine, &outCol);
+    assert(Buffer_GetLineCount(tab->buffer) == 3);
+
+    Clipboard_Free();
     Editor_Free(&editor);
 }

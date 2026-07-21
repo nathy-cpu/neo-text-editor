@@ -16,6 +16,7 @@
 #include "explorer.h"
 #include "logs_view.h"
 #include "tab.h"
+#include "../utils/clipboard.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,167 @@ void Tab_GetSelection(Tab* tab, size_t* startX, size_t* startY, size_t* endX, si
     }
 }
 
+char* Tab_GetSelectedText(Tab* tab)
+{
+    if (!tab->hasSelection)
+        return NULL;
+    size_t startX, startY, endX, endY;
+    Tab_GetSelection(tab, &startX, &startY, &endX, &endY);
+
+    size_t totalLen = 0;
+    if (startY == endY) {
+        Line* line = Buffer_GetLine(tab->buffer, startY);
+        if (line) {
+            size_t len = Line_Length(line);
+            if (startX < len) {
+                size_t actualX = (endX > len) ? len : endX;
+                totalLen += (actualX - startX);
+            }
+        }
+    } else {
+        // First line
+        Line* firstLine = Buffer_GetLine(tab->buffer, startY);
+        if (firstLine) {
+            size_t len = Line_Length(firstLine);
+            if (startX < len) {
+                totalLen += (len - startX);
+            }
+        }
+        totalLen++; // for newline
+
+        // Middle lines
+        for (size_t i = startY + 1; i < endY; i++) {
+            Line* midLine = Buffer_GetLine(tab->buffer, i);
+            if (midLine) {
+                totalLen += Line_Length(midLine);
+            }
+            totalLen++; // for newline
+        }
+
+        // Last line
+        Line* lastLine = Buffer_GetLine(tab->buffer, endY);
+        if (lastLine) {
+            size_t len = Line_Length(lastLine);
+            size_t actualX = (endX > len) ? len : endX;
+            totalLen += actualX;
+        }
+    }
+
+    char* result = malloc(totalLen + 1);
+    if (!result)
+        return NULL;
+
+    size_t offset = 0;
+    if (startY == endY) {
+        Line* line = Buffer_GetLine(tab->buffer, startY);
+        if (line) {
+            size_t len = Line_Length(line);
+            if (startX < len) {
+                size_t actualX = (endX > len) ? len : endX;
+                size_t segmentLen = actualX - startX;
+                Slice s = Line_GetTextRange(line, tab->buffer, startX, segmentLen);
+                memcpy(result + offset, s.data, segmentLen);
+                offset += segmentLen;
+            }
+        }
+    } else {
+        // First line
+        Line* firstLine = Buffer_GetLine(tab->buffer, startY);
+        if (firstLine) {
+            size_t len = Line_Length(firstLine);
+            if (startX < len) {
+                size_t segmentLen = len - startX;
+                Slice s = Line_GetTextRange(firstLine, tab->buffer, startX, segmentLen);
+                memcpy(result + offset, s.data, segmentLen);
+                offset += segmentLen;
+            }
+        }
+        result[offset++] = '\n';
+
+        // Middle lines
+        for (size_t i = startY + 1; i < endY; i++) {
+            Line* midLine = Buffer_GetLine(tab->buffer, i);
+            if (midLine) {
+                size_t segmentLen = Line_Length(midLine);
+                Slice s = Line_GetText(midLine, tab->buffer);
+                memcpy(result + offset, s.data, segmentLen);
+                offset += segmentLen;
+            }
+            result[offset++] = '\n';
+        }
+
+        // Last line
+        Line* lastLine = Buffer_GetLine(tab->buffer, endY);
+        if (lastLine) {
+            size_t len = Line_Length(lastLine);
+            size_t actualX = (endX > len) ? len : endX;
+            Slice s = Line_GetTextRange(lastLine, tab->buffer, 0, actualX);
+            memcpy(result + offset, s.data, actualX);
+            offset += actualX;
+        }
+    }
+
+    result[offset] = '\0';
+    return result;
+}
+
+void Tab_CopySelection(Tab* tab)
+{
+    if (!tab->hasSelection)
+        return;
+    size_t startX, startY, endX, endY;
+    Tab_GetSelection(tab, &startX, &startY, &endX, &endY);
+
+    Clipboard_BeginWrite();
+
+    if (startY == endY) {
+        Line* line = Buffer_GetLine(tab->buffer, startY);
+        if (line) {
+            size_t len = Line_Length(line);
+            if (startX < len) {
+                size_t actualX = (endX > len) ? len : endX;
+                size_t segmentLen = actualX - startX;
+                Slice s = Line_GetTextRange(line, tab->buffer, startX, segmentLen);
+                Clipboard_Append((const char*)s.data, segmentLen);
+            }
+        }
+    } else {
+        // First line
+        Line* firstLine = Buffer_GetLine(tab->buffer, startY);
+        if (firstLine) {
+            size_t len = Line_Length(firstLine);
+            if (startX < len) {
+                size_t segmentLen = len - startX;
+                Slice s = Line_GetTextRange(firstLine, tab->buffer, startX, segmentLen);
+                Clipboard_Append((const char*)s.data, segmentLen);
+            }
+        }
+        Clipboard_Append("\n", 1);
+
+        // Middle lines
+        for (size_t i = startY + 1; i < endY; i++) {
+            Line* midLine = Buffer_GetLine(tab->buffer, i);
+            if (midLine) {
+                size_t segmentLen = Line_Length(midLine);
+                Slice s = Line_GetText(midLine, tab->buffer);
+                Clipboard_Append((const char*)s.data, segmentLen);
+            }
+            Clipboard_Append("\n", 1);
+        }
+
+        // Last line
+        Line* lastLine = Buffer_GetLine(tab->buffer, endY);
+        if (lastLine) {
+            size_t len = Line_Length(lastLine);
+            size_t actualX = (endX > len) ? len : endX;
+            Slice s = Line_GetTextRange(lastLine, tab->buffer, 0, actualX);
+            Clipboard_Append((const char*)s.data, actualX);
+        }
+    }
+
+    Clipboard_EndWrite();
+}
+
 void Editor_DeleteSelection(Editor* editor)
 {
     if (Array_Size(&editor->tabs) == 0)
@@ -106,6 +268,8 @@ void Editor_DeleteSelection(Editor* editor)
     tab->cursorX = endX;
     tab->cursorY = endY;
 
+    tab->buffer->history.forceGrouping = true;
+
     while (tab->cursorY > startY || (tab->cursorY == startY && tab->cursorX > startX)) {
         if (tab->cursorX > 0) {
             Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
@@ -118,6 +282,10 @@ void Editor_DeleteSelection(Editor* editor)
             tab->cursorX = previousLength;
         }
     }
+
+    tab->buffer->history.forceGrouping = false;
+    tab->buffer->history.currentGroup = NULL;
+
     tab->hasSelection = false;
     tab->isSaved = false;
 }
@@ -191,6 +359,58 @@ void Editor_ProcessInput(Editor* editor, int input)
         Editor_ToggleFold(editor);
     } else if (input == editor->config.keyToggleAllFolds) {
         Editor_ToggleAllFolds(editor);
+    } else if (input == editor->config.keyCopy) {
+        if (tab->hasSelection) {
+            Tab_CopySelection(tab);
+            Editor_SetStatusMessage(editor, "Copied selection to clipboard");
+        } else {
+            Editor_SetStatusMessage(editor, "No selection to copy");
+        }
+    } else if (input == editor->config.keyCut) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else if (tab->hasSelection) {
+            Tab_CopySelection(tab);
+            Editor_DeleteSelection(editor);
+            Editor_SetStatusMessage(editor, "Cut selection to clipboard");
+            modified = true;
+        } else {
+            Editor_SetStatusMessage(editor, "No selection to cut");
+        }
+    } else if (input == editor->config.keyPaste) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else {
+            Slice s = Clipboard_Read();
+            if (s.size > 0 && s.data) {
+                if (tab->hasSelection) {
+                    Editor_DeleteSelection(editor);
+                }
+                tab->buffer->history.forceGrouping = true;
+                const char* text = (const char*)s.data;
+                size_t len = s.size;
+                for (size_t i = 0; i < len; i++) {
+                    char c = text[i];
+                    if (c == '\r') {
+                        continue;
+                    } else if (c == '\n') {
+                        Buffer_SplitLine(tab->buffer, tab->cursorY, tab->cursorX);
+                        tab->cursorY++;
+                        tab->cursorX = 0;
+                    } else {
+                        Buffer_InsertChar(tab->buffer, tab->cursorY, tab->cursorX, c);
+                        tab->cursorX++;
+                    }
+                }
+                tab->buffer->history.forceGrouping = false;
+                tab->buffer->history.currentGroup = NULL;
+                tab->isSaved = false;
+                modified = true;
+                Editor_SetStatusMessage(editor, "Pasted from clipboard");
+            } else {
+                Editor_SetStatusMessage(editor, "Clipboard is empty");
+            }
+        }
     } else {
         switch (input) {
         case '\t':

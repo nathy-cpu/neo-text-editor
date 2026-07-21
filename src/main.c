@@ -14,6 +14,7 @@
 #include "terminal/terminal.h"
 #include "utils/args.h"
 #include "utils/logger.h"
+#include "utils/clipboard.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,7 @@ static void CleanupTerminal(void)
     Editor_RestoreTerminal(&editor);
     Editor_Free(&editor);
     Logger_Free();
+    Clipboard_Free();
 }
 
 void SignalHandler(int signalNumber)

@@ -105,6 +105,9 @@ void Config_InitDefaults(Config* config)
     config->keyLogs = CTRL_KEY('l');
     config->keyToggleFold = CTRL_KEY('f');
     config->keyToggleAllFolds = ALT_F;
+    config->keyCopy = CTRL_KEY('c');
+    config->keyCut = CTRL_KEY('x');
+    config->keyPaste = CTRL_KEY('v');
 
     config->logFile = strdup("neo.log");
     config->logLevelStr = strdup("INFO");
@@ -543,6 +546,9 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->keyToggleFold = GetLuaTableKeybinding(luaState, "keybindings", "toggle_fold", config->keyToggleFold);
     config->keyToggleAllFolds
         = GetLuaTableKeybinding(luaState, "keybindings", "toggle_all_folds", config->keyToggleAllFolds);
+    config->keyCopy = GetLuaTableKeybinding(luaState, "keybindings", "copy", config->keyCopy);
+    config->keyCut = GetLuaTableKeybinding(luaState, "keybindings", "cut", config->keyCut);
+    config->keyPaste = GetLuaTableKeybinding(luaState, "keybindings", "paste", config->keyPaste);
 
     // Parse languages
     lua_getglobal(luaState, "languages");

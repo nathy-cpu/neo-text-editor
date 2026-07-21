@@ -40,6 +40,9 @@ typedef struct {
     int keyLogs;
     int keyToggleFold;
     int keyToggleAllFolds;
+    int keyCopy;
+    int keyCut;
+    int keyPaste;
 
     // Logging Configuration
     char* logFile;
