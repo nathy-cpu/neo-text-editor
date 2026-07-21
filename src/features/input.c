@@ -498,10 +498,12 @@ void Editor_ProcessInput(Editor* editor, int input)
             break;
 
         case HOME_KEY:
+            tab->hasSelection = false;
             tab->cursorX = 0;
             break;
 
         case END_KEY: {
+            tab->hasSelection = false;
             Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
             if (row)
                 tab->cursorX = Line_Length(row);
@@ -582,6 +584,8 @@ void Editor_ProcessInput(Editor* editor, int input)
         case SHIFT_ARROW_DOWN:
         case SHIFT_ARROW_LEFT:
         case SHIFT_ARROW_RIGHT:
+        case SHIFT_HOME_KEY:
+        case SHIFT_END_KEY:
             if (!tab->hasSelection) {
                 tab->hasSelection = true;
                 tab->selectStartX = tab->cursorX;
@@ -595,6 +599,13 @@ void Editor_ProcessInput(Editor* editor, int input)
                 Editor_MoveCursor(editor, ARROW_LEFT);
             else if (input == SHIFT_ARROW_RIGHT)
                 Editor_MoveCursor(editor, ARROW_RIGHT);
+            else if (input == SHIFT_HOME_KEY)
+                tab->cursorX = 0;
+            else if (input == SHIFT_END_KEY) {
+                Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
+                if (row)
+                    tab->cursorX = Line_Length(row);
+            }
             break;
 
         case CTRL_KEY('l'):

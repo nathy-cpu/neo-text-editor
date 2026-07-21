@@ -45,6 +45,8 @@ enum Key {
 #define SHIFT_ARROW_DOWN  (ARROW_DOWN | KEY_MOD_SHIFT)
 #define SHIFT_ARROW_LEFT  (ARROW_LEFT | KEY_MOD_SHIFT)
 #define SHIFT_ARROW_RIGHT (ARROW_RIGHT | KEY_MOD_SHIFT)
+#define SHIFT_HOME_KEY    (HOME_KEY | KEY_MOD_SHIFT)
+#define SHIFT_END_KEY     (END_KEY | KEY_MOD_SHIFT)
 #define ALT_S             ('s' | KEY_MOD_ALT)
 #define ALT_F             ('f' | KEY_MOD_ALT)
 
