@@ -75,8 +75,14 @@ bool CliOptions_Parse(CliOptions* options, int argc, char* argv[])
 
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] == '+' && isdigit((unsigned char)argv[i][1])) {
-            // Parse +line[:col] without mutating read-only argv strings
+            // Parse +line[:col] without mutating read-only argv strings.
+            // Reject over-long arguments instead of silently truncating them
+            // into a wrong (or dropped) jump target.
             char temp[128];
+            if (strlen(argv[i]) >= sizeof(temp)) {
+                fprintf(stderr, "Error: line jump argument too long: %.20s...\n", argv[i]);
+                return false;
+            }
             strncpy(temp, argv[i], sizeof(temp) - 1);
             temp[sizeof(temp) - 1] = '\0';
             char* colon = strchr(temp, ':');
