@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include "../utils/logger.h"
+#include "terminal_internal.h"
 #include <ctype.h>
 #include <errno.h>
 #include <signal.h>
@@ -12,6 +13,28 @@
 #include <unistd.h>
 
 volatile sig_atomic_t windowResized = 0;
+volatile sig_atomic_t terminationRequested = 0;
+
+// Saved by Terminal_SetupAsyncRestore for async-signal-safe restoration.
+static struct termios asyncRestoreTermios;
+static volatile sig_atomic_t asyncRestoreArmed = 0;
+
+void Terminal_SetupAsyncRestore(const struct termios* originalTermios)
+{
+    asyncRestoreTermios = *originalTermios;
+    asyncRestoreArmed = 1;
+}
+
+void Terminal_AsyncRestore(void)
+{
+    // Only async-signal-safe calls: write() and tcsetattr() (POSIX AS-safe).
+    if (!asyncRestoreArmed)
+        return;
+    static const char exitSequence[] = "\x1b[>4;0m\x1b[<1u\x1b[?25h\x1b[0 q\x1b[?1049l";
+    ssize_t ignored = write(STDOUT_FILENO, exitSequence, sizeof(exitSequence) - 1);
+    (void)ignored;
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &asyncRestoreTermios);
+}
 
 bool Terminal_EnableRawMode(Terminal* terminal)
 {
@@ -29,6 +52,7 @@ bool Terminal_EnableRawMode(Terminal* terminal)
         return false;
     }
     terminal->termiosSaved = true;
+    Terminal_SetupAsyncRestore(&terminal->originalTermios);
 
     rawTermios = terminal->originalTermios;
     rawTermios.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
@@ -81,8 +105,12 @@ void Terminal_ClearScreen(const Terminal* terminal)
     write(STDOUT_FILENO, clear, strlen(clear));
 }
 
-static int GetModifierFlags(int pm)
+int TerminalGetModifierFlags(int pm)
 {
+    // Modifier parameters are 1+bitmask; 0 (empty/absent param) and 1 both
+    // mean "no modifiers". Without this, pm=0 underflows to -1 = ALL flags.
+    if (pm <= 1)
+        return 0;
     int flags = 0;
     int val = pm - 1;
     if (val & 1)
@@ -94,49 +122,44 @@ static int GetModifierFlags(int pm)
     return flags;
 }
 
-static int MapCharCodeToKey(int char_code)
+int TerminalMapCharCodeToKey(int char_code)
 {
+    // Kitty keyboard protocol functional keys (CSI u private-use codes).
+    // Letter codes like 'H'/'F' must NOT appear here: they are character
+    // codes in this context (CSI final-byte Home/End dispatch is separate),
+    // and mapping them hijacked Shift+H / Alt+F as navigation keys.
     switch (char_code) {
-    case 'H':
-        return HOME_KEY;
-    case 'F':
-        return END_KEY;
-    case 0xE010:
-        return HOME_KEY;
-    case 0xE011:
-        return END_KEY;
-    case 0xE012:
+    case 57414: // KP_ENTER
+        return '\r';
+    case 57417:
         return ARROW_LEFT;
-    case 0xE013:
-        return ARROW_UP;
-    case 0xE014:
+    case 57418:
         return ARROW_RIGHT;
-    case 0xE015:
+    case 57419:
+        return ARROW_UP;
+    case 57420:
         return ARROW_DOWN;
-    case 0xE016:
+    case 57421:
         return PAGE_UP;
-    case 0xE017:
+    case 57422:
         return PAGE_DOWN;
-    case 0xE018:
+    case 57423:
+        return HOME_KEY;
+    case 57424:
+        return END_KEY;
+    case 57425:
         return INSERT_KEY;
-    case 0xE019:
+    case 57426:
         return DELETE_KEY;
-    case 0xE020:
-        return KEY_F1;
-    case 0xE021:
-        return KEY_F2;
-    case 0xE022:
-        return KEY_F3;
-    case 0xE023:
-        return KEY_F4;
-    case 0xE024:
-        return KEY_F5;
     default:
+        // Lock keys (57358-57363), F13+ (57376+), and other unassigned
+        // functional codes intentionally fall through unmapped; the input
+        // layer ignores values that match no known key.
         return char_code;
     }
 }
 
-static int MapModifiedKeyCode(int char_code, int mod_flags)
+int TerminalMapModifiedKeyCode(int char_code, int mod_flags)
 {
     if (mod_flags & KEY_MOD_CTRL) {
         if (char_code >= 'a' && char_code <= 'z') {
@@ -147,40 +170,82 @@ static int MapModifiedKeyCode(int char_code, int mod_flags)
         }
     }
 
-    return MapCharCodeToKey(char_code) | mod_flags;
+    int mapped = TerminalMapCharCodeToKey(char_code);
+
+    // Shift-only printable characters are TEXT, not chords: xterm
+    // (modifyOtherKeys) reports the already-shifted keysym ('H', '!'),
+    // kitty (CSI u) reports the base key ('h') plus the shift modifier.
+    // Return the plain shifted character with NO flag -- `'H' | SHIFT` is
+    // >= 0x10000 and gets dropped by the printable-input filter, making
+    // capitals untypeable.
+    if (mod_flags == KEY_MOD_SHIFT && mapped == char_code && char_code >= 32 && char_code != 127 && char_code < 57344) {
+        if (char_code >= 'a' && char_code <= 'z')
+            return toupper(char_code);
+        return char_code;
+    }
+
+    return mapped | mod_flags;
+}
+
+// Reads one continuation byte of an escape sequence. Retries on EINTR so a
+// signal mid-sequence (e.g. a resize while holding an arrow key) cannot abort
+// the parse and leave the tail bytes to be typed into the document as text
+// (the pending flag stays set; the NEXT ReadKey call reports the event).
+// Returns 1 on byte, 0 on VTIME timeout/EOF/EAGAIN, -1 on hard error.
+static int ReadByteRetry(char* out)
+{
+    for (;;) {
+        ssize_t bytesRead = read(STDIN_FILENO, out, 1);
+        if (bytesRead == 1)
+            return 1;
+        if (bytesRead == 0)
+            return 0;
+        if (errno == EINTR)
+            continue;
+        if (errno == EAGAIN)
+            return 0;
+        return -1;
+    }
 }
 
 int ReadKey(void)
 {
     int readSize;
     char input;
-    while ((readSize = read(STDIN_FILENO, &input, 1)) != 1) {
-        if (readSize == -1) {
-            if (errno == EINTR) {
-                if (windowResized) {
-                    windowResized = 0;
-                    return RESIZE_EVENT;
-                }
-                continue;
-            }
-            if (errno != EAGAIN) {
-                write(STDOUT_FILENO, "\x1b[2J", 4);
-                write(STDOUT_FILENO, "\x1b[H", 3);
-                perror("read");
-                exit(1);
-            }
+    for (;;) {
+        // Check pending events on EVERY iteration -- not just after EINTR.
+        // With VMIN=0/VTIME=1 the read wakes every 100ms, so a signal that
+        // landed while we were NOT blocked in read() (e.g. during a redraw)
+        // is still noticed promptly.
+        if (terminationRequested) {
+            terminationRequested = 0;
+            return TERMINATE_EVENT;
         }
+        if (windowResized) {
+            windowResized = 0;
+            return RESIZE_EVENT;
+        }
+        readSize = read(STDIN_FILENO, &input, 1);
+        if (readSize == 1)
+            break;
+        if (readSize == -1 && errno != EINTR && errno != EAGAIN) {
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            perror("read");
+            exit(1);
+        }
+        // readSize == 0 (VTIME timeout) or EINTR/EAGAIN: loop re-checks flags.
     }
 
     if (input == '\x1b') {
         char seq0;
-        if (read(STDIN_FILENO, &seq0, 1) != 1) {
+        if (ReadByteRetry(&seq0) != 1) {
             return '\x1b';
         }
 
         if (seq0 == 'O') {
             char seq1;
-            if (read(STDIN_FILENO, &seq1, 1) != 1) {
+            if (ReadByteRetry(&seq1) != 1) {
                 return '\x1b';
             }
             switch (seq1) {
@@ -207,7 +272,7 @@ int ReadKey(void)
 
             while (seq_len < (int)sizeof(seq) - 1) {
                 char c;
-                if (read(STDIN_FILENO, &c, 1) != 1) {
+                if (ReadByteRetry(&c) != 1) {
                     return '\x1b';
                 }
                 seq[seq_len++] = c;
@@ -228,7 +293,15 @@ int ReadKey(void)
 
             for (int i = 0; i < seq_len - 1; i++) {
                 if (seq[i] >= '0' && seq[i] <= '9') {
-                    params[num_params] = params[num_params] * 10 + (seq[i] - '0');
+                    // Clamp: unbounded accumulation is signed-overflow UB on
+                    // long digit runs (e.g. pasted garbage). 65535 exceeds
+                    // every assigned keycode/modifier, so clamped values just
+                    // fail to match anything.
+                    if (params[num_params] <= 6553) {
+                        params[num_params] = params[num_params] * 10 + (seq[i] - '0');
+                    } else {
+                        params[num_params] = 65535;
+                    }
                     has_param = true;
                 } else if (seq[i] == ';' || seq[i] == ':') {
                     if (num_params < 7) {
@@ -246,11 +319,11 @@ int ReadKey(void)
                         // modifyOtherKeys format: CSI 27 ; <modifier> ; <char_code> ~
                         int mod_flags = 0;
                         if (num_params >= 2) {
-                            mod_flags = GetModifierFlags(params[1]);
+                            mod_flags = TerminalGetModifierFlags(params[1]);
                         }
                         int char_code = (num_params >= 3) ? params[2] : 0;
 
-                        return MapModifiedKeyCode(char_code, mod_flags);
+                        return TerminalMapModifiedKeyCode(char_code, mod_flags);
                     } else {
                         int base_key = 0;
                         switch (params[0]) {
@@ -301,7 +374,7 @@ int ReadKey(void)
                         }
                         int mod_flags = 0;
                         if (num_params >= 2) {
-                            mod_flags = GetModifierFlags(params[1]);
+                            mod_flags = TerminalGetModifierFlags(params[1]);
                         }
                         return base_key | mod_flags;
                     }
@@ -313,11 +386,11 @@ int ReadKey(void)
                     int char_code = params[0];
                     int mod_flags = 0;
                     if (num_params >= 2) {
-                        mod_flags = GetModifierFlags(params[1]);
+                        mod_flags = TerminalGetModifierFlags(params[1]);
                     }
                     LOG_DEBUG("CSI u: char_code=%d(0x%x) raw_mod=%d mod_flags=%d", char_code, char_code,
                         num_params >= 2 ? params[1] : 0, mod_flags);
-                    int result = MapModifiedKeyCode(char_code, mod_flags);
+                    int result = TerminalMapModifiedKeyCode(char_code, mod_flags);
                     LOG_DEBUG("CSI u result: %d", result);
                     return result;
                 }
@@ -339,14 +412,14 @@ int ReadKey(void)
                 }
                 int mod_flags = 0;
                 if (num_params >= 2 && params[0] == 1) {
-                    mod_flags = GetModifierFlags(params[1]);
+                    mod_flags = TerminalGetModifierFlags(params[1]);
                 }
                 return base_key | mod_flags;
             } else if (final_char == 'H' || final_char == 'F') {
                 int base_key = (final_char == 'H') ? HOME_KEY : END_KEY;
                 int mod_flags = 0;
                 if (num_params >= 2 && params[0] == 1) {
-                    mod_flags = GetModifierFlags(params[1]);
+                    mod_flags = TerminalGetModifierFlags(params[1]);
                 }
                 int result = base_key | mod_flags;
                 LOG_DEBUG("CSI %c: raw_seq=\"%.*s\" num_params=%d params[0]=%d params[1]=%d mod_flags=%d result=%d",
@@ -375,7 +448,7 @@ int ReadKey(void)
                 }
                 int mod_flags = 0;
                 if (num_params >= 2 && params[0] == 1) {
-                    mod_flags = GetModifierFlags(params[1]);
+                    mod_flags = TerminalGetModifierFlags(params[1]);
                 }
                 return base_key | mod_flags;
             }
@@ -390,7 +463,9 @@ int ReadKey(void)
         }
         return base | KEY_MOD_ALT;
     } else {
-        return input;
+        // Bytes >= 0x80 (UTF-8 leads/continuations) must come back as
+        // positive values, not sign-extended negatives.
+        return (unsigned char)input;
     }
 }
 
@@ -436,12 +511,4 @@ bool Terminal_GetWindowSize(size_t* rows, size_t* columns)
         *rows = window.ws_row;
         return true;
     }
-}
-
-void Terminal_HandleSignal(Terminal* terminal, int signalNumber)
-{
-    if (terminal)
-        Terminal_Restore(terminal);
-    signal(signalNumber, SIG_DFL);
-    raise(signalNumber);
 }

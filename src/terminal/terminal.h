@@ -36,7 +36,8 @@ enum Key {
     KEY_F9,
     KEY_F10,
     KEY_F11,
-    KEY_F12
+    KEY_F12,
+    TERMINATE_EVENT // SIGINT/SIGTERM arrived: main loop should exit cleanly
 };
 
 #define CTRL_ARROW_LEFT (ARROW_LEFT | KEY_MOD_CTRL)
@@ -72,6 +73,7 @@ enum Key {
 #define ALT_DELETE (DELETE_KEY | KEY_MOD_ALT)
 
 extern volatile sig_atomic_t windowResized;
+extern volatile sig_atomic_t terminationRequested;
 
 // Encapsulates terminal state
 typedef struct Terminal {
@@ -116,6 +118,14 @@ bool Terminal_GetCursorPosition(size_t* rows, size_t* columns);
 bool Terminal_GetWindowSize(size_t* rows, size_t* columns);
 
 /**
- * @brief Signal handler callback for graceful terminal cleanup on exit/crash.
+ * @brief Remembers the original termios for Terminal_AsyncRestore. Called by
+ * Terminal_EnableRawMode.
  */
-void Terminal_HandleSignal(Terminal* terminal, int signalNumber);
+void Terminal_SetupAsyncRestore(const struct termios* originalTermios);
+
+/**
+ * @brief Async-signal-safe terminal restore: write()s the exit escape
+ * sequence and tcsetattr()s the saved termios. Safe to call from fatal
+ * signal handlers (no stdio, no allocation).
+ */
+void Terminal_AsyncRestore(void);

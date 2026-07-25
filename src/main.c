@@ -11,48 +11,24 @@
 #include "features/config.h"
 #include "features/editor.h"
 #include "features/input.h"
+#include "terminal/signals.h"
 #include "terminal/terminal.h"
 #include "utils/args.h"
 #include "utils/clipboard.h"
 #include "utils/logger.h"
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static Editor editor;
 
-static void CleanupTerminal(void)
-{
-    Editor_RestoreTerminal(&editor);
-    Editor_Free(&editor);
-    Logger_Free();
-    Clipboard_Free();
-}
-
-void SignalHandler(int signalNumber)
-{
-    if (signalNumber == SIGWINCH) {
-        windowResized = 1;
-    } else {
-        exit(0); // atexit(CleanupTerminal) will fire
-    }
-}
-
 int main(int argc, char* argv[])
 {
     // Set up signal handlers
-    signal(SIGINT, SignalHandler);
-    signal(SIGTERM, SignalHandler);
+    SignalsInstall(&editor);
 
     // Initial default logger setup
     Logger_Init("neo.log", LOG_LEVEL_INFO, false, true, 1000);
-
-    struct sigaction sa;
-    sa.sa_handler = SignalHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0; // Explicitly NO SA_RESTART so read() is interrupted by SIGWINCH
-    sigaction(SIGWINCH, &sa, NULL);
 
     // Parse CLI options
     CliOptions options;
@@ -82,7 +58,11 @@ int main(int argc, char* argv[])
 
     // Apply CLI overrides
     if (options.overrideTabSize != -1) {
-        editor.config.tabSize = options.overrideTabSize;
+        if (options.overrideTabSize >= 1 && options.overrideTabSize <= 16) {
+            editor.config.tabSize = options.overrideTabSize;
+        } else {
+            fprintf(stderr, "Ignoring invalid --tab-size %d (must be 1..16)\n", options.overrideTabSize);
+        }
     }
     if (options.overrideShowLineNumbers != -1) {
         editor.config.showLineNumbers = (options.overrideShowLineNumbers == 1);
@@ -126,7 +106,7 @@ int main(int argc, char* argv[])
         return 1;
     }
     // Register cleanup to run on any exit() — covers Ctrl-Q, signals, and future paths
-    atexit(CleanupTerminal);
+    atexit(SignalsCleanup);
 
     // Load files
     if (options.fileCount > 0) {
