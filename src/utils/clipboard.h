@@ -2,6 +2,18 @@
 
 #include "slice.h"
 
+struct Platform;
+
+/**
+ * @brief Injects the platform used for system-clipboard access.
+ *
+ * The clipboard is a process-global singleton reached from functions that
+ * never see an Editor*, so the platform is injected here instead of being
+ * threaded through every call chain. Defaults to Platform_Default() when
+ * never set.
+ */
+void Clipboard_SetPlatform(const struct Platform* platform);
+
 /**
  * @brief Writes text to the system clipboard (if available) and internal clipboard.
  * @param text The null-terminated string to write.

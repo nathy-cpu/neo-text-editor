@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../platform/platform.h"
 #include "../terminal/terminal.h"
 #include "../utils/array.h"
 #include "config.h"
@@ -9,6 +10,9 @@
 
 // Editor - Main application state
 typedef struct Editor {
+    // Gateway to the outside world (terminal I/O, clipboard); tests inject fakes
+    const Platform* platform;
+
     // Terminal state
     Terminal terminal;
     size_t screenRows;
@@ -31,6 +35,11 @@ typedef struct Editor {
     // Logs State
     bool isLogsActive;
     size_t logsSelectedIndex;
+
+    // Destructive-action confirmation: the key whose warning is pending.
+    // Confirmation fires only when the SAME key is pressed twice in a row --
+    // quit and close-tab must not satisfy each other's warnings.
+    int pendingConfirmKey;
 
     // Configuration
     Config config;

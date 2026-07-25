@@ -9,6 +9,7 @@
 #endif
 
 #include "clipboard.h"
+#include "../platform/platform.h"
 #include "array.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +18,16 @@
 static Array internalClipboard;
 static Array tempClipboardBuffer;
 static bool clipboardInitialized = false;
+static const Platform* clipboardPlatform = NULL;
+
+void Clipboard_SetPlatform(const struct Platform* platform) { clipboardPlatform = platform; }
+
+static const Platform* ClipboardPlatform(void)
+{
+    if (!clipboardPlatform)
+        clipboardPlatform = Platform_Default();
+    return clipboardPlatform;
+}
 
 static void EnsureClipboardInitialized(void)
 {
@@ -53,30 +64,8 @@ void Clipboard_EndWrite(void)
     const char* text = (const char*)internalClipboard.data;
     size_t len = internalClipboard.size;
 
-    // Try wl-copy (Wayland)
-    FILE* pipe = popen("wl-copy 2>/dev/null", "w");
-    if (pipe) {
-        fwrite(text, 1, len, pipe);
-        if (pclose(pipe) == 0) {
-            return;
-        }
-    }
-
-    // Try xclip (X11)
-    pipe = popen("xclip -selection clipboard 2>/dev/null", "w");
-    if (pipe) {
-        fwrite(text, 1, len, pipe);
-        if (pclose(pipe) == 0) {
-            return;
-        }
-    }
-
-    // Try xsel (X11 fallback)
-    pipe = popen("xsel --clipboard --input 2>/dev/null", "w");
-    if (pipe) {
-        fwrite(text, 1, len, pipe);
-        pclose(pipe);
-    }
+    const Platform* platform = ClipboardPlatform();
+    platform->clipboardCopy(platform->context, text, len);
 }
 
 void Clipboard_Write(const char* text)
@@ -92,57 +81,9 @@ Slice Clipboard_Read(void)
 {
     EnsureClipboardInitialized();
 
-    bool systemReadSuccess = false;
     Array_Clear(&tempClipboardBuffer);
-
-    // Try wl-paste (Wayland)
-    FILE* pipe = popen("wl-paste -n 2>/dev/null", "r");
-    if (pipe) {
-        char chunk[512];
-        size_t bytesRead;
-        while ((bytesRead = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
-            Array_Append(&tempClipboardBuffer, chunk, bytesRead);
-        }
-        if (pclose(pipe) == 0 && Array_Size(&tempClipboardBuffer) > 0) {
-            systemReadSuccess = true;
-        } else {
-            Array_Clear(&tempClipboardBuffer);
-        }
-    }
-
-    // Try xclip (X11)
-    if (!systemReadSuccess) {
-        pipe = popen("xclip -selection clipboard -o 2>/dev/null", "r");
-        if (pipe) {
-            char chunk[512];
-            size_t bytesRead;
-            while ((bytesRead = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
-                Array_Append(&tempClipboardBuffer, chunk, bytesRead);
-            }
-            if (pclose(pipe) == 0 && Array_Size(&tempClipboardBuffer) > 0) {
-                systemReadSuccess = true;
-            } else {
-                Array_Clear(&tempClipboardBuffer);
-            }
-        }
-    }
-
-    // Try xsel (X11 fallback)
-    if (!systemReadSuccess) {
-        pipe = popen("xsel --clipboard --output 2>/dev/null", "r");
-        if (pipe) {
-            char chunk[512];
-            size_t bytesRead;
-            while ((bytesRead = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
-                Array_Append(&tempClipboardBuffer, chunk, bytesRead);
-            }
-            if (pclose(pipe) == 0 && Array_Size(&tempClipboardBuffer) > 0) {
-                systemReadSuccess = true;
-            } else {
-                Array_Clear(&tempClipboardBuffer);
-            }
-        }
-    }
+    const Platform* platform = ClipboardPlatform();
+    bool systemReadSuccess = platform->clipboardPaste(platform->context, &tempClipboardBuffer);
 
     if (systemReadSuccess) {
         // Overwrite internalClipboard with tempClipboardBuffer contents
