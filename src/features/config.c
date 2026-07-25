@@ -298,16 +298,20 @@ static char** GetLuaStringArray(lua_State* luaState, int stackIndex)
     char** stringArray = malloc((count + 1) * sizeof(char*));
     if (!stringArray)
         return NULL;
+    // Compact with a write cursor: a non-string element must not leave a NULL
+    // hole mid-array -- consumers stop at the first NULL, silently dropping
+    // (and leaking) every entry after the hole.
+    size_t writeIndex = 0;
     for (size_t index = 1; index <= count; index++) {
         lua_rawgeti(luaState, stackIndex, index);
         if (lua_isstring(luaState, -1)) {
-            stringArray[index - 1] = strdup(lua_tostring(luaState, -1));
+            stringArray[writeIndex++] = strdup(lua_tostring(luaState, -1));
         } else {
-            stringArray[index - 1] = NULL;
+            LOG_WARN("Config: ignoring non-string element #%zu in string array", index);
         }
         lua_pop(luaState, 1);
     }
-    stringArray[count] = NULL;
+    stringArray[writeIndex] = NULL;
     return stringArray;
 }
 
@@ -347,6 +351,26 @@ static int GetLuaInt(lua_State* luaState, const char* variableName, int defaultI
     }
     lua_pop(luaState, 1);
     return integerValue;
+}
+
+/**
+ * @brief Like GetLuaInt but REJECTS out-of-range values: the fallback is kept
+ * and the user gets a prominent error (status message + log). Invalid config
+ * must never crash or silently distort the editor (e.g. tab_size = 0 was a
+ * division-by-zero in the renderer).
+ */
+static int GetValidatedInt(
+    lua_State* luaState, Editor* editor, const char* variableName, int fallback, int minimum, int maximum)
+{
+    int value = GetLuaInt(luaState, variableName, fallback);
+    if (value < minimum || value > maximum) {
+        LOG_ERROR(
+            "Config: %s=%d is invalid (must be %d..%d); keeping %d", variableName, value, minimum, maximum, fallback);
+        Editor_SetStatusMessage(editor, "Config error: %s=%d invalid (must be %d..%d); using %d", variableName, value,
+            minimum, maximum, fallback);
+        return fallback;
+    }
+    return value;
 }
 
 /**
@@ -422,17 +446,20 @@ static char* GetLuaTableColor(lua_State* luaState, const char* tableName, const 
 {
     lua_getglobal(luaState, tableName);
     char* colorValue = NULL;
-    const char* stringValue = defaultColorValue;
     if (lua_istable(luaState, -1)) {
         lua_getfield(luaState, -1, tableKey);
         if (lua_isstring(luaState, -1)) {
-            stringValue = lua_tostring(luaState, -1);
+            // strdup while the value is still anchored on the Lua stack: for
+            // numeric values lua_tostring returns a coerced string owned only
+            // by this stack slot, so copying after the pop reads memory the
+            // GC is free to reclaim.
+            colorValue = strdup(lua_tostring(luaState, -1));
         }
         lua_pop(luaState, 1);
     }
     lua_pop(luaState, 1);
-    if (stringValue) {
-        colorValue = strdup(stringValue);
+    if (!colorValue && defaultColorValue) {
+        colorValue = strdup(defaultColorValue);
     }
     return colorValue;
 }
@@ -477,7 +504,10 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     luaL_openlibs(luaState);
 
     if (luaL_dofile(luaState, resolvedConfigPath) != LUA_OK) {
+        // error() can raise a non-string value, for which lua_tostring returns NULL.
         const char* errorMessage = lua_tostring(luaState, -1);
+        if (!errorMessage)
+            errorMessage = "(non-string error value)";
         LOG_ERROR("Lua config file execution failed: %s", errorMessage);
         Editor_SetStatusMessage(editor, "Lua Config Error: %.100s", errorMessage);
         lua_close(luaState);
@@ -487,7 +517,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     Config* config = &editor->config;
 
     // Parse scalar options
-    config->tabSize = GetLuaInt(luaState, "tab_size", config->tabSize);
+    config->tabSize = GetValidatedInt(luaState, editor, "tab_size", config->tabSize, 1, 16);
     config->showLineNumbers = GetLuaBool(luaState, "show_line_numbers", config->showLineNumbers);
     config->wrapLines = GetLuaBool(luaState, "wrap_lines", config->wrapLines);
     config->wrapDisableLineThreshold

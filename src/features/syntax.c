@@ -1,6 +1,7 @@
 #include "syntax.h"
 #include "../core/buffer.h"
 #include "../utils/logger.h"
+#include "../utils/utf8.h"
 #include "tab.h"
 #include <assert.h>
 #include <ctype.h>
@@ -37,7 +38,20 @@ char* GetSyntaxColor(const Config* config, HighlightType highlightType)
     }
 }
 
-static bool IsSeparator(int c) { return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];{}!&|^?:", c) != NULL; }
+static bool IsSeparator(char c)
+{
+    return ByteIsSpace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];{}!&|^?:", (unsigned char)c) != NULL;
+}
+
+// Bounded token lookahead: never reads past `length`, which also guarantees
+// any following memset over [pos, pos + needleLength) stays inside the styles
+// array (sized to `length`). The line text is a Slice into a shared scratch
+// buffer with NO terminator and stale bytes beyond `length` -- an unbounded
+// strncmp both overreads and false-matches on those stale bytes.
+static bool MatchAt(const char* text, size_t length, size_t pos, const char* needle, size_t needleLength)
+{
+    return needleLength > 0 && pos + needleLength <= length && memcmp(text + pos, needle, needleLength) == 0;
+}
 
 static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, bool* inMultiLineComment)
 {
@@ -69,9 +83,9 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
     if (syntax == NULL)
         return;
 
-    int singleCommentLength = syntax->singleLineCommentStart ? strlen(syntax->singleLineCommentStart) : 0;
-    int multiCommentStartLength = syntax->multiLineCommentStart ? strlen(syntax->multiLineCommentStart) : 0;
-    int multiCommentEndLength = syntax->multiLineCommentEnd ? strlen(syntax->multiLineCommentEnd) : 0;
+    size_t singleCommentLength = syntax->singleLineCommentStart ? strlen(syntax->singleLineCommentStart) : 0;
+    size_t multiCommentStartLength = syntax->multiLineCommentStart ? strlen(syntax->multiLineCommentStart) : 0;
+    size_t multiCommentEndLength = syntax->multiLineCommentEnd ? strlen(syntax->multiLineCommentEnd) : 0;
 
     bool previousSeparator = true;
     int inString = 0;
@@ -87,12 +101,14 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
                 if (inString && (inSingleString ? c == '\'' : c == '"')) {
                     styles[i] = inSingleString ? HIGHLIGHT_CHARACTER : HIGHLIGHT_STRING;
                     inString = 0;
+                    previousSeparator = false; // a closing quote is not a separator
                     i++;
                     continue;
                 } else if (!inString) {
                     inString = 1;
                     inSingleString = (c == '\'');
                     styles[i] = inSingleString ? HIGHLIGHT_CHARACTER : HIGHLIGHT_STRING;
+                    previousSeparator = false;
                     i++;
                     continue;
                 }
@@ -110,37 +126,40 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
             continue;
         }
 
-        // Single line comment
-        if (singleCommentLength && !(*inMultiLineComment)) {
-            if (!strncmp(&text[i], syntax->singleLineCommentStart, singleCommentLength)) {
-                memset(&styles[i], HIGHLIGHT_COMMENT, length - i);
-                break;
+        // Inside a multi-line comment: only its end marker matters here.
+        if (multiCommentStartLength && multiCommentEndLength && *inMultiLineComment) {
+            styles[i] = HIGHLIGHT_COMMENT;
+            if (MatchAt(text, length, i, syntax->multiLineCommentEnd, multiCommentEndLength)) {
+                memset(&styles[i], HIGHLIGHT_COMMENT, multiCommentEndLength);
+                i += multiCommentEndLength;
+                *inMultiLineComment = false;
+                previousSeparator = true;
+                continue;
             }
+            i++;
+            continue;
         }
 
-        // Multi-line comment
-        if (multiCommentStartLength && multiCommentEndLength) {
-            if (*inMultiLineComment) {
-                styles[i] = HIGHLIGHT_COMMENT;
-                if (!strncmp(&text[i], syntax->multiLineCommentEnd, multiCommentEndLength)) {
-                    memset(&styles[i], HIGHLIGHT_COMMENT, multiCommentEndLength);
-                    i += multiCommentEndLength;
-                    *inMultiLineComment = false;
-                    previousSeparator = true;
-                    continue;
-                }
-                i++;
-                continue;
-            } else if (!strncmp(&text[i], syntax->multiLineCommentStart, multiCommentStartLength)) {
-                memset(&styles[i], HIGHLIGHT_COMMENT, multiCommentStartLength);
-                i += multiCommentStartLength;
-                *inMultiLineComment = true;
-                continue;
-            }
+        // Multi-line comment start is checked BEFORE the single-line marker:
+        // for languages where the single-line marker prefixes the multi-line
+        // one (Lua: "--" vs "--[["), the longer match must win or block
+        // comments never open.
+        if (multiCommentStartLength && multiCommentEndLength
+            && MatchAt(text, length, i, syntax->multiLineCommentStart, multiCommentStartLength)) {
+            memset(&styles[i], HIGHLIGHT_COMMENT, multiCommentStartLength);
+            i += multiCommentStartLength;
+            *inMultiLineComment = true;
+            continue;
+        }
+
+        // Single line comment
+        if (singleCommentLength && MatchAt(text, length, i, syntax->singleLineCommentStart, singleCommentLength)) {
+            memset(&styles[i], HIGHLIGHT_COMMENT, length - i);
+            break;
         }
 
         // Numbers
-        if ((isdigit(c) && (previousSeparator || (i > 0 && styles[i - 1] == HIGHLIGHT_NUMBER)))
+        if ((ByteIsDigit(c) && (previousSeparator || (i > 0 && styles[i - 1] == HIGHLIGHT_NUMBER)))
             || (c == '.' && i > 0 && styles[i - 1] == HIGHLIGHT_NUMBER)) {
             styles[i] = HIGHLIGHT_NUMBER;
             previousSeparator = false;
@@ -153,8 +172,8 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
                 bool matched = false;
                 if (syntax->keywords) {
                     for (int j = 0; syntax->keywords[j]; j++) {
-                        int keywordLength = strlen(syntax->keywords[j]);
-                        if (!strncmp(&text[i], syntax->keywords[j], keywordLength)
+                        size_t keywordLength = strlen(syntax->keywords[j]);
+                        if (MatchAt(text, length, i, syntax->keywords[j], keywordLength)
                             && (i + keywordLength == length || IsSeparator(text[i + keywordLength]))) {
                             memset(&styles[i], HIGHLIGHT_KEYWORD, keywordLength);
                             i += keywordLength;
@@ -165,8 +184,8 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
                 }
                 if (!matched && syntax->types) {
                     for (int j = 0; syntax->types[j]; j++) {
-                        int keywordLength = strlen(syntax->types[j]);
-                        if (!strncmp(&text[i], syntax->types[j], keywordLength)
+                        size_t keywordLength = strlen(syntax->types[j]);
+                        if (MatchAt(text, length, i, syntax->types[j], keywordLength)
                             && (i + keywordLength == length || IsSeparator(text[i + keywordLength]))) {
                             memset(&styles[i], HIGHLIGHT_TYPE, keywordLength);
                             i += keywordLength;
@@ -183,7 +202,7 @@ static void UpdateLineSyntax(Line* line, struct Buffer* buffer, Syntax* syntax, 
         }
 
         previousSeparator = IsSeparator(c);
-        if (previousSeparator && !isspace(c) && c != '\0' && styles[i] == HIGHLIGHT_NORMAL) {
+        if (previousSeparator && !ByteIsSpace(c) && c != '\0' && styles[i] == HIGHLIGHT_NORMAL) {
             styles[i] = HIGHLIGHT_SYMBOL;
         }
         i++;
