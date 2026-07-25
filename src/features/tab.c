@@ -29,17 +29,20 @@ static void InitDefaultTestConfig(void)
 }
 
 // Initialize tab with default values
-void Tab_Init(Tab* tab)
+bool Tab_Init(Tab* tab)
 {
     assert(tab != NULL);
 
     InitDefaultTestConfig();
 
+    // Zero everything first so a failed init never leaves uninitialized
+    // pointers (filename/visualRows) for Tab_Free or the renderer to trip on.
+    memset(tab, 0, sizeof(Tab));
+
     // Initialize buffer
     tab->buffer = Buffer_New();
     if (!tab->buffer) {
-        // Handle allocation failure
-        return;
+        return false;
     }
 
     tab->syntax = NULL;
@@ -74,6 +77,8 @@ void Tab_Init(Tab* tab)
 
     tab->config = &defaultTestConfig;
     tab->buffer->history.undoLimit = tab->config->undoLimit;
+
+    return true;
 }
 
 // Free all resources

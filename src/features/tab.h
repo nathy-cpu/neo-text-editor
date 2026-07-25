@@ -48,6 +48,7 @@ typedef struct {
     size_t visualRowsFoldedCount; // Buffer foldedLineCount visualRows was last built for
     size_t visualRowsUsableColumns; // usableColumns visualRows was last built for
     size_t visualRowsLineCount; // Buffer line count visualRows was last built for
+    size_t visualRowsRebuildSeq; // Buffer rebuildSeq visualRows was last built for
 
     // True if this tab's line count exceeded config->wrapDisableLineThreshold
     // at load time, overriding config->wrapLines to false for this tab only.
@@ -62,7 +63,9 @@ struct Editor; // Forward declaration
 /**
  * @brief Initializes a new Tab.
  */
-void Tab_Init(Tab* tab);
+/** @return False when buffer allocation fails; the Tab is left safely zeroed
+ *  and must not be used. */
+bool Tab_Init(Tab* tab);
 
 /**
  * @brief Frees the resources associated with a Tab.

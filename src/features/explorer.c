@@ -227,7 +227,8 @@ void Editor_ProcessExplorerInput(Editor* editor, int input)
         }
         break;
     case ARROW_DOWN:
-        if (editor->explorerSelectedIndex < numItems - 1) {
+        // numItems can be 0 (unreadable cwd): numItems - 1 would wrap to SIZE_MAX.
+        if (numItems > 0 && editor->explorerSelectedIndex < numItems - 1) {
             editor->explorerSelectedIndex++;
         }
         break;

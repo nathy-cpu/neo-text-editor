@@ -12,6 +12,9 @@
 #include "../core/buffer.h"
 #include "../core/line.h"
 #include "../terminal/terminal.h"
+#include "../utils/clipboard.h"
+#include "../utils/logger.h"
+#include "../utils/utf8.h"
 #include "explorer.h"
 #include "logs_view.h"
 #include "syntax.h"
@@ -46,6 +49,8 @@ void Editor_Init(Editor* editor)
 {
     assert(editor != NULL);
     memset(editor, 0, sizeof(Editor));
+    editor->platform = Platform_Default();
+    Clipboard_SetPlatform(editor->platform);
     Array_Init(&editor->tabs, sizeof(Tab*), 4, alignof(void*));
     editor->activeTabIndex = 0;
     editor->isExplorerActive = false;
@@ -100,7 +105,12 @@ void Editor_AddTab(Editor* editor, const char* filename)
     if (!newTab)
         return;
 
-    Tab_Init(newTab);
+    if (!Tab_Init(newTab)) {
+        LOG_ERROR("Editor_AddTab: tab initialization failed (out of memory)");
+        Editor_SetStatusMessage(editor, "Error: could not open a new tab (out of memory)");
+        free(newTab);
+        return;
+    }
     newTab->config = &editor->config;
 
     if (filename) {
@@ -144,7 +154,7 @@ void Editor_UpdateGeometry(Editor* editor)
 {
     size_t rows = 0;
     size_t cols = 0;
-    if (!Terminal_GetWindowSize(&rows, &cols))
+    if (!editor->platform->getWindowSize(editor->platform->context, &rows, &cols))
         return;
 
     editor->screenColumns = cols;
@@ -168,18 +178,19 @@ void Editor_DrawMessageBar(Editor* editor, Array* screenBuffer)
 {
     Array_Append(screenBuffer, "\x1b[7m", 4);
 
-    int messageSize = 0;
+    size_t messageSize = 0;
     if (time(NULL) - editor->statusMessageTime <= editor->config.statusTimeout) {
         messageSize = strlen(editor->statusMessage);
     }
-    if (messageSize > (int)editor->screenColumns)
-        messageSize = editor->screenColumns;
+    // Truncate on a codepoint boundary: a byte-level cut splits multibyte
+    // UTF-8 and emits mojibake.
+    messageSize = Utf8TruncateAtBoundary(editor->statusMessage, messageSize, editor->screenColumns);
 
     if (messageSize > 0)
         Array_Append(screenBuffer, editor->statusMessage, messageSize);
 
     // Pad remaining columns with spaces to fill the full highlighted line
-    for (int i = messageSize; i < (int)editor->screenColumns; i++)
+    for (size_t i = messageSize; i < editor->screenColumns; i++)
         Array_Append(screenBuffer, " ", 1);
 
     Array_Append(screenBuffer, "\x1b[m", 3);
@@ -430,7 +441,16 @@ static bool Tab_TryUpdateVisualRowsIncremental(
         return false;
     }
 
-    size_t newTotalLines = Buffer_GetLineCount(tab->buffer);
+    size_t newTotalLines = Buffer_GetLineCount(tab->buffer); // flushes any pending rebuild
+
+    // lastRebuilt* records only the MOST RECENT rebuild, but several rebuilds
+    // can happen between two frames (paste and delete-selection loops rebuild
+    // per edit). Splicing just the last range would leave stale wrap segments
+    // for the earlier edits, so the incremental path is only valid when
+    // exactly one rebuild happened since this cache was last stamped.
+    if (tab->buffer->rebuildSeq != tab->visualRowsRebuildSeq + 1) {
+        return false;
+    }
 
     size_t oldStart, oldEnd, newEnd;
     if (!Buffer_GetLastRebuildRange(tab->buffer, &oldStart, &oldEnd, &newEnd)) {
@@ -474,6 +494,7 @@ static bool Tab_TryUpdateVisualRowsIncremental(
     tab->visualRowsFoldedCount = foldedLineCount;
     tab->visualRowsUsableColumns = usableColumns;
     tab->visualRowsLineCount = newTotalLines;
+    tab->visualRowsRebuildSeq = tab->buffer->rebuildSeq;
     return true;
 }
 
@@ -490,6 +511,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         tab->visualRowsFoldedCount = foldedLineCount;
         tab->visualRowsUsableColumns = usableColumns;
         tab->visualRowsLineCount = tab->buffer ? Buffer_GetLineCount(tab->buffer) : 0;
+        tab->visualRowsRebuildSeq = tab->buffer ? tab->buffer->rebuildSeq : 0;
         return;
     }
     if (tab->visualRowsEditVersion == editVersion && tab->visualRowsFoldedCount == foldedLineCount
@@ -512,6 +534,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
         tab->visualRowsFoldedCount = foldedLineCount;
         tab->visualRowsUsableColumns = usableColumns;
         tab->visualRowsLineCount = totalLines;
+        tab->visualRowsRebuildSeq = tab->buffer->rebuildSeq;
         return;
     }
 
@@ -559,6 +582,7 @@ void Tab_UpdateVisualRows(const Editor* editor, Tab* tab, size_t usableColumns)
     tab->visualRowsFoldedCount = foldedLineCount;
     tab->visualRowsUsableColumns = usableColumns;
     tab->visualRowsLineCount = totalLines;
+    tab->visualRowsRebuildSeq = tab->buffer->rebuildSeq;
 }
 
 void Editor_ScrollTab(Editor* editor, Tab* tab)
@@ -595,7 +619,12 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
     if (cursorVRowIdx < tab->rowOffset) {
         tab->rowOffset = cursorVRowIdx;
     }
-    if (cursorVRowIdx >= tab->rowOffset + editor->screenRows) {
+    if (editor->screenRows == 0) {
+        // Degenerate terminal: pin the offset to the cursor row -- the
+        // general formula below would compute cursorVRowIdx + 1 and make
+        // later `cursorVRowIdx - rowOffset` arithmetic wrap to SIZE_MAX.
+        tab->rowOffset = cursorVRowIdx;
+    } else if (cursorVRowIdx >= tab->rowOffset + editor->screenRows) {
         tab->rowOffset = cursorVRowIdx - editor->screenRows + 1;
     }
 
@@ -613,7 +642,9 @@ void Editor_ScrollTab(Editor* editor, Tab* tab)
         if (tab->renderX < tab->columnOffset) {
             tab->columnOffset = tab->renderX;
         }
-        if (tab->renderX >= tab->columnOffset + usableColumns) {
+        if (usableColumns == 0) {
+            tab->columnOffset = tab->renderX; // degenerate width: keep the difference at 0
+        } else if (tab->renderX >= tab->columnOffset + usableColumns) {
             tab->columnOffset = tab->renderX - usableColumns + 1;
         }
     }
@@ -640,7 +671,8 @@ void Editor_DrawTabRows(Editor* editor, Array* screenBuffer)
     for (size_t i = 0; i < editor->screenRows; i++) {
         size_t vrowIdx = i + tab->rowOffset;
         if (vrowIdx >= totalVRows) {
-            if (totalVRows <= 1 && i == editor->screenRows / 3) {
+            bool bufferIsEmptyScratch = tab->buffer && Buffer_GetTotalBytes(tab->buffer) == 0 && tab->filename == NULL;
+            if (bufferIsEmptyScratch && i == editor->screenRows / 3) {
                 char welcome[50];
                 int welcomeLength = snprintf(welcome, sizeof(welcome), "Neo Text Editor");
 
@@ -849,15 +881,19 @@ void Editor_DrawStatusBar(Editor* editor, Array* screenBuffer)
 
     char status[140], cursor[50];
 
+    // Cut the filename on a codepoint boundary BEFORE formatting: %.50s cuts
+    // bytes and can split a multibyte sequence.
+    size_t filenameCut = Utf8TruncateAtBoundary(filename, strlen(filename), 50);
+
     char* readOnlyStatus = tab->buffer->isReadOnly ? "[READ-ONLY] " : "";
     char* saveStatus = tab->isSaved ? "" : "[UNSAVED] ";
-    int statusSize = snprintf(status, sizeof(status), "%s%s%.50s ~ %zu lines", readOnlyStatus, saveStatus, filename,
-        Buffer_GetLineCount(tab->buffer));
+    int statusSize = snprintf(status, sizeof(status), "%s%s%.*s ~ %zu lines", readOnlyStatus, saveStatus,
+        (int)filenameCut, filename, Buffer_GetLineCount(tab->buffer));
 
     int cursorSize = snprintf(cursor, sizeof(cursor), "%zu:%zu", tab->cursorY + 1, tab->cursorX + 1);
 
     if (statusSize > (int)editor->screenColumns)
-        statusSize = editor->screenColumns;
+        statusSize = (int)Utf8TruncateAtBoundary(status, statusSize, editor->screenColumns);
 
     Array_Append(screenBuffer, status, statusSize);
 
@@ -898,36 +934,34 @@ static void Editor_DrawTabsBar(Editor* editor, Array* screenBuffer)
 
         const char* name = tab->filename ? tab->filename : "[No Name]";
         size_t nameLen = strlen(name);
-        char displayBuf[256];
+        // Append straight from the source string with bounded lengths -- the
+        // old fixed displayBuf[256] overflowed the stack whenever a tab block
+        // on a wide terminal exceeded 256 columns. Truncation lands on UTF-8
+        // codepoint boundaries so a multibyte name never splits mid-sequence.
         size_t displayLen = 0;
 
         if (nameLen <= currentBlockWidth) {
-            // Fits entirely, render the full path centered or left aligned
             displayLen = nameLen;
-            memcpy(displayBuf, name, displayLen);
+            Array_Append(screenBuffer, name, displayLen);
         } else {
-            // Check if basename fits
             const char* basename = strrchr(name, '/');
             basename = basename ? basename + 1 : name;
             size_t baseLen = strlen(basename);
 
             if (baseLen <= currentBlockWidth) {
                 displayLen = baseLen;
-                memcpy(displayBuf, basename, displayLen);
+                Array_Append(screenBuffer, basename, displayLen);
             } else {
-                // Truncate basename
-                displayLen = currentBlockWidth;
-                memcpy(displayBuf, basename, displayLen);
-                if (displayLen > 0) {
-                    displayBuf[displayLen - 1] = '~';
+                // Truncate basename, reserving one column for the '~' marker.
+                size_t cut
+                    = currentBlockWidth > 0 ? Utf8TruncateAtBoundary(basename, baseLen, currentBlockWidth - 1) : 0;
+                Array_Append(screenBuffer, basename, cut);
+                displayLen = cut;
+                if (currentBlockWidth > 0) {
+                    Array_Append(screenBuffer, "~", 1);
+                    displayLen++;
                 }
             }
-        }
-
-        // Write filename
-        if (displayLen > 0) {
-            // Let's just left align and pad with spaces for now
-            Array_Append(screenBuffer, displayBuf, displayLen);
         }
 
         // Pad with spaces
@@ -980,16 +1014,18 @@ void Editor_RefreshScreen(Editor* editor)
         size_t cursorVRowIdx = Tab_GetCursorVRowIdx(activeTab);
         size_t gutterWidth = Tab_GetGutterWidth(activeTab);
         char buffer[32];
-        size_t visualCursorX
-            = Tab_ShouldWrapLines(activeTab) ? activeTab->renderX : (activeTab->renderX - activeTab->columnOffset);
-        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", (cursorVRowIdx - activeTab->rowOffset) + cursorRowOffset,
+        size_t visualCursorX = Tab_ShouldWrapLines(activeTab)
+            ? activeTab->renderX
+            : (activeTab->renderX >= activeTab->columnOffset ? activeTab->renderX - activeTab->columnOffset : 0);
+        size_t cursorScreenRow = (cursorVRowIdx >= activeTab->rowOffset) ? (cursorVRowIdx - activeTab->rowOffset) : 0;
+        snprintf(buffer, sizeof(buffer), "\x1b[%zu;%zuH", cursorScreenRow + cursorRowOffset,
             visualCursorX + 1 + gutterWidth);
 
         Array_Append(&screenBuffer, buffer, strlen(buffer));
         Array_Append(&screenBuffer, "\x1b[?25h", 6);
     }
 
-    write(STDOUT_FILENO, screenBuffer.data, screenBuffer.size);
+    editor->platform->writeTerminal(editor->platform->context, screenBuffer.data, screenBuffer.size);
     Array_Free(&screenBuffer);
 }
 

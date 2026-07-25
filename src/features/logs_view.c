@@ -15,10 +15,13 @@ void Editor_ToggleLogs(Editor* editor)
     } else {
         editor->isLogsActive = true;
         editor->isExplorerActive = false;
+        // Log BEFORE computing the index: this very message is appended to
+        // the buffer, and the viewer should open with the true last entry
+        // selected.
+        LOG_INFO("Opened Log Viewer.");
         Array* logs = Logger_GetMessages();
         size_t numLogs = logs ? Array_Size(logs) : 0;
         editor->logsSelectedIndex = (numLogs > 0) ? numLogs - 1 : 0;
-        LOG_INFO("Opened Log Viewer.");
     }
 }
 
