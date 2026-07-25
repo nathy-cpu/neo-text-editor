@@ -8,8 +8,8 @@
 // GapBuffer - Type-agnostic gap buffer
 typedef struct {
     Array data;
-    uint32_t gapStart;
-    uint32_t gapEnd;
+    size_t gapStart;
+    size_t gapEnd;
 } GapBuffer;
 
 /**

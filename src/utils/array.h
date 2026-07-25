@@ -8,11 +8,19 @@
 // Array - Type-agnostic arraylist
 typedef struct {
     void* data;
-    uint32_t size;
-    uint32_t capacity;
-    uint32_t itemSize;
-    uint32_t alignment;
+    size_t size;
+    size_t capacity;
+    size_t itemSize;
+    size_t alignment;
 } Array;
+
+/**
+ * @brief Computes the aligned allocation size for `capacity` items of
+ * `itemSize` bytes (pure function; exposed so overflow behavior is testable).
+ * @return The byte count to allocate, or 0 when the multiplication would
+ * overflow size_t.
+ */
+size_t ArrayComputeAllocationSize(size_t itemSize, size_t capacity, size_t alignment);
 
 /**
  * @brief Initializes a dynamic array.

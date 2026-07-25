@@ -2,6 +2,7 @@
 #include "logger.h"
 #include <assert.h>
 #include <stdalign.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,19 @@ static inline void* AlignedAllocPosix(size_t alignment, size_t size)
     assert((alignment & (alignment - 1)) == 0);
     assert(alignment % sizeof(void*) == 0);
     return aligned_alloc(alignment, size);
+}
+
+size_t ArrayComputeAllocationSize(size_t itemSize, size_t capacity, size_t alignment)
+{
+    if (itemSize != 0 && capacity > SIZE_MAX / itemSize)
+        return 0; // multiplication would overflow
+    size_t totalSize = itemSize * capacity;
+    if (alignment == 0 || totalSize % alignment == 0)
+        return totalSize;
+    size_t alignedSize = ((totalSize / alignment) + 1) * alignment;
+    if (alignedSize < totalSize)
+        return 0; // rounding up overflowed
+    return alignedSize;
 }
 
 void Array_Init(Array* array, size_t itemSize, size_t capacity, size_t alignment)
@@ -27,13 +41,9 @@ void Array_Init(Array* array, size_t itemSize, size_t capacity, size_t alignment
     }
 
     // Ensure the total size is a multiple of alignment
-    size_t totalSize = itemSize * capacity;
-    size_t alignedSize = totalSize;
-    if (alignedSize % alignment != 0) {
-        alignedSize = ((totalSize / alignment) + 1) * alignment;
-    }
+    size_t alignedSize = ArrayComputeAllocationSize(itemSize, capacity, alignment);
 
-    array->data = AlignedAllocPosix(alignment, alignedSize);
+    array->data = (alignedSize > 0) ? AlignedAllocPosix(alignment, alignedSize) : NULL;
     array->size = 0;
     array->capacity = (array->data != NULL) ? capacity : 0;
     array->itemSize = itemSize;
@@ -70,11 +80,9 @@ bool Array_Append(Array* array, const void* items, size_t count)
         size_t newCapacity = array->capacity * 2 + count;
         LOG_DEBUG("Array resizing capacity from %zu to %zu (need total size %zu)", array->capacity, newCapacity,
             array->size + count);
-        size_t totalSize = array->itemSize * newCapacity;
-        size_t alignedSize = totalSize;
-        if (alignedSize % array->alignment != 0) {
-            alignedSize = ((totalSize / array->alignment) + 1) * array->alignment;
-        }
+        size_t alignedSize = ArrayComputeAllocationSize(array->itemSize, newCapacity, array->alignment);
+        if (alignedSize == 0)
+            return false;
 
         void* newData = AlignedAllocPosix(array->alignment, alignedSize);
         if (!newData)
@@ -115,11 +123,9 @@ bool Array_ReplaceRange(Array* array, size_t start, size_t count, const void* ne
 
     if (newSize > array->capacity) {
         size_t newCapacity = array->capacity * 2 + (newSize - array->capacity);
-        size_t totalSize = array->itemSize * newCapacity;
-        size_t alignedSize = totalSize;
-        if (alignedSize % array->alignment != 0) {
-            alignedSize = ((totalSize / array->alignment) + 1) * array->alignment;
-        }
+        size_t alignedSize = ArrayComputeAllocationSize(array->itemSize, newCapacity, array->alignment);
+        if (alignedSize == 0)
+            return false;
 
         void* newData = AlignedAllocPosix(array->alignment, alignedSize);
         if (!newData)

@@ -14,15 +14,25 @@ typedef enum { PIECE_SOURCE_ORIGINAL, PIECE_SOURCE_ADD } PieceSource;
 
 typedef struct {
     PieceSource source;
-    uint32_t length;
+    // Which original mapping this piece reads from (PIECE_SOURCE_ORIGINAL
+    // only): index into the buffer's retired-mappings list, or the current
+    // mapping when equal to the buffer's originalGeneration. Fills the
+    // padding slot next to `source`.
+    uint32_t generation;
+    size_t length;
     size_t start;
 } Piece;
 
 // Buffer - Main text buffer containing Piece Table and Line Cache
 typedef struct Buffer {
-    MappedFile mappedFile; // Mmap handle for file cleanup
-    Slice bufferOriginal; // Immutable original buffer
-    Array bufferAdd; // Append-only dynamic add buffer
+    MappedFile mappedFile; // Mmap handle for the CURRENT original mapping
+    Slice bufferOriginal; // View of the current mapping
+    // Original mappings retired by saves (Array of MappedFile; index ==
+    // generation). Undo/redo snapshots keep Pieces referencing them, so they
+    // stay mapped (fds closed) until the buffer is freed.
+    Array retiredOriginals;
+    size_t originalGeneration; // == Array_Size(&retiredOriginals); generation of the current mapping
+    Array bufferAdd; // Append-only dynamic add buffer; NEVER cleared while the buffer lives
     GapBuffer pieces; // GapBuffer of Pieces
     LineCache lineCache; // Line Cache gap buffer
     size_t totalBytes; // Total bytes/chars in the document
@@ -43,6 +53,9 @@ typedef struct Buffer {
     size_t lastRebuiltOldEnd; // Exclusive; old lines beyond this were reused as-is (shifted)
     size_t lastRebuiltNewEnd; // Exclusive; new lines beyond this are the reused/shifted tail
     bool lastRebuildOccurred; // Whether a rebuild has ever populated the fields above
+    size_t rebuildSeq; // Incremented on every Buffer_RebuildLineCache; lets consumers
+                       // detect that MORE THAN ONE rebuild happened since they last
+                       // consumed lastRebuilt* (which only records the latest one)
 } Buffer;
 
 /**
@@ -163,4 +176,19 @@ void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize);
 /**
  * @brief Callback for when a buffer is successfully saved to disk.
  */
-void Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync);
+bool Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync);
+
+/**
+ * @brief Resolves the backing store a Piece reads from, honoring the piece's
+ * generation (current mapping, a retired mapping, or the add buffer).
+ */
+const char* Buffer_PieceData(const Buffer* buffer, const Piece* piece);
+
+/**
+ * @brief Adopts a freshly-saved file's mapping as the new original source,
+ * retiring the previous mapping so undo/redo snapshots stay valid. On mmap
+ * failure (fileDescriptor == -1) all existing state is kept: content keeps
+ * being served from the old sources and only isModified is cleared.
+ * Exported as a seam so re-mmap failure is testable.
+ */
+void Buffer_AdoptSavedFile(Buffer* buffer, MappedFile newMmap);

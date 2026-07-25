@@ -14,6 +14,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 // ============================================================================
 // LINE CACHE INTERNAL METHODS
@@ -160,8 +161,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         size_t pIdx = pieceIdx;
         while (pIdx < pieceCount) {
             Piece* p = Buffer_GetPiece(buffer, pIdx);
-            const char* src = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data
-                                                                   : (const char*)buffer->bufferAdd.data;
+            const char* src = Buffer_PieceData(buffer, p);
             const char* pieceText = src + p->start;
             size_t j = (pIdx == pieceIdx) ? localOffset : 0;
             const char* end = pieceText + p->length;
@@ -190,8 +190,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
 
     while (pieceIdx < pieceCount && !aligned) {
         Piece* p = Buffer_GetPiece(buffer, pieceIdx);
-        const char* src
-            = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
+        const char* src = Buffer_PieceData(buffer, p);
         const char* pieceText = src + p->start;
 
         size_t j = localOffset;
@@ -260,6 +259,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     buffer->lastRebuiltOldEnd = oldRangeEnd;
     buffer->lastRebuiltNewEnd = dirtyStart + numNew;
     buffer->lastRebuildOccurred = true;
+    buffer->rebuildSeq++;
 
     // Copy back preserved fold/style/comment state where a freshly-scanned
     // line positionally correlates with an old one (aligning from the tail
@@ -278,10 +278,13 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             newLine->styles = oldLine->styles;
             oldLine->styles = NULL; // ownership transferred; prevent double-free below
 
-            // Move render checkpoints
-            newLine->renderCheckpoints = oldLine->renderCheckpoints;
-            newLine->renderCheckpointTabSize = oldLine->renderCheckpointTabSize;
-            oldLine->renderCheckpoints = NULL;
+            // renderCheckpoints are deliberately NOT transferred: lines inside
+            // the replaced range are exactly those whose content changed, so
+            // their checkpoints are unverifiable and would yield stale render
+            // columns (Line_EnsureRenderCheckpoints never rebuilds a non-NULL
+            // set). The old array is freed with the old line below; the new
+            // line rebuilds lazily on its next render. Reused tail lines
+            // outside this range keep theirs (content untouched).
         }
     }
 
@@ -403,7 +406,8 @@ static void Buffer_Defragment(Buffer* buffer)
     Piece prev = *(Piece*)GapBuffer_At(&buffer->pieces, 0);
     for (size_t i = 1; i < pieceCount; i++) {
         Piece curr = *(Piece*)GapBuffer_At(&buffer->pieces, i);
-        if (prev.source == curr.source && prev.start + prev.length == curr.start) {
+        if (prev.source == curr.source && prev.generation == curr.generation
+            && prev.start + prev.length == curr.start) {
             prev.length += curr.length;
         } else {
             GapBuffer_InsertSlice(&newPieces, GapBuffer_Size(&newPieces), Slice_Make(&prev, sizeof(Piece)));
@@ -425,7 +429,10 @@ DocumentSnapshot* DocumentSnapshot_Copy(Buffer* buffer)
     LOG_DEBUG(
         "DocumentSnapshot_Copy: creating snapshot of buffer %p (totalBytes=%zu)", (void*)buffer, buffer->totalBytes);
     DocumentSnapshot* snap = malloc(sizeof(DocumentSnapshot));
-    assert(snap);
+    if (!snap) {
+        LOG_ERROR("DocumentSnapshot_Copy: out of memory");
+        return NULL;
+    }
 
     snap->totalBytes = buffer->totalBytes;
 
@@ -484,15 +491,15 @@ void Buffer_RestoreSnapshot(Buffer* buffer, DocumentSnapshot* snap, size_t range
         buffer->editVersion++;
         buffer->syntaxDirtyLineStart = 0;
     } else {
-        // Every action group's actions share a single lineNumber (see
-        // CanGroupActions), and undo/redo's LIFO discipline guarantees the
-        // buffer is in exactly the state the group last left it in when this
-        // runs - so everything before that line is byte-identical between
-        // the current buffer and the restored snapshot. Reuse the same
-        // incremental invalidation ordinary edits use (Buffer_DeleteRange
-        // does the same zero-width-range call) instead of discarding every
-        // cached line.
-        Buffer_InvalidateLineCache(buffer, rangeStartOffset, rangeStartOffset, oldTotalBytes);
+        // Everything before rangeStartOffset is byte-identical between the
+        // current buffer and the restored snapshot (undo/redo's LIFO
+        // discipline), so the prefix of the line cache is reusable. The tail
+        // is NOT: composite groups (indent, paste, delete-selection) touch
+        // many lines at many offsets, so the tail-realignment fast path can
+        // false-match an old line by coincidental offset and mis-splice the
+        // cache. Pass SIZE_MAX as newEndOffset to force a rebuild from the
+        // restored line to EOF (prefix reuse preserved, realignment off).
+        Buffer_InvalidateLineCache(buffer, rangeStartOffset, SIZE_MAX, oldTotalBytes);
     }
 }
 
@@ -534,10 +541,18 @@ static void RecordAction(Buffer* buffer, Action action)
     }
 
     ActionGroup* group = ActionGroup_New();
-    if (!group)
+    if (!group) {
+        LOG_ERROR("RecordAction: ActionGroup_New failed; edit proceeds unrecorded");
         return;
+    }
 
     group->snapshotBefore = DocumentSnapshot_Copy(buffer);
+    if (!group->snapshotBefore) {
+        // Never push a group with a NULL snapshot: undo would restore garbage.
+        LOG_ERROR("RecordAction: snapshot copy failed; edit proceeds unrecorded");
+        ActionGroup_Free(group);
+        return;
+    }
     group->snapshotAfter = NULL;
 
     Array_Append(&group->actions, &action, 1);
@@ -560,6 +575,16 @@ void Buffer_RecordCompositeEdit(Buffer* buffer, size_t lineNumber, size_t column
 // PUBLIC BUFFER API
 // ============================================================================
 
+const char* Buffer_PieceData(const Buffer* buffer, const Piece* piece)
+{
+    if (piece->source == PIECE_SOURCE_ADD)
+        return (const char*)buffer->bufferAdd.data;
+    if (piece->generation == buffer->originalGeneration)
+        return buffer->bufferOriginal.data;
+    MappedFile* retired = (MappedFile*)Array_At(&buffer->retiredOriginals, piece->generation);
+    return retired->content.data;
+}
+
 Buffer* Buffer_New(void)
 {
     Buffer* buffer = calloc(1, sizeof(Buffer));
@@ -571,6 +596,8 @@ Buffer* Buffer_New(void)
     buffer->mappedFile.fileDescriptor = -1;
 
     buffer->bufferOriginal = (Slice) { .data = NULL, .size = 0 };
+    Array_InitStruct(&buffer->retiredOriginals, MappedFile, 4);
+    buffer->originalGeneration = 0;
     Array_Init(&buffer->bufferAdd, sizeof(char), 256, 0);
 
     GapBuffer_Init(&buffer->pieces, sizeof(Piece), 8, alignof(Piece));
@@ -608,11 +635,14 @@ Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename)
     buffer->totalBytes = mappedFile.content.size;
     buffer->filename = filename ? strdup(filename) : NULL;
 
+    Array_InitStruct(&buffer->retiredOriginals, MappedFile, 4);
+    buffer->originalGeneration = 0;
     Array_Init(&buffer->bufferAdd, sizeof(char), 256, 0);
 
     GapBuffer_Init(&buffer->pieces, sizeof(Piece), 8, alignof(Piece));
     if (mappedFile.content.size > 0) {
-        Piece firstPiece = { .source = PIECE_SOURCE_ORIGINAL, .start = 0, .length = mappedFile.content.size };
+        Piece firstPiece
+            = { .source = PIECE_SOURCE_ORIGINAL, .generation = 0, .start = 0, .length = mappedFile.content.size };
         GapBuffer_InsertSlice(&buffer->pieces, 0, Slice_Make(&firstPiece, sizeof(Piece)));
     }
 
@@ -636,7 +666,7 @@ void Buffer_Free(Buffer* buffer)
 
     buffer->refCount--;
     if (buffer->refCount > 0) {
-        LOG_DEBUG("Buffer_Free: DecRef refCount to %d for '%s'", buffer->refCount,
+        LOG_DEBUG("Buffer_Free: DecRef refCount to %zu for '%s'", buffer->refCount,
             buffer->filename ? buffer->filename : "<none>");
         return;
     }
@@ -644,6 +674,10 @@ void Buffer_Free(Buffer* buffer)
     LOG_INFO("Buffer_Free: Destroying buffer for file '%s'.", buffer->filename ? buffer->filename : "<none>");
 
     MappedFile_Unmap(&buffer->mappedFile);
+    for (size_t i = 0; i < Array_Size(&buffer->retiredOriginals); i++) {
+        MappedFile_Unmap((MappedFile*)Array_At(&buffer->retiredOriginals, i));
+    }
+    Array_Free(&buffer->retiredOriginals);
     Array_Free(&buffer->bufferAdd);
     GapBuffer_Free(&buffer->pieces);
     LineCache_Free(&buffer->lineCache);
@@ -675,9 +709,13 @@ Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber)
         "Buffer_InsertLine: inserting line at index %zu (totalLines=%zu)", lineNumber, Buffer_GetLineCount(buffer));
     size_t offset = 0;
     size_t totalLines = Buffer_GetLineCount(buffer);
+    size_t resultIndex = lineNumber;
     if (lineNumber > 0) {
         if (lineNumber >= totalLines) {
+            // Past-EOF insert appends at the end: the created line's real
+            // index is the old line count, not the requested number.
             offset = buffer->totalBytes;
+            resultIndex = totalLines;
         } else {
             Line* line = Buffer_GetLine(buffer, lineNumber);
             offset = line->offset;
@@ -687,7 +725,7 @@ Line* Buffer_InsertLine(Buffer* buffer, size_t lineNumber)
     Buffer_InsertText(buffer, offset, "\n", 1);
     buffer->isModified = true;
 
-    return Buffer_GetLine(buffer, lineNumber);
+    return Buffer_GetLine(buffer, resultIndex);
 }
 
 void Buffer_DeleteLine(Buffer* buffer, size_t lineNumber)
@@ -844,8 +882,11 @@ void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len)
     if (targetPieceIdx < pieceCount && localOffset > 0
         && localOffset < Buffer_GetPiece(buffer, targetPieceIdx)->length) {
         Piece* p = Buffer_GetPiece(buffer, targetPieceIdx);
-        Piece left = { .source = p->source, .start = p->start, .length = localOffset };
-        Piece right = { .source = p->source, .start = p->start + localOffset, .length = p->length - localOffset };
+        Piece left = { .source = p->source, .generation = p->generation, .start = p->start, .length = localOffset };
+        Piece right = { .source = p->source,
+            .generation = p->generation,
+            .start = p->start + localOffset,
+            .length = p->length - localOffset };
 
         *p = left;
 
@@ -894,12 +935,16 @@ void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end)
             GapBuffer_InsertSlice(&newPieces, GapBuffer_Size(&newPieces), Slice_Make(p, sizeof(Piece)));
         } else {
             if (pieceStart < start) {
-                Piece left = { .source = p->source, .start = p->start, .length = start - pieceStart };
+                Piece left = {
+                    .source = p->source, .generation = p->generation, .start = p->start, .length = start - pieceStart
+                };
                 GapBuffer_InsertSlice(&newPieces, GapBuffer_Size(&newPieces), Slice_Make(&left, sizeof(Piece)));
             }
             if (pieceEnd > end) {
                 size_t skip = end - pieceStart;
-                Piece right = { .source = p->source, .start = p->start + skip, .length = pieceEnd - end };
+                Piece right = {
+                    .source = p->source, .generation = p->generation, .start = p->start + skip, .length = pieceEnd - end
+                };
                 GapBuffer_InsertSlice(&newPieces, GapBuffer_Size(&newPieces), Slice_Make(&right, sizeof(Piece)));
             }
         }
@@ -959,14 +1004,16 @@ Slice Buffer_ToSlice(const Buffer* buffer)
     }
 
     char* content = malloc(buffer->totalBytes);
-    assert(content);
+    if (!content) {
+        LOG_ERROR("Buffer_ToSlice: out of memory (%zu bytes)", buffer->totalBytes);
+        return (Slice) { .data = NULL, .size = 0 };
+    }
 
     size_t offset = 0;
     size_t pieceCount = GapBuffer_Size(&buffer->pieces);
     for (size_t i = 0; i < pieceCount; i++) {
         Piece* p = (Piece*)GapBuffer_At(&buffer->pieces, i);
-        const char* src
-            = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
+        const char* src = Buffer_PieceData(buffer, p);
         memcpy(content + offset, src + p->start, p->length);
         offset += p->length;
     }
@@ -978,8 +1025,17 @@ bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path, bool us
 {
     assert(buffer);
 
+    // Save through symlinks to their target (keeping the link intact) and put
+    // the temp file in the target's directory so rename() stays atomic.
+    char resolvedPath[PATH_MAX];
+    if (!FileIoResolveSavePath(path, resolvedPath, sizeof(resolvedPath))) {
+        LOG_ERROR("Buffer_WriteToFileStreaming: could not resolve save path '%s'; using it as-is", path);
+        strncpy(resolvedPath, path, sizeof(resolvedPath) - 1);
+        resolvedPath[sizeof(resolvedPath) - 1] = '\0';
+    }
+
     char tempPath[PATH_MAX];
-    int fileDescriptor = FileIoOpenTempForAtomicWrite(path, tempPath, sizeof(tempPath));
+    int fileDescriptor = FileIoOpenTempForAtomicWrite(resolvedPath, tempPath, sizeof(tempPath));
     if (fileDescriptor == -1)
         return false;
 
@@ -996,8 +1052,7 @@ bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path, bool us
 
     for (size_t i = 0; i < pieceCount; i++) {
         Piece* p = (Piece*)GapBuffer_At(&buffer->pieces, i);
-        const char* src
-            = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data : (const char*)buffer->bufferAdd.data;
+        const char* src = Buffer_PieceData(buffer, p);
         const char* dataPtr = src + p->start;
         size_t dataLen = p->length;
 
@@ -1043,7 +1098,7 @@ bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path, bool us
         return false;
     }
 
-    return FileIoCommitAtomicWrite(fileDescriptor, tempPath, path, useFsync);
+    return FileIoCommitAtomicWrite(fileDescriptor, tempPath, resolvedPath, useFsync);
 }
 
 // Computes where the cursor should land right before (afterAction=false) or
@@ -1114,8 +1169,17 @@ bool Buffer_Undo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
     // A group can be undone more than once (undo -> redo -> undo), so drop
     // any snapshotAfter from a previous undo of this same group before
     // replacing it.
+    DocumentSnapshot* snapshotAfter = DocumentSnapshot_Copy(buffer);
+    if (!snapshotAfter) {
+        // Abort the undo with state untouched rather than pushing a group
+        // with a NULL snapshotAfter onto the redo stack.
+        LOG_ERROR("Buffer_Undo: snapshot copy failed; undo aborted");
+        buffer->history.isUndoRedoing = false;
+        Stack_Push(&buffer->history.undoStack, group);
+        return false;
+    }
     DocumentSnapshot_Free(group->snapshotAfter);
-    group->snapshotAfter = DocumentSnapshot_Copy(buffer);
+    group->snapshotAfter = snapshotAfter;
     Buffer_RestoreSnapshot(buffer, group->snapshotBefore, rangeStartOffset);
     buffer->isModified = true;
 
@@ -1169,32 +1233,64 @@ bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
     return true;
 }
 
-void Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync)
+void Buffer_AdoptSavedFile(Buffer* buffer, MappedFile newMmap)
+{
+    if (newMmap.fileDescriptor == -1) {
+        // Write succeeded but re-mmap failed (includes legitimate 0-byte
+        // saves: mmap of length 0 is EINVAL). Keep pieces, mappings, add
+        // buffer, line cache, and totalBytes EXACTLY as they are: content
+        // keeps being served from the old sources, and the next save streams
+        // the same correct bytes. No corrupt intermediate state exists.
+        buffer->isModified = false;
+        LOG_WARN("Buffer_AdoptSavedFile: re-mmap failed; keeping prior backing stores");
+        return;
+    }
+
+    // Retire the current mapping instead of unmapping it: undo/redo snapshots
+    // hold Pieces whose ORIGINAL offsets point into it. The fd is closed
+    // (munmap doesn't need it), so N saves never exhaust descriptors.
+    if (buffer->mappedFile.fileDescriptor != -1) {
+        close(buffer->mappedFile.fileDescriptor);
+        buffer->mappedFile.fileDescriptor = -1;
+    }
+    // Retire even a {NULL, 0} mapping so index == generation stays true.
+    Array_Append(&buffer->retiredOriginals, &buffer->mappedFile, 1);
+    buffer->originalGeneration++;
+    buffer->mappedFile = newMmap;
+    buffer->bufferOriginal = newMmap.content;
+
+    GapBuffer_Clear(&buffer->pieces);
+    if (newMmap.content.size > 0) {
+        Piece p = { .source = PIECE_SOURCE_ORIGINAL,
+            .generation = (uint32_t)buffer->originalGeneration,
+            .start = 0,
+            .length = newMmap.content.size };
+        GapBuffer_InsertSlice(&buffer->pieces, 0, Slice_Make(&p, sizeof(Piece)));
+    }
+
+    // NOTE: bufferAdd is deliberately NOT cleared -- undo/redo snapshots
+    // reference its historical offsets, and it is append-only.
+
+    if (newMmap.content.size != buffer->totalBytes) {
+        // File mutated between write and mmap (external writer): adopt the
+        // on-disk content as truth.
+        size_t oldTotalBytes = buffer->totalBytes;
+        buffer->totalBytes = newMmap.content.size;
+        Buffer_InvalidateLineCache(buffer, 0, SIZE_MAX, oldTotalBytes);
+    }
+    buffer->isModified = false;
+}
+
+bool Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync)
 {
     LOG_INFO("Buffer_OnSave: saving buffer to '%s' (size=%zu bytes)", path, buffer->totalBytes);
     if (!Buffer_WriteToFileStreaming(buffer, path, useFsync)) {
         LOG_ERROR("Buffer_OnSave: failed to write file to '%s'", path);
-        return;
+        return false;
     }
 
-    MappedFile_Unmap(&buffer->mappedFile);
-
-    MappedFile newMmap = FileIoMmap(path);
-    if (newMmap.fileDescriptor != -1) {
-        buffer->mappedFile = newMmap;
-        buffer->bufferOriginal = newMmap.content;
-    } else {
-        buffer->bufferOriginal = (Slice) { .data = NULL, .size = 0 };
-    }
-
-    GapBuffer_Clear(&buffer->pieces);
-    if (buffer->bufferOriginal.size > 0) {
-        Piece p = { .source = PIECE_SOURCE_ORIGINAL, .start = 0, .length = buffer->bufferOriginal.size };
-        GapBuffer_InsertSlice(&buffer->pieces, 0, Slice_Make(&p, sizeof(Piece)));
-    }
-
-    Array_Clear(&buffer->bufferAdd);
-    buffer->isModified = false;
+    Buffer_AdoptSavedFile(buffer, FileIoMmap(path));
+    return true;
 }
 
 void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize)
