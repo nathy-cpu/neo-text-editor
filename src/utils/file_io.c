@@ -107,15 +107,23 @@ bool FileIoWrite(const char* path, Slice content)
     return true;
 }
 
+// Bounded path copy: fails instead of truncating (a truncated path would
+// silently point a save at the wrong file).
+static bool CopyPath(char* destination, size_t destinationSize, const char* source)
+{
+    size_t length = strlen(source);
+    if (length >= destinationSize)
+        return false;
+    memcpy(destination, source, length + 1);
+    return true;
+}
+
 bool FileIoResolveSavePath(const char* path, char* resolvedOut, size_t resolvedOutSize)
 {
     // Existing file (symlinks fully followed).
     char resolved[PATH_MAX];
     if (realpath(path, resolved) != NULL) {
-        if (strlen(resolved) >= resolvedOutSize)
-            return false;
-        strcpy(resolvedOut, resolved);
-        return true;
+        return CopyPath(resolvedOut, resolvedOutSize, resolved);
     }
     if (errno != ENOENT)
         return false;
@@ -123,9 +131,8 @@ bool FileIoResolveSavePath(const char* path, char* resolvedOut, size_t resolvedO
     // Target doesn't exist. Follow any symlink chain on the final component
     // manually (covers dangling symlinks), then resolve the parent directory.
     char current[PATH_MAX];
-    if (strlen(path) >= sizeof(current))
+    if (!CopyPath(current, sizeof(current), path))
         return false;
-    strcpy(current, path);
 
     for (int hop = 0; hop < 32; hop++) {
         struct stat linkStat;
@@ -142,24 +149,24 @@ bool FileIoResolveSavePath(const char* path, char* resolvedOut, size_t resolvedO
             return false;
         linkTarget[targetLength] = '\0';
         if (linkTarget[0] == '/') {
-            strcpy(current, linkTarget);
+            if (!CopyPath(current, sizeof(current), linkTarget))
+                return false;
         } else {
             // Resolve relative to the symlink's directory.
             char directoryBuffer[PATH_MAX];
-            strcpy(directoryBuffer, current);
+            if (!CopyPath(directoryBuffer, sizeof(directoryBuffer), current))
+                return false;
             const char* linkDirectory = dirname(directoryBuffer);
             char joined[PATH_MAX];
             int written = snprintf(joined, sizeof(joined), "%s/%s", linkDirectory, linkTarget);
             if (written < 0 || (size_t)written >= sizeof(joined))
                 return false;
-            strcpy(current, joined);
+            if (!CopyPath(current, sizeof(current), joined))
+                return false;
         }
         // A hop may land on an existing file: realpath finishes the job.
         if (realpath(current, resolved) != NULL) {
-            if (strlen(resolved) >= resolvedOutSize)
-                return false;
-            strcpy(resolvedOut, resolved);
-            return true;
+            return CopyPath(resolvedOut, resolvedOutSize, resolved);
         }
         if (errno != ENOENT)
             return false;
@@ -168,18 +175,18 @@ bool FileIoResolveSavePath(const char* path, char* resolvedOut, size_t resolvedO
     // `current` is a nonexistent plain path: realpath the parent, keep the base.
     char directoryBuffer[PATH_MAX];
     char baseBuffer[PATH_MAX];
-    strcpy(directoryBuffer, current);
-    strcpy(baseBuffer, current);
+    if (!CopyPath(directoryBuffer, sizeof(directoryBuffer), current)
+        || !CopyPath(baseBuffer, sizeof(baseBuffer), current))
+        return false;
     const char* parentDirectory = dirname(directoryBuffer);
     const char* baseName = basename(baseBuffer);
     char resolvedParent[PATH_MAX];
     if (realpath(parentDirectory, resolvedParent) == NULL)
         return false; // parent must exist for a save to succeed
     int written = snprintf(resolved, sizeof(resolved), "%s/%s", resolvedParent, baseName);
-    if (written < 0 || (size_t)written >= sizeof(resolved) || strlen(resolved) >= resolvedOutSize)
+    if (written < 0 || (size_t)written >= sizeof(resolved))
         return false;
-    strcpy(resolvedOut, resolved);
-    return true;
+    return CopyPath(resolvedOut, resolvedOutSize, resolved);
 }
 
 int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tempPathOutSize)

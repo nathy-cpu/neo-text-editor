@@ -43,10 +43,13 @@ static bool WriteAllToPipe(FILE* pipe, const char* data, size_t size)
 {
     size_t written = 0;
     while (written < size) {
+        errno = 0; // fwrite may return short without setting errno
         size_t chunk = fwrite(data + written, 1, size - written, pipe);
         written += chunk;
         if (chunk == 0) {
-            if (errno == EINTR) {
+            // ferror() confirms the stream actually failed before errno is
+            // consulted -- errno is only meaningful on a failed call.
+            if (ferror(pipe) && errno == EINTR) {
                 clearerr(pipe);
                 continue;
             }
@@ -60,6 +63,7 @@ static void ReadAllFromPipe(FILE* pipe, Array* destination)
 {
     char chunk[512];
     for (;;) {
+        errno = 0; // fread may return short without setting errno
         size_t bytesRead = fread(chunk, 1, sizeof(chunk), pipe);
         if (bytesRead > 0)
             Array_Append(destination, chunk, bytesRead);

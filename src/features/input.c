@@ -700,11 +700,9 @@ void Editor_ProcessInput(Editor* editor, int input)
                         }
                     }
                 } else {
-                    if (tab->cursorX > 0) {
-                        Line* currLine = Buffer_GetLine(tab->buffer, tab->cursorY);
-                        size_t previousStart = currLine
-                            ? Line_PreviousCodepointStart(currLine, tab->buffer, tab->cursorX)
-                            : tab->cursorX - 1;
+                    Line* currLine = Buffer_GetLine(tab->buffer, tab->cursorY);
+                    if (tab->cursorX > 0 && currLine) {
+                        size_t previousStart = Line_PreviousCodepointStart(currLine, tab->buffer, tab->cursorX);
                         if (tab->cursorX - previousStart == 1) {
                             Buffer_DeleteChar(tab->buffer, tab->cursorY, tab->cursorX - 1);
                         } else {

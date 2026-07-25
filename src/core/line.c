@@ -35,9 +35,13 @@ Slice Line_GetTextRange(Line* line, struct Buffer* buffer, size_t start, size_t 
     // byte from a previous, longer fetch.
     static char* scratch = NULL;
     static size_t scratchCapacity = 0;
-    if (length + 1 > scratchCapacity) {
+    if (length >= scratchCapacity) {
         char* newScratch = realloc(scratch, length + 1);
-        assert(newScratch != NULL);
+        if (!newScratch) {
+            // Out of memory: an empty slice is the only safe answer -- the
+            // old scratch (if any) stays valid for future smaller requests.
+            return (Slice) { .data = scratch, .size = 0 };
+        }
         scratch = newScratch;
         scratchCapacity = length + 1;
     }
