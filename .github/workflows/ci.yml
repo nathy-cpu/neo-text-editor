@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y liblua5.4-dev
+
+      # High-entropy mmap randomization on newer Ubuntu runners breaks
+      # AddressSanitizer's shadow memory mapping; cap it.
+      - name: Format + Lint
+        run: make lint
+
+      - name: Lower ASLR entropy for ASan
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Test (ASan + UBSan)
+        run: make test
+
+      - name: Release build compiles
+        run: make release
