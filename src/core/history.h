@@ -18,8 +18,8 @@ typedef enum {
 
 typedef struct {
     ActionType type;
-    uint32_t lineNumber;
-    uint32_t column;
+    size_t lineNumber;
+    size_t column;
 
     union {
         char character;

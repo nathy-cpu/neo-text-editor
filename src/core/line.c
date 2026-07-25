@@ -29,15 +29,19 @@ Slice Line_GetTextRange(Line* line, struct Buffer* buffer, size_t start, size_t 
 
     // Reused, growable scratch buffer -- avoids a malloc/cache of the line's
     // entire text just to serve a small sub-range (e.g. a visible viewport
-    // slice of a huge line).
+    // slice of a huge line). Sized length+1 and NUL-terminated as defense in
+    // depth: consumers receive an exact-length Slice, but a stray C-string
+    // read one past the end must never leave the allocation or see a stale
+    // byte from a previous, longer fetch.
     static char* scratch = NULL;
-    static uint32_t scratchCapacity = 0;
-    if (length > scratchCapacity) {
-        char* newScratch = realloc(scratch, length);
+    static size_t scratchCapacity = 0;
+    if (length + 1 > scratchCapacity) {
+        char* newScratch = realloc(scratch, length + 1);
         assert(newScratch != NULL);
         scratch = newScratch;
-        scratchCapacity = length;
+        scratchCapacity = length + 1;
     }
+    scratch[length] = '\0';
 
     size_t rangeStart = line->offset + start;
     size_t rangeEnd = rangeStart + length;
@@ -57,8 +61,7 @@ Slice Line_GetTextRange(Line* line, struct Buffer* buffer, size_t start, size_t 
             size_t overlapLen = overlapEnd - overlapStart;
 
             size_t localOffset = overlapStart - pieceStart;
-            const char* src = (p->source == PIECE_SOURCE_ORIGINAL) ? buffer->bufferOriginal.data
-                                                                   : (const char*)buffer->bufferAdd.data;
+            const char* src = Buffer_PieceData(buffer, p);
 
             memcpy(scratch + destOffset, src + p->start + localOffset, overlapLen);
             destOffset += overlapLen;

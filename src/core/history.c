@@ -18,7 +18,7 @@ void Stack_Push(Stack* stack, void* data)
         Stack_Init(stack);
     }
     Array_Append(stack, &data, 1);
-    LOG_DEBUG("Stack_Push: pushed data %p (size=%u)", data, stack->size);
+    LOG_DEBUG("Stack_Push: pushed data %p (size=%zu)", data, stack->size);
 }
 
 void* Stack_Pop(Stack* stack)
@@ -27,7 +27,7 @@ void* Stack_Pop(Stack* stack)
         return NULL;
     void* data = Array_Get(stack, void*, stack->size - 1);
     Array_Pop(stack);
-    LOG_DEBUG("Stack_Pop: popped data %p (size=%u)", data, stack->size);
+    LOG_DEBUG("Stack_Pop: popped data %p (size=%zu)", data, stack->size);
     return data;
 }
 
@@ -35,9 +35,9 @@ void Stack_Free(Stack* stack, void (*freeData)(void*))
 {
     if (!stack)
         return;
-    LOG_DEBUG("Stack_Free: freeing stack at %p (size=%u)", (void*)stack, stack->size);
+    LOG_DEBUG("Stack_Free: freeing stack at %p (size=%zu)", (void*)stack, stack->size);
     if (freeData) {
-        for (uint32_t i = 0; i < stack->size; i++) {
+        for (size_t i = 0; i < stack->size; i++) {
             void* data = Array_Get(stack, void*, i);
             if (data) {
                 freeData(data);
