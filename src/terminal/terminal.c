@@ -36,6 +36,25 @@ void Terminal_AsyncRestore(void)
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &asyncRestoreTermios);
 }
 
+// Best-effort terminal control write, retried on EINTR. Failure is
+// deliberately swallowed: there is no meaningful recovery when the
+// controlling terminal rejects an escape sequence, and fortified glibc
+// (Ubuntu's default at -O1+) marks write() warn_unused_result, so the
+// result must be consumed explicitly.
+static void WriteTerminalSequence(const char* sequence, size_t size)
+{
+    size_t written = 0;
+    while (written < size) {
+        ssize_t result = write(STDOUT_FILENO, sequence + written, size - written);
+        if (result < 0) {
+            if (errno == EINTR)
+                continue;
+            return;
+        }
+        written += (size_t)result;
+    }
+}
+
 bool Terminal_EnableRawMode(Terminal* terminal)
 {
     LOG_INFO("Enabling raw mode on terminal.");
@@ -71,7 +90,7 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     // Enter alternate screen buffer, set cursor to blinking vertical bar, enable modifyOtherKeys level 2,
     // and request CSI u (Kitty protocol) for disambiguated key codes with modifiers
     const char* init = "\x1b[?1049h\x1b[5 q\x1b[>4;2m\x1b[>1u";
-    write(STDOUT_FILENO, init, strlen(init));
+    WriteTerminalSequence(init, strlen(init));
 
     return true;
 }
@@ -86,7 +105,7 @@ bool Terminal_DisableRawMode(Terminal* terminal)
         // Disable modifyOtherKeys and Kitty CSI u, reset cursor style to default, make sure cursor is visible,
         // and exit alternate screen buffer
         const char* exitSeq = "\x1b[>4;0m\x1b[<1u\x1b[?25h\x1b[0 q\x1b[?1049l";
-        write(STDOUT_FILENO, exitSeq, strlen(exitSeq));
+        WriteTerminalSequence(exitSeq, strlen(exitSeq));
     }
     return true;
 }
@@ -102,7 +121,7 @@ void Terminal_ClearScreen(const Terminal* terminal)
 {
     (void)terminal;
     const char* clear = "\x1b[2J\x1b[H";
-    write(STDOUT_FILENO, clear, strlen(clear));
+    WriteTerminalSequence(clear, strlen(clear));
 }
 
 int TerminalGetModifierFlags(int pm)
@@ -229,8 +248,8 @@ int ReadKey(void)
         if (readSize == 1)
             break;
         if (readSize == -1 && errno != EINTR && errno != EAGAIN) {
-            write(STDOUT_FILENO, "\x1b[2J", 4);
-            write(STDOUT_FILENO, "\x1b[H", 3);
+            WriteTerminalSequence("\x1b[2J", 4);
+            WriteTerminalSequence("\x1b[H", 3);
             perror("read");
             exit(1);
         }
