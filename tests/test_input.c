@@ -5,6 +5,7 @@
 #include "../src/core/line.h"
 #include "../src/utils/clipboard.h"
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void test_move_cursor_left_right_within_line(void)
@@ -478,6 +479,44 @@ static void test_tab_copy_selection(void)
     assert(strncmp((const char*)s.data, "lo\nwo", 5) == 0);
 
     Clipboard_Free();
+    Editor_Free(&editor);
+}
+
+static void test_compound_edit_undo_redo(void)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+
+    Line* line = Buffer_GetLine(tab->buffer, 0);
+    Buffer_InsertText(tab->buffer, line->offset, "one two", 7);
+    tab->cursorX = 7;
+
+    Editor_DeleteWord(&editor, -1);
+    line = Buffer_GetLine(tab->buffer, 0);
+    Slice text = Line_GetText(line, tab->buffer);
+    assert(text.size == 4 && memcmp(text.data, "one ", 4) == 0);
+
+    size_t lineNumber = SIZE_MAX;
+    size_t column = SIZE_MAX;
+    assert(Buffer_Undo(tab->buffer, &lineNumber, &column) == true);
+    line = Buffer_GetLine(tab->buffer, 0);
+    text = Line_GetText(line, tab->buffer);
+    assert(text.size == 7 && memcmp(text.data, "one two", 7) == 0);
+
+    assert(Buffer_Redo(tab->buffer, &lineNumber, &column) == true);
+    line = Buffer_GetLine(tab->buffer, 0);
+    text = Line_GetText(line, tab->buffer);
+    assert(text.size == 4 && memcmp(text.data, "one ", 4) == 0);
+
+    Editor_Free(&editor);
+
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    tab = Array_Get(&editor.tabs, Tab*, editor.activeTabIndex);
+    Editor_ProcessInput(&editor, CTRL_KEY('z'));
+    assert(tab->isSaved == true);
     Editor_Free(&editor);
 }
 

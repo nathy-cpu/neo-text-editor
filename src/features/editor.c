@@ -9,13 +9,13 @@
 #endif
 
 #include "editor.h"
-#include "tab.h"
-#include "syntax.h"
+#include "../core/buffer.h"
+#include "../core/line.h"
+#include "../terminal/terminal.h"
 #include "explorer.h"
 #include "logs_view.h"
-#include "../terminal/terminal.h"
-#include "../core/line.h"
-#include "../core/buffer.h"
+#include "syntax.h"
+#include "tab.h"
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>

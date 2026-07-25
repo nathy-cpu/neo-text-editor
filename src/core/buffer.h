@@ -141,6 +141,11 @@ void Buffer_InsertText(Buffer* buffer, size_t pos, const char* text, size_t len)
 void Buffer_DeleteRange(Buffer* buffer, size_t start, size_t end);
 
 /**
+ * @brief Records a history entry for a compound edit performed with raw buffer operations.
+ */
+void Buffer_RecordCompositeEdit(Buffer* buffer, size_t lineNumber, size_t column);
+
+/**
  * @brief Creates a Buffer from a memory-mapped file.
  */
 Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename);

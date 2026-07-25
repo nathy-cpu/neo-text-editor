@@ -43,6 +43,11 @@ typedef struct {
     int keyCopy;
     int keyCut;
     int keyPaste;
+    int keyDeleteLine;
+    int keyMoveLineUp;
+    int keyMoveLineDown;
+    int keyJoinLines;
+    int keyKillToEnd;
 
     // Logging Configuration
     char* logFile;

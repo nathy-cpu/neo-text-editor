@@ -13,8 +13,8 @@
 #include "features/input.h"
 #include "terminal/terminal.h"
 #include "utils/args.h"
-#include "utils/logger.h"
 #include "utils/clipboard.h"
+#include "utils/logger.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>

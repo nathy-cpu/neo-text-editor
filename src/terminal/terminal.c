@@ -44,8 +44,9 @@ bool Terminal_EnableRawMode(Terminal* terminal)
     }
     terminal->rawModeEnabled = true;
 
-    // Enter alternate screen buffer, set cursor to blinking vertical bar, and enable modifyOtherKeys level 2
-    const char* init = "\x1b[?1049h\x1b[5 q\x1b[>4;2m";
+    // Enter alternate screen buffer, set cursor to blinking vertical bar, enable modifyOtherKeys level 2,
+    // and request CSI u (Kitty protocol) for disambiguated key codes with modifiers
+    const char* init = "\x1b[?1049h\x1b[5 q\x1b[>4;2m\x1b[>1u";
     write(STDOUT_FILENO, init, strlen(init));
 
     return true;
@@ -58,8 +59,9 @@ bool Terminal_DisableRawMode(Terminal* terminal)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->originalTermios);
         terminal->rawModeEnabled = false;
 
-        // Disable modifyOtherKeys, reset cursor style to default, make sure cursor is visible, and exit alternate screen buffer
-        const char* exitSeq = "\x1b[>4;0m\x1b[?25h\x1b[0 q\x1b[?1049l";
+        // Disable modifyOtherKeys and Kitty CSI u, reset cursor style to default, make sure cursor is visible,
+        // and exit alternate screen buffer
+        const char* exitSeq = "\x1b[>4;0m\x1b[<1u\x1b[?25h\x1b[0 q\x1b[?1049l";
         write(STDOUT_FILENO, exitSeq, strlen(exitSeq));
     }
     return true;
@@ -90,6 +92,62 @@ static int GetModifierFlags(int pm)
     if (val & 4)
         flags |= KEY_MOD_CTRL;
     return flags;
+}
+
+static int MapCharCodeToKey(int char_code)
+{
+    switch (char_code) {
+    case 'H':
+        return HOME_KEY;
+    case 'F':
+        return END_KEY;
+    case 0xE010:
+        return HOME_KEY;
+    case 0xE011:
+        return END_KEY;
+    case 0xE012:
+        return ARROW_LEFT;
+    case 0xE013:
+        return ARROW_UP;
+    case 0xE014:
+        return ARROW_RIGHT;
+    case 0xE015:
+        return ARROW_DOWN;
+    case 0xE016:
+        return PAGE_UP;
+    case 0xE017:
+        return PAGE_DOWN;
+    case 0xE018:
+        return INSERT_KEY;
+    case 0xE019:
+        return DELETE_KEY;
+    case 0xE020:
+        return KEY_F1;
+    case 0xE021:
+        return KEY_F2;
+    case 0xE022:
+        return KEY_F3;
+    case 0xE023:
+        return KEY_F4;
+    case 0xE024:
+        return KEY_F5;
+    default:
+        return char_code;
+    }
+}
+
+static int MapModifiedKeyCode(int char_code, int mod_flags)
+{
+    if (mod_flags & KEY_MOD_CTRL) {
+        if (char_code >= 'a' && char_code <= 'z') {
+            return CTRL_KEY(char_code) | (mod_flags & ~KEY_MOD_CTRL);
+        }
+        if (char_code >= 'A' && char_code <= 'Z') {
+            return CTRL_KEY(tolower((unsigned char)char_code)) | (mod_flags & ~KEY_MOD_CTRL);
+        }
+    }
+
+    return MapCharCodeToKey(char_code) | mod_flags;
 }
 
 int ReadKey(void)
@@ -126,12 +184,18 @@ int ReadKey(void)
                 return '\x1b';
             }
             switch (seq1) {
-            case 'P': return KEY_F1;
-            case 'Q': return KEY_F2;
-            case 'R': return KEY_F3;
-            case 'S': return KEY_F4;
-            case 'H': return HOME_KEY;
-            case 'F': return END_KEY;
+            case 'P':
+                return KEY_F1;
+            case 'Q':
+                return KEY_F2;
+            case 'R':
+                return KEY_F3;
+            case 'S':
+                return KEY_F4;
+            case 'H':
+                return HOME_KEY;
+            case 'F':
+                return END_KEY;
             }
             return '\x1b';
         }
@@ -158,7 +222,7 @@ int ReadKey(void)
                 return '\x1b';
             }
 
-            int params[8] = {0};
+            int params[8] = { 0 };
             int num_params = 0;
             bool has_param = false;
 
@@ -166,7 +230,7 @@ int ReadKey(void)
                 if (seq[i] >= '0' && seq[i] <= '9') {
                     params[num_params] = params[num_params] * 10 + (seq[i] - '0');
                     has_param = true;
-                } else if (seq[i] == ';') {
+                } else if (seq[i] == ';' || seq[i] == ':') {
                     if (num_params < 7) {
                         num_params++;
                     }
@@ -186,15 +250,7 @@ int ReadKey(void)
                         }
                         int char_code = (num_params >= 3) ? params[2] : 0;
 
-                        if (mod_flags & KEY_MOD_CTRL) {
-                            if (char_code >= 'a' && char_code <= 'z') {
-                                return CTRL_KEY(char_code) | (mod_flags & ~KEY_MOD_CTRL);
-                            }
-                            if (char_code >= 'A' && char_code <= 'Z') {
-                                return CTRL_KEY(tolower((unsigned char)char_code)) | (mod_flags & ~KEY_MOD_CTRL);
-                            }
-                        }
-                        return char_code | mod_flags;
+                        return MapModifiedKeyCode(char_code, mod_flags);
                     } else {
                         int base_key = 0;
                         switch (params[0]) {
@@ -251,27 +307,35 @@ int ReadKey(void)
                     }
                 }
             } else if (final_char == 'u') {
-                // CSI u format: CSI <char_code> ; <modifier> u
-                if (num_params >= 2) {
+                // CSI u format (Kitty protocol): CSI <char_code> [; <modifier>] u
+                // Modifier uses Kitty's 1+bitmask encoding: 2=Shift, 3=Alt, 5=Ctrl.
+                if (num_params >= 1) {
                     int char_code = params[0];
-                    int mod_flags = GetModifierFlags(params[1]);
-                    if (mod_flags & KEY_MOD_CTRL) {
-                        if (char_code >= 'a' && char_code <= 'z') {
-                            return CTRL_KEY(char_code) | (mod_flags & ~KEY_MOD_CTRL);
-                        }
-                        if (char_code >= 'A' && char_code <= 'Z') {
-                            return CTRL_KEY(tolower((unsigned char)char_code)) | (mod_flags & ~KEY_MOD_CTRL);
-                        }
+                    int mod_flags = 0;
+                    if (num_params >= 2) {
+                        mod_flags = GetModifierFlags(params[1]);
                     }
-                    return char_code | mod_flags;
+                    LOG_DEBUG("CSI u: char_code=%d(0x%x) raw_mod=%d mod_flags=%d", char_code, char_code,
+                        num_params >= 2 ? params[1] : 0, mod_flags);
+                    int result = MapModifiedKeyCode(char_code, mod_flags);
+                    LOG_DEBUG("CSI u result: %d", result);
+                    return result;
                 }
             } else if (final_char == 'A' || final_char == 'B' || final_char == 'C' || final_char == 'D') {
                 int base_key = 0;
                 switch (final_char) {
-                case 'A': base_key = ARROW_UP; break;
-                case 'B': base_key = ARROW_DOWN; break;
-                case 'C': base_key = ARROW_RIGHT; break;
-                case 'D': base_key = ARROW_LEFT; break;
+                case 'A':
+                    base_key = ARROW_UP;
+                    break;
+                case 'B':
+                    base_key = ARROW_DOWN;
+                    break;
+                case 'C':
+                    base_key = ARROW_RIGHT;
+                    break;
+                case 'D':
+                    base_key = ARROW_LEFT;
+                    break;
                 }
                 int mod_flags = 0;
                 if (num_params >= 2 && params[0] == 1) {
@@ -284,7 +348,11 @@ int ReadKey(void)
                 if (num_params >= 2 && params[0] == 1) {
                     mod_flags = GetModifierFlags(params[1]);
                 }
-                return base_key | mod_flags;
+                int result = base_key | mod_flags;
+                LOG_DEBUG("CSI %c: raw_seq=\"%.*s\" num_params=%d params[0]=%d params[1]=%d mod_flags=%d result=%d",
+                    final_char, seq_len, seq, num_params, num_params >= 1 ? params[0] : -1,
+                    num_params >= 2 ? params[1] : -1, mod_flags, result);
+                return result;
             } else if (final_char == 'Z') {
                 // Shift+Tab
                 return '\t' | KEY_MOD_SHIFT;
@@ -292,10 +360,18 @@ int ReadKey(void)
                 // F1 - F4 with modifiers: ESC[1;<modifier>P etc.
                 int base_key = 0;
                 switch (final_char) {
-                case 'P': base_key = KEY_F1; break;
-                case 'Q': base_key = KEY_F2; break;
-                case 'R': base_key = KEY_F3; break;
-                case 'S': base_key = KEY_F4; break;
+                case 'P':
+                    base_key = KEY_F1;
+                    break;
+                case 'Q':
+                    base_key = KEY_F2;
+                    break;
+                case 'R':
+                    base_key = KEY_F3;
+                    break;
+                case 'S':
+                    base_key = KEY_F4;
+                    break;
                 }
                 int mod_flags = 0;
                 if (num_params >= 2 && params[0] == 1) {

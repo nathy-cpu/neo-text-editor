@@ -11,12 +11,12 @@
 #include "input.h"
 #include "../core/buffer.h"
 #include "../core/line.h"
+#include "../utils/clipboard.h"
 #include "../utils/logger.h"
 #include "editor.h"
 #include "explorer.h"
 #include "logs_view.h"
 #include "tab.h"
-#include "../utils/clipboard.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -264,6 +264,7 @@ void Editor_DeleteSelection(Editor* editor)
         return;
     size_t startX, startY, endX, endY;
     Tab_GetSelection(tab, &startX, &startY, &endX, &endY);
+    Buffer_RecordCompositeEdit(tab->buffer, startY, startX);
 
     tab->cursorX = endX;
     tab->cursorY = endY;
@@ -386,6 +387,7 @@ void Editor_ProcessInput(Editor* editor, int input)
                 if (tab->hasSelection) {
                     Editor_DeleteSelection(editor);
                 }
+                Buffer_RecordCompositeEdit(tab->buffer, tab->cursorY, tab->cursorX);
                 tab->buffer->history.forceGrouping = true;
                 const char* text = (const char*)s.data;
                 size_t len = s.size;
@@ -411,6 +413,41 @@ void Editor_ProcessInput(Editor* editor, int input)
                 Editor_SetStatusMessage(editor, "Clipboard is empty");
             }
         }
+    } else if (input == editor->config.keyDeleteLine) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else {
+            Editor_DeleteLine(editor);
+            modified = true;
+        }
+    } else if (input == editor->config.keyKillToEnd) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else {
+            Editor_KillToEndOfLine(editor);
+            modified = true;
+        }
+    } else if (input == editor->config.keyJoinLines) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else {
+            Editor_JoinLines(editor);
+            modified = true;
+        }
+    } else if (input == editor->config.keyMoveLineUp) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else {
+            Editor_MoveLine(editor, -1);
+            modified = true;
+        }
+    } else if (input == editor->config.keyMoveLineDown) {
+        if (tab->buffer->isReadOnly) {
+            Editor_SetStatusMessage(editor, "Error: File is read-only");
+        } else {
+            Editor_MoveLine(editor, 1);
+            modified = true;
+        }
     } else {
         switch (input) {
         case '\t':
@@ -418,11 +455,23 @@ void Editor_ProcessInput(Editor* editor, int input)
                 Editor_SetStatusMessage(editor, "Error: File is read-only");
                 break;
             }
-            if (tab->hasSelection)
-                Editor_DeleteSelection(editor);
-            Buffer_InsertChar(tab->buffer, tab->cursorY, tab->cursorX, '\t');
-            tab->cursorX++;
-            tab->isSaved = false;
+            if (tab->hasSelection) {
+                Editor_IndentLines(editor);
+                modified = true;
+            } else {
+                Buffer_InsertChar(tab->buffer, tab->cursorY, tab->cursorX, '\t');
+                tab->cursorX++;
+                tab->isSaved = false;
+                modified = true;
+            }
+            break;
+
+        case SHIFT_TAB:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_UnindentLines(editor);
             modified = true;
             break;
 
@@ -455,17 +504,17 @@ void Editor_ProcessInput(Editor* editor, int input)
                 if (Buffer_Undo(tab->buffer, &undoLine, &undoColumn)) {
                     tab->cursorY = undoLine;
                     tab->cursorX = undoColumn;
+                    modified = true;
+                    tab->isSaved = false;
+                    if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
+                        tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
+                    }
+                    Line* rowZ = Buffer_GetLine(tab->buffer, tab->cursorY);
+                    if (rowZ && tab->cursorX > Line_Length(rowZ)) {
+                        tab->cursorX = Line_Length(rowZ);
+                    }
+                    Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
                 }
-                modified = true;
-                tab->isSaved = false;
-                if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
-                    tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
-                }
-                Line* rowZ = Buffer_GetLine(tab->buffer, tab->cursorY);
-                if (rowZ && tab->cursorX > Line_Length(rowZ)) {
-                    tab->cursorX = Line_Length(rowZ);
-                }
-                Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
             }
             break;
 
@@ -475,17 +524,17 @@ void Editor_ProcessInput(Editor* editor, int input)
                 if (Buffer_Redo(tab->buffer, &redoLine, &redoColumn)) {
                     tab->cursorY = redoLine;
                     tab->cursorX = redoColumn;
+                    modified = true;
+                    tab->isSaved = false;
+                    if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
+                        tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
+                    }
+                    Line* rowY = Buffer_GetLine(tab->buffer, tab->cursorY);
+                    if (rowY && tab->cursorX > Line_Length(rowY)) {
+                        tab->cursorX = Line_Length(rowY);
+                    }
+                    Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
                 }
-                modified = true;
-                tab->isSaved = false;
-                if (tab->cursorY >= Buffer_GetLineCount(tab->buffer)) {
-                    tab->cursorY = Buffer_GetLineCount(tab->buffer) > 0 ? Buffer_GetLineCount(tab->buffer) - 1 : 0;
-                }
-                Line* rowY = Buffer_GetLine(tab->buffer, tab->cursorY);
-                if (rowY && tab->cursorX > Line_Length(rowY)) {
-                    tab->cursorX = Line_Length(rowY);
-                }
-                Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
             }
             break;
 
@@ -507,6 +556,19 @@ void Editor_ProcessInput(Editor* editor, int input)
             Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
             if (row)
                 tab->cursorX = Line_Length(row);
+        } break;
+
+        case CTRL_HOME_KEY:
+            tab->hasSelection = false;
+            tab->cursorY = 0;
+            tab->cursorX = 0;
+            break;
+
+        case CTRL_END_KEY: {
+            tab->hasSelection = false;
+            size_t lineCount = Buffer_GetLineCount(tab->buffer);
+            tab->cursorY = lineCount > 0 ? lineCount - 1 : 0;
+            tab->cursorX = 0;
         } break;
 
         case BACKSPACE:
@@ -552,6 +614,68 @@ void Editor_ProcessInput(Editor* editor, int input)
             }
             break;
 
+        case CTRL_BACKSPACE:
+        case ALT_BACKSPACE:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            if (tab->hasSelection) {
+                Editor_DeleteSelection(editor);
+                modified = true;
+            } else {
+                Editor_DeleteWord(editor, -1);
+                modified = true;
+            }
+            break;
+
+        case CTRL_DELETE:
+        case ALT_DELETE:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            if (tab->hasSelection) {
+                Editor_DeleteSelection(editor);
+                modified = true;
+            } else {
+                Editor_DeleteWord(editor, 1);
+                modified = true;
+            }
+            break;
+
+        case CTRL_KEY('k'):
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            if (tab->hasSelection) {
+                Editor_DeleteSelection(editor);
+                modified = true;
+            } else {
+                Editor_KillToEndOfLine(editor);
+                modified = true;
+            }
+            break;
+
+        case CTRL_KEY('j'):
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_JoinLines(editor);
+            modified = true;
+            break;
+
+        case CTRL_KEY('d'):
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_DeleteLine(editor);
+            modified = true;
+            break;
+
         case PAGE_UP:
         case PAGE_DOWN: {
             if (input == PAGE_UP)
@@ -580,12 +704,54 @@ void Editor_ProcessInput(Editor* editor, int input)
             Editor_MoveCursorWord(editor, input);
             break;
 
+        case ALT_ARROW_UP:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_MoveLine(editor, -1);
+            modified = true;
+            break;
+
+        case ALT_ARROW_DOWN:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_MoveLine(editor, 1);
+            modified = true;
+            break;
+
+        case CTRL_ENTER:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_InsertLineBelow(editor);
+            modified = true;
+            break;
+
+        case CTRL_SHIFT_ENTER:
+            if (tab->buffer->isReadOnly) {
+                Editor_SetStatusMessage(editor, "Error: File is read-only");
+                break;
+            }
+            Editor_InsertLineAbove(editor);
+            modified = true;
+            break;
+
         case SHIFT_ARROW_UP:
         case SHIFT_ARROW_DOWN:
         case SHIFT_ARROW_LEFT:
         case SHIFT_ARROW_RIGHT:
         case SHIFT_HOME_KEY:
         case SHIFT_END_KEY:
+        case SHIFT_CTRL_LEFT:
+        case SHIFT_CTRL_RIGHT:
+        case SHIFT_CTRL_HOME:
+        case SHIFT_CTRL_END:
+        case SHIFT_PAGE_UP:
+        case SHIFT_PAGE_DOWN:
             if (!tab->hasSelection) {
                 tab->hasSelection = true;
                 tab->selectStartX = tab->cursorX;
@@ -605,6 +771,27 @@ void Editor_ProcessInput(Editor* editor, int input)
                 Line* row = Buffer_GetLine(tab->buffer, tab->cursorY);
                 if (row)
                     tab->cursorX = Line_Length(row);
+            } else if (input == SHIFT_CTRL_HOME) {
+                tab->cursorY = 0;
+                tab->cursorX = 0;
+            } else if (input == SHIFT_CTRL_END) {
+                size_t lineCount = Buffer_GetLineCount(tab->buffer);
+                tab->cursorY = lineCount > 0 ? lineCount - 1 : 0;
+                tab->cursorX = 0;
+            } else if (input == SHIFT_CTRL_LEFT) {
+                Editor_MoveCursorWord(editor, CTRL_ARROW_LEFT);
+            } else if (input == SHIFT_CTRL_RIGHT) {
+                Editor_MoveCursorWord(editor, CTRL_ARROW_RIGHT);
+            } else if (input == SHIFT_PAGE_UP) {
+                tab->cursorY = tab->rowOffset;
+                for (size_t i = editor->screenRows; i > 0; i--)
+                    Editor_MoveCursor(editor, ARROW_UP);
+            } else if (input == SHIFT_PAGE_DOWN) {
+                tab->cursorY = tab->rowOffset + editor->screenRows - 1;
+                if (tab->cursorY > Buffer_GetLineCount(tab->buffer) - 1)
+                    tab->cursorY = Buffer_GetLineCount(tab->buffer) - 1;
+                for (size_t i = editor->screenRows; i > 0; i--)
+                    Editor_MoveCursor(editor, ARROW_DOWN);
             }
             break;
 
@@ -634,6 +821,377 @@ void Editor_ProcessInput(Editor* editor, int input)
         Buffer_EnsureLineVisible(tab->buffer, tab->cursorY, tab->config->tabSize);
         Tab_UpdateSyntax(tab, SIZE_MAX);
     }
+}
+
+void Editor_EnsureSelection(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (!tab->hasSelection) {
+        tab->hasSelection = true;
+        tab->selectStartX = tab->cursorX;
+        tab->selectStartY = tab->cursorY;
+    }
+}
+
+void Editor_DeleteWord(Editor* editor, int direction)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t y = tab->cursorY;
+    size_t x = tab->cursorX;
+    Line* row = Buffer_GetLine(buffer, y);
+    if (!row)
+        return;
+
+    if (direction < 0) {
+        if (x == 0) {
+            if (y == 0) {
+                return;
+            }
+            Buffer_JoinLine(buffer, y - 1);
+            Line* prevRow = Buffer_GetLine(buffer, y - 1);
+            tab->cursorY = y - 1;
+            tab->cursorX = prevRow ? Line_Length(prevRow) : 0;
+        } else {
+            size_t wordStart = x;
+            while (wordStart > 0 && isspace(Line_GetChar(row, buffer, wordStart - 1)))
+                wordStart--;
+            while (wordStart > 0 && !isspace(Line_GetChar(row, buffer, wordStart - 1)))
+                wordStart--;
+            size_t startOff = row->offset + wordStart;
+            size_t endOff = row->offset + x;
+            Buffer_RecordCompositeEdit(buffer, y, wordStart);
+            Buffer_DeleteRange(buffer, startOff, endOff);
+            tab->cursorX = wordStart;
+        }
+    } else {
+        size_t lineLen = Line_Length(row);
+        if (x == lineLen) {
+            if (y >= Buffer_GetLineCount(buffer) - 1) {
+                return;
+            }
+            Buffer_JoinLine(buffer, y);
+        } else {
+            size_t wordEnd = x;
+            while (wordEnd < lineLen && !isspace(Line_GetChar(row, buffer, wordEnd)))
+                wordEnd++;
+            while (wordEnd < lineLen && isspace(Line_GetChar(row, buffer, wordEnd)))
+                wordEnd++;
+            size_t startOff = row->offset + x;
+            size_t endOff = row->offset + wordEnd;
+            Buffer_RecordCompositeEdit(buffer, y, x);
+            Buffer_DeleteRange(buffer, startOff, endOff);
+        }
+    }
+
+    buffer->isModified = true;
+    tab->isSaved = false;
+}
+
+void Editor_KillToEndOfLine(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t y = tab->cursorY;
+    size_t x = tab->cursorX;
+    Line* row = Buffer_GetLine(buffer, y);
+    if (!row)
+        return;
+
+    size_t lineLen = Line_Length(row);
+
+    if (x < lineLen) {
+        size_t startOff = row->offset + x;
+        size_t endOff = row->offset + lineLen;
+        Buffer_RecordCompositeEdit(buffer, y, x);
+        Buffer_DeleteRange(buffer, startOff, endOff);
+    } else if (y < Buffer_GetLineCount(buffer) - 1) {
+        Buffer_JoinLine(buffer, y);
+    }
+
+    buffer->isModified = true;
+    tab->isSaved = false;
+}
+
+void Editor_MoveLine(Editor* editor, int direction)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t lineCount = Buffer_GetLineCount(buffer);
+    size_t y = tab->cursorY;
+
+    if ((direction < 0 && y == 0) || (direction > 0 && y >= lineCount - 1))
+        return;
+
+    size_t first = (direction < 0) ? y - 1 : y;
+    size_t second = first + 1;
+
+    Line* lineA = Buffer_GetLine(buffer, first);
+    Line* lineB = Buffer_GetLine(buffer, second);
+    if (!lineA || !lineB)
+        return;
+
+    Slice textA = Line_GetText(lineA, buffer);
+    char* aCopy = malloc(textA.size + 1);
+    memcpy(aCopy, textA.data, textA.size);
+    aCopy[textA.size] = '\0';
+
+    Slice textB = Line_GetText(lineB, buffer);
+    char* bCopy = malloc(textB.size + 1);
+    memcpy(bCopy, textB.data, textB.size);
+    bCopy[textB.size] = '\0';
+
+    size_t rangeStart = lineA->offset;
+    size_t rangeEnd = lineB->offset + lineB->length;
+    if (second < lineCount - 1)
+        rangeEnd++;
+
+    Buffer_RecordCompositeEdit(buffer, y, tab->cursorX);
+    Buffer_DeleteRange(buffer, rangeStart, rangeEnd);
+
+    size_t ip = rangeStart;
+    if (textB.size > 0) {
+        Buffer_InsertText(buffer, ip, bCopy, textB.size);
+        ip += textB.size;
+    }
+    Buffer_InsertText(buffer, ip, "\n", 1);
+    ip += 1;
+    if (textA.size > 0) {
+        Buffer_InsertText(buffer, ip, aCopy, textA.size);
+        ip += textA.size;
+    }
+    if (second < lineCount - 1)
+        Buffer_InsertText(buffer, ip, "\n", 1);
+
+    free(aCopy);
+    free(bCopy);
+
+    buffer->isModified = true;
+
+    tab->cursorY = (direction < 0) ? y - 1 : y + 1;
+    Line* newRow = Buffer_GetLine(buffer, tab->cursorY);
+    if (newRow && tab->cursorX > Line_Length(newRow))
+        tab->cursorX = Line_Length(newRow);
+    tab->isSaved = false;
+}
+
+void Editor_InsertLineBelow(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t y = tab->cursorY;
+    Line* row = Buffer_GetLine(buffer, y);
+    if (!row)
+        return;
+
+    size_t lineLen = Line_Length(row);
+    Buffer_SplitLine(buffer, y, lineLen);
+
+    tab->cursorY = y + 1;
+    tab->cursorX = 0;
+    tab->isSaved = false;
+}
+
+void Editor_InsertLineAbove(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t y = tab->cursorY;
+
+    Buffer_SplitLine(buffer, y, 0);
+
+    tab->cursorY = y;
+    tab->cursorX = 0;
+    tab->isSaved = false;
+}
+
+void Editor_JoinLines(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t y = tab->cursorY;
+
+    if (y >= Buffer_GetLineCount(buffer) - 1)
+        return;
+
+    Line* row = Buffer_GetLine(buffer, y);
+    size_t lineLen = row ? Line_Length(row) : 0;
+
+    Buffer_JoinLine(buffer, y);
+
+    tab->cursorX = lineLen;
+    tab->isSaved = false;
+}
+
+void Editor_DeleteLine(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t y = tab->cursorY;
+    size_t lineCount = Buffer_GetLineCount(buffer);
+    if (lineCount == 0)
+        return;
+
+    Buffer_RecordCompositeEdit(buffer, y, 0);
+    Buffer_DeleteLine(buffer, y);
+
+    if (y >= Buffer_GetLineCount(buffer) && Buffer_GetLineCount(buffer) > 0)
+        tab->cursorY = Buffer_GetLineCount(buffer) - 1;
+    tab->cursorX = 0;
+    tab->isSaved = false;
+}
+
+void Editor_IndentLines(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t startY, endY;
+
+    if (tab->hasSelection) {
+        size_t sx, sy, ex, ey;
+        Tab_GetSelection(tab, &sx, &sy, &ex, &ey);
+        startY = sy;
+        endY = ey;
+    } else {
+        startY = tab->cursorY;
+        endY = tab->cursorY;
+    }
+
+    Buffer_RecordCompositeEdit(buffer, startY, 0);
+    for (size_t i = startY; i <= endY; i++) {
+        Line* row = Buffer_GetLine(buffer, i);
+        if (!row)
+            continue;
+        size_t offset = row->offset;
+        Buffer_InsertText(buffer, offset, "    ", tab->config->tabSize);
+    }
+    buffer->isModified = true;
+    tab->isSaved = false;
+
+    if (tab->hasSelection) {
+        size_t ts = tab->config->tabSize;
+        if (tab->selectStartY >= startY && tab->selectStartY <= endY)
+            tab->selectStartX += ts;
+        if (tab->cursorY >= startY && tab->cursorY <= endY)
+            tab->cursorX += ts;
+    }
+}
+
+void Editor_UnindentLines(Editor* editor)
+{
+    if (Array_Size(&editor->tabs) == 0)
+        return;
+    Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
+    if (tab->buffer->isReadOnly)
+        return;
+
+    Buffer* buffer = tab->buffer;
+    size_t startY, endY;
+
+    if (tab->hasSelection) {
+        size_t sx, sy, ex, ey;
+        Tab_GetSelection(tab, &sx, &sy, &ex, &ey);
+        startY = sy;
+        endY = ey;
+    } else {
+        startY = tab->cursorY;
+        endY = tab->cursorY;
+    }
+
+    size_t rangeLen = endY - startY + 1;
+    size_t* removals = malloc(rangeLen * sizeof(size_t));
+    if (!removals)
+        return;
+
+    size_t totalRemoved = 0;
+    for (size_t i = startY; i <= endY; i++) {
+        Line* row = Buffer_GetLine(buffer, i);
+        if (!row) {
+            removals[i - startY] = 0;
+            continue;
+        }
+        size_t spacesToRemove = 0;
+        size_t tabSize = tab->config->tabSize;
+        size_t lineLen = Line_Length(row);
+        for (size_t j = 0; j < tabSize && j < lineLen; j++) {
+            if (Line_GetChar(row, buffer, j) == ' ')
+                spacesToRemove++;
+            else
+                break;
+        }
+        removals[i - startY] = spacesToRemove;
+        totalRemoved += spacesToRemove;
+    }
+
+    if (totalRemoved == 0) {
+        free(removals);
+        return;
+    }
+
+    Buffer_RecordCompositeEdit(buffer, startY, 0);
+    for (size_t i = startY; i <= endY; i++) {
+        if (removals[i - startY] > 0) {
+            Line* row = Buffer_GetLine(buffer, i);
+            size_t offset = row->offset;
+            Buffer_DeleteRange(buffer, offset, offset + removals[i - startY]);
+        }
+    }
+    buffer->isModified = true;
+    tab->isSaved = false;
+
+    if (tab->hasSelection) {
+        if (tab->selectStartY >= startY && tab->selectStartY <= endY) {
+            size_t r = removals[tab->selectStartY - startY];
+            tab->selectStartX = (tab->selectStartX >= r) ? tab->selectStartX - r : 0;
+        }
+        if (tab->cursorY >= startY && tab->cursorY <= endY) {
+            size_t r = removals[tab->cursorY - startY];
+            tab->cursorX = (tab->cursorX >= r) ? tab->cursorX - r : 0;
+        }
+    }
+    free(removals);
 }
 
 char* Editor_Prompt(Editor* editor, const char* prompt)

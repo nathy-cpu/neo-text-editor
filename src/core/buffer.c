@@ -547,6 +547,15 @@ static void RecordAction(Buffer* buffer, Action action)
     Stack_EnforceLimit(&buffer->history.undoStack, buffer->history.undoLimit, (void (*)(void*))ActionGroup_Free);
 }
 
+void Buffer_RecordCompositeEdit(Buffer* buffer, size_t lineNumber, size_t column)
+{
+    if (!buffer)
+        return;
+
+    Action action = { .type = ACTION_COMPOSITE_EDIT, .lineNumber = lineNumber, .column = column };
+    RecordAction(buffer, action);
+}
+
 // ============================================================================
 // PUBLIC BUFFER API
 // ============================================================================
@@ -975,7 +984,7 @@ bool Buffer_WriteToFileStreaming(const Buffer* buffer, const char* path, bool us
         return false;
 
     size_t pieceCount = GapBuffer_Size(&buffer->pieces);
-    
+
 #define WRITE_BUFFER_SIZE 65536
     char* writeBuffer = malloc(WRITE_BUFFER_SIZE);
     if (!writeBuffer) {
@@ -1057,6 +1066,9 @@ static void Action_GetCursorPosition(const Action* action, bool afterAction, siz
     case ACTION_DELETE_TEXT:
         *outColumn = afterAction ? action->column : action->column + action->payload.text.size;
         break;
+    case ACTION_COMPOSITE_EDIT:
+        *outColumn = action->column;
+        break;
     case ACTION_SPLIT_LINE:
         if (afterAction) {
             *outLine = action->lineNumber + 1;
@@ -1105,6 +1117,7 @@ bool Buffer_Undo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
     DocumentSnapshot_Free(group->snapshotAfter);
     group->snapshotAfter = DocumentSnapshot_Copy(buffer);
     Buffer_RestoreSnapshot(buffer, group->snapshotBefore, rangeStartOffset);
+    buffer->isModified = true;
 
     buffer->history.isUndoRedoing = false;
 
@@ -1142,6 +1155,7 @@ bool Buffer_Redo(Buffer* buffer, size_t* outLineNumber, size_t* outColumn)
     buffer->history.isUndoRedoing = true;
 
     Buffer_RestoreSnapshot(buffer, group->snapshotAfter, rangeStartOffset);
+    buffer->isModified = true;
 
     buffer->history.isUndoRedoing = false;
 

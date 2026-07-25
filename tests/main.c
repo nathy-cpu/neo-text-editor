@@ -196,6 +196,7 @@ int main(void) {
     test_clipboard_basic();
     test_tab_get_selected_text();
     test_tab_copy_selection();
+    test_compound_edit_undo_redo();
     test_paste_undo_grouping();
     printf("All input tests passed!\n\r");
     LOG_INFO("All input tests passed!");

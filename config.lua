@@ -32,7 +32,12 @@ keybindings = {
     toggle_all_folds = "alt-f",
     copy = "ctrl-c",
     cut = "ctrl-x",
-    paste = "ctrl-v"
+    paste = "ctrl-v",
+    delete_line = "ctrl-d",
+    move_line_up = "alt-arrow_up",
+    move_line_down = "alt-arrow_down",
+    join_lines = "ctrl-j",
+    kill_to_end = "ctrl-k"
 }
 
 languages = {

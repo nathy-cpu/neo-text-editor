@@ -540,14 +540,18 @@ static void test_buffer_undo_redo_insert_char(void)
 
     // Adjacent char inserts coalesce into a single ActionGroup, so one undo
     // reverts all three at once.
+    buffer->isModified = false;
     size_t undoLine = SIZE_MAX, undoColumn = SIZE_MAX;
     assert(Buffer_Undo(buffer, &undoLine, &undoColumn) == true);
+    assert(buffer->isModified == true);
     line = Buffer_GetLine(buffer, 0);
     assert(Line_Length(line) == 0);
     assert(undoLine == 0 && undoColumn == 0);
 
     size_t redoLine = SIZE_MAX, redoColumn = SIZE_MAX;
+    buffer->isModified = false;
     assert(Buffer_Redo(buffer, &redoLine, &redoColumn) == true);
+    assert(buffer->isModified == true);
     line = Buffer_GetLine(buffer, 0);
     text = Line_GetText(line, buffer);
     assert(text.size == 3 && memcmp(text.data, "abc", 3) == 0);

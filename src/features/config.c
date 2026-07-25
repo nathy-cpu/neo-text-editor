@@ -108,6 +108,11 @@ void Config_InitDefaults(Config* config)
     config->keyCopy = CTRL_KEY('c');
     config->keyCut = CTRL_KEY('x');
     config->keyPaste = CTRL_KEY('v');
+    config->keyDeleteLine = CTRL_KEY('d');
+    config->keyMoveLineUp = ALT_ARROW_UP;
+    config->keyMoveLineDown = ALT_ARROW_DOWN;
+    config->keyJoinLines = CTRL_KEY('j');
+    config->keyKillToEnd = CTRL_KEY('k');
 
     config->logFile = strdup("neo.log");
     config->logLevelStr = strdup("INFO");
@@ -549,6 +554,11 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->keyCopy = GetLuaTableKeybinding(luaState, "keybindings", "copy", config->keyCopy);
     config->keyCut = GetLuaTableKeybinding(luaState, "keybindings", "cut", config->keyCut);
     config->keyPaste = GetLuaTableKeybinding(luaState, "keybindings", "paste", config->keyPaste);
+    config->keyDeleteLine = GetLuaTableKeybinding(luaState, "keybindings", "delete_line", config->keyDeleteLine);
+    config->keyMoveLineUp = GetLuaTableKeybinding(luaState, "keybindings", "move_line_up", config->keyMoveLineUp);
+    config->keyMoveLineDown = GetLuaTableKeybinding(luaState, "keybindings", "move_line_down", config->keyMoveLineDown);
+    config->keyJoinLines = GetLuaTableKeybinding(luaState, "keybindings", "join_lines", config->keyJoinLines);
+    config->keyKillToEnd = GetLuaTableKeybinding(luaState, "keybindings", "kill_to_end", config->keyKillToEnd);
 
     // Parse languages
     lua_getglobal(luaState, "languages");
