@@ -29,6 +29,15 @@ bool FileIoWriteChunk(int fileDescriptor, const void* data, size_t len);
 /**
  * @brief Opens a new temp file in the same directory as `path` for atomic writes.
  */
+/**
+ * @brief Resolves the final target of a save: follows symlink chains on the
+ * last path component (including dangling ones, bounded at 32 hops) and
+ * canonicalizes the parent directory. Works when the target does not exist
+ * yet, as long as its parent directory does.
+ * @return True on success with the resolved path in resolvedOut.
+ */
+bool FileIoResolveSavePath(const char* path, char* resolvedOut, size_t resolvedOutSize);
+
 int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tempPathOutSize);
 
 /**
