@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static void test_log_basic(void)
+TEST(log, log_basic)
 {
     // Test 1: Init with UI enabled, file disabled
     Logger_Init("test_logger_file.log", LOG_LEVEL_INFO, false, true, 5);
@@ -44,7 +44,7 @@ static void test_log_basic(void)
     Logger_Free();
 }
 
-static void test_log_file(void)
+TEST(log, log_file)
 {
     // Make sure we start clean
     remove("test_logger_file.log");
@@ -80,7 +80,7 @@ static void test_log_file(void)
     remove("test_logger_file.log");
 }
 
-static void test_log_reconfigure(void)
+TEST(log, log_reconfigure)
 {
     // Make sure we start clean
     remove("test_logger_file.log");
@@ -119,7 +119,7 @@ static void test_log_reconfigure(void)
     remove("test_logger_file.log");
 }
 
-static void test_log_parse_level_and_level_to_string(void)
+TEST(log, log_parse_level_and_level_to_string)
 {
     assert(Logger_ParseLevel("DEBUG", LOG_LEVEL_INFO) == LOG_LEVEL_DEBUG);
     assert(Logger_ParseLevel("info", LOG_LEVEL_DEBUG) == LOG_LEVEL_INFO); // case-insensitive
@@ -138,7 +138,7 @@ static void test_log_parse_level_and_level_to_string(void)
     assert(strcmp(Logger_LevelToString((LogLevel)999), "UNKNOWN") == 0);
 }
 
-static void test_log_double_init_is_noop(void)
+TEST(log, log_double_init_is_noop)
 {
     Logger_Init("test_logger_file.log", LOG_LEVEL_DEBUG, false, true, 5);
 
@@ -156,7 +156,7 @@ static void test_log_double_init_is_noop(void)
     Logger_Free();
 }
 
-static void test_log_configure_from_uninitialized(void)
+TEST(log, log_configure_from_uninitialized)
 {
     // Logger_Configure on an uninitialized logger must delegate to Logger_Init
     // rather than touching global state that was never set up.
@@ -170,7 +170,7 @@ static void test_log_configure_from_uninitialized(void)
     Logger_Free();
 }
 
-static void test_log_file_path_change(void)
+TEST(log, log_file_path_change)
 {
     remove("log_a.log");
     remove("log_b.log");
@@ -210,7 +210,7 @@ static void test_log_file_path_change(void)
     remove("log_b.log");
 }
 
-static void test_log_uninitialized_get_messages_and_before_init(void)
+TEST(log, log_uninitialized_get_messages_and_before_init)
 {
     // Relies on every other test leaving the logger freed at teardown.
     assert(Logger_GetMessages() == NULL);
@@ -223,7 +223,7 @@ static void test_log_uninitialized_get_messages_and_before_init(void)
     Logger_Free();
 }
 
-static void test_log_message_truncation(void)
+TEST(log, log_message_truncation)
 {
     Logger_Init("test_logger_file.log", LOG_LEVEL_INFO, false, true, 5);
 

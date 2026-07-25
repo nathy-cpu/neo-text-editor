@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static void test_buffer_basic(void)
+TEST(buffer, buffer_basic)
 {
     Buffer* buffer = Buffer_New();
     assert(buffer != NULL);
@@ -42,7 +42,7 @@ static void test_buffer_basic(void)
     Buffer_Free(buffer);
 }
 
-static void test_buffer_lines(void)
+TEST(buffer, buffer_lines)
 {
     Buffer* buffer = Buffer_New();
     
@@ -64,7 +64,7 @@ static void test_buffer_lines(void)
     Buffer_Free(buffer);
 }
 
-static void test_tab_gutter(void)
+TEST(buffer, tab_gutter)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -106,7 +106,7 @@ static void test_tab_gutter(void)
     Tab_Free(&tab);
 }
 
-static void test_tab_wrapping(void)
+TEST(buffer, tab_wrapping)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -171,7 +171,7 @@ static void test_tab_wrapping(void)
     Tab_Free(&tab);
 }
 
-static void test_tab_folding(void)
+TEST(buffer, tab_folding)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -244,7 +244,7 @@ static void test_tab_folding(void)
     Tab_Free(&tab);
 }
 
-static void test_editor_toggle_all_folds(void)
+TEST(buffer, editor_toggle_all_folds)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -302,7 +302,7 @@ static void test_editor_toggle_all_folds(void)
 // line (the "aligned" fast path), not rebuild the whole rest of the file.
 // Only when two edits land back-to-back with no intervening rebuild (so the
 // realignment offset can no longer be trusted) should the full tail rebuild.
-static void test_buffer_last_rebuild_range(void)
+TEST(buffer, buffer_last_rebuild_range)
 {
     Buffer* buffer = Buffer_New();
     for (size_t i = 1; i < 5; i++) {
@@ -350,7 +350,7 @@ static void test_buffer_last_rebuild_range(void)
 // (no renumbering of the rest), and an edit that does change the line count
 // should shift only the lineIndex of rows after the edit, not rebuild/move
 // the rows before it.
-static void test_tab_visual_rows_incremental(void)
+TEST(buffer, tab_visual_rows_incremental)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -435,7 +435,7 @@ static void test_tab_visual_rows_incremental(void)
 // treated as one unwrapped visual row even when the tab's word-wrap setting
 // is on, avoiding an O(length) tab-stop walk and a huge VisualRow array for
 // that one line. Neighboring normal-sized lines must still wrap normally.
-static void test_tab_visual_rows_huge_line_bypasses_wrap(void)
+TEST(buffer, tab_visual_rows_huge_line_bypasses_wrap)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -485,7 +485,7 @@ static void test_tab_visual_rows_huge_line_bypasses_wrap(void)
     Tab_Free(&tab);
 }
 
-static void test_buffer_piece_table(void)
+TEST(buffer, buffer_piece_table)
 {
     const char* path = "test_temp_piece_table.txt";
     Slice content = Slice_Make("Hello, World!\nWelcome to Neo!\n", 30);
@@ -526,7 +526,7 @@ static void test_buffer_piece_table(void)
     remove(path);
 }
 
-static void test_buffer_undo_redo_insert_char(void)
+TEST(buffer, buffer_undo_redo_insert_char)
 {
     Buffer* buffer = Buffer_New();
 
@@ -560,7 +560,7 @@ static void test_buffer_undo_redo_insert_char(void)
     Buffer_Free(buffer);
 }
 
-static void test_buffer_undo_redo_grouping_boundary(void)
+TEST(buffer, buffer_undo_redo_grouping_boundary)
 {
     Buffer* buffer = Buffer_New();
     Buffer_InsertLine(buffer, 1);
@@ -587,7 +587,7 @@ static void test_buffer_undo_redo_grouping_boundary(void)
     Buffer_Free(buffer);
 }
 
-static void test_buffer_undo_redo_delete_split_join(void)
+TEST(buffer, buffer_undo_redo_delete_split_join)
 {
     // ACTION_DELETE_CHAR
     {
@@ -678,7 +678,7 @@ static void test_buffer_undo_redo_delete_split_join(void)
     }
 }
 
-static void test_buffer_undo_then_new_edit_clears_redo(void)
+TEST(buffer, buffer_undo_then_new_edit_clears_redo)
 {
     Buffer* buffer = Buffer_New();
     Buffer_InsertChar(buffer, 0, 0, 'a');
@@ -697,7 +697,7 @@ static void test_buffer_undo_then_new_edit_clears_redo(void)
 // ActionGroup is undone more than once via undo -> redo -> undo). ASan
 // (enabled by default in `make test`) catches any reintroduced leak or
 // double-free of the group's snapshotAfter.
-static void test_buffer_redo_stack_reused_group_no_leak(void)
+TEST(buffer, buffer_redo_stack_reused_group_no_leak)
 {
     Buffer* buffer = Buffer_New();
     Buffer_InsertChar(buffer, 0, 0, 'a');
@@ -721,7 +721,7 @@ static void test_buffer_redo_stack_reused_group_no_leak(void)
 // Regression test for the perf fix in Buffer_RestoreSnapshot: undo/redo of a
 // localized edit deep in a large file must only invalidate the line cache
 // from the touched line onward, not wipe and rebuild the entire cache.
-static void test_buffer_undo_redo_scoped_invalidation(void)
+TEST(buffer, buffer_undo_redo_scoped_invalidation)
 {
     Buffer* buffer = Buffer_New();
     const size_t lineCount = 1000;
@@ -783,7 +783,7 @@ static void test_buffer_undo_redo_scoped_invalidation(void)
     Buffer_Free(buffer);
 }
 
-static void test_buffer_undo_redo_empty_stacks(void)
+TEST(buffer, buffer_undo_redo_empty_stacks)
 {
     Buffer* buffer = Buffer_New();
 
@@ -797,7 +797,7 @@ static void test_buffer_undo_redo_empty_stacks(void)
     Buffer_Free(buffer);
 }
 
-static void test_buffer_undo_respects_limit(void)
+TEST(buffer, buffer_undo_respects_limit)
 {
     Buffer* buffer = Buffer_New();
     buffer->history.undoLimit = 2;
@@ -824,7 +824,7 @@ static void test_buffer_undo_respects_limit(void)
     Buffer_Free(buffer);
 }
 
-static void test_buffer_save_fsync_options(void)
+TEST(buffer, buffer_save_fsync_options)
 {
     const char* path = "test_temp_fsync_options.txt";
     Slice content = Slice_Make("Line 1\nLine 2\n", 14);

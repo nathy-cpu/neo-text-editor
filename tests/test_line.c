@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void test_line_basic(void)
+TEST(line, line_basic)
 {
     Buffer* buffer = Buffer_New();
     
@@ -43,7 +43,7 @@ static void test_line_basic(void)
     Buffer_Free(buffer);
 }
 
-static void test_line_get_char(void)
+TEST(line, line_get_char)
 {
     Buffer* buffer = Buffer_New();
     Buffer_InsertText(buffer, 0, "hello", 5);
@@ -55,7 +55,7 @@ static void test_line_get_char(void)
     Buffer_Free(buffer);
 }
 
-static void test_line_render_x(void)
+TEST(line, line_render_x)
 {
     Buffer* buffer = Buffer_New();
     // "a\tbc\td"
@@ -75,7 +75,7 @@ static void test_line_render_x(void)
     Buffer_Free(buffer);
 }
 
-static void test_line_render_x_edges(void)
+TEST(line, line_render_x_edges)
 {
     // Empty line: no characters to walk, always renders at column 0.
     Buffer* buffer1 = Buffer_New();
@@ -109,7 +109,7 @@ static size_t NaiveRenderX(const char* text, size_t textLen, size_t cursorX, siz
 // walk to a checkpoint-lookup + short local walk. Results must match an
 // independently-computed naive walk exactly, including right at checkpoint
 // stride boundaries where an off-by-one would be easy to introduce.
-static void test_line_render_x_huge_line(void)
+TEST(line, line_render_x_huge_line)
 {
     Buffer* buffer = Buffer_New();
 
@@ -146,7 +146,7 @@ static void test_line_render_x_huge_line(void)
 // Regression test for Line_GetTextRange: sub-ranges must match substrings of
 // the full Line_GetText output, including ranges that span multiple
 // piece-table pieces (forced here via several separate inserts).
-static void test_line_get_text_range(void)
+TEST(line, line_get_text_range)
 {
     Buffer* buffer = Buffer_New();
     

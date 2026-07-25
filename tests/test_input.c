@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void test_move_cursor_left_right_within_line(void)
+TEST(input, move_cursor_left_right_within_line)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -39,7 +39,7 @@ static void test_move_cursor_left_right_within_line(void)
     Editor_Free(&editor);
 }
 
-static void test_move_cursor_left_right_across_lines(void)
+TEST(input, move_cursor_left_right_across_lines)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -65,7 +65,7 @@ static void test_move_cursor_left_right_across_lines(void)
     Editor_Free(&editor);
 }
 
-static void test_move_cursor_up_down_clamps_column(void)
+TEST(input, move_cursor_up_down_clamps_column)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -93,7 +93,7 @@ static void test_move_cursor_up_down_clamps_column(void)
     Editor_Free(&editor);
 }
 
-static void test_move_cursor_word_right_left(void)
+TEST(input, move_cursor_word_right_left)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -136,7 +136,7 @@ static void test_move_cursor_word_right_left(void)
     Editor_Free(&editor);
 }
 
-static void test_get_selection_normalizes_direction(void)
+TEST(input, get_selection_normalizes_direction)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -175,7 +175,7 @@ static void test_get_selection_normalizes_direction(void)
     Tab_Free(&tab);
 }
 
-static void test_delete_selection_single_and_multi_line(void)
+TEST(input, delete_selection_single_and_multi_line)
 {
     // Single-line selection.
     {
@@ -261,7 +261,7 @@ static void test_delete_selection_single_and_multi_line(void)
     }
 }
 
-static void test_toggle_fold_on_foldable_and_non_foldable_line(void)
+TEST(input, toggle_fold_on_foldable_and_non_foldable_line)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -304,7 +304,7 @@ static void test_toggle_fold_on_foldable_and_non_foldable_line(void)
     Editor_Free(&editor);
 }
 
-static void test_auto_unfold_on_edit_or_movement(void)
+TEST(input, auto_unfold_on_edit_or_movement)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -336,7 +336,7 @@ static void test_auto_unfold_on_edit_or_movement(void)
     Editor_Free(&editor);
 }
 
-static void test_visual_rows_cache_updates_on_unfold(void)
+TEST(input, visual_rows_cache_updates_on_unfold)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -374,7 +374,7 @@ static void test_visual_rows_cache_updates_on_unfold(void)
     Editor_Free(&editor);
 }
 
-static void test_input_tab_insertion(void)
+TEST(input, input_tab_insertion)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -391,7 +391,7 @@ static void test_input_tab_insertion(void)
     Editor_Free(&editor);
 }
 
-static void test_clipboard_basic(void)
+TEST(input, clipboard_basic)
 {
     Clipboard_Write("hello clipboard world");
     Slice s = Clipboard_Read();
@@ -414,7 +414,7 @@ static void test_clipboard_basic(void)
     Clipboard_Free();
 }
 
-static void test_tab_get_selected_text(void)
+TEST(input, tab_get_selected_text)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -453,7 +453,7 @@ static void test_tab_get_selected_text(void)
     Editor_Free(&editor);
 }
 
-static void test_tab_copy_selection(void)
+TEST(input, tab_copy_selection)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -482,7 +482,7 @@ static void test_tab_copy_selection(void)
     Editor_Free(&editor);
 }
 
-static void test_compound_edit_undo_redo(void)
+TEST(input, compound_edit_undo_redo)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -520,7 +520,7 @@ static void test_compound_edit_undo_redo(void)
     Editor_Free(&editor);
 }
 
-static void test_paste_undo_grouping(void)
+TEST(input, paste_undo_grouping)
 {
     Editor editor;
     Editor_Init(&editor);

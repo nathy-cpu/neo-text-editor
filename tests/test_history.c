@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void test_stack_basic(void)
+TEST(history, stack_basic)
 {
     Stack stack;
     Stack_Init(&stack);
@@ -32,7 +32,7 @@ static void CountingFree(void* data)
     freedCount++;
 }
 
-static void test_stack_enforce_limit(void)
+TEST(history, stack_enforce_limit)
 {
     Stack stack;
     Stack_Init(&stack);
@@ -61,7 +61,7 @@ static void CountingFreeAndRelease(void* data)
     free(data);
 }
 
-static void test_stack_free(void)
+TEST(history, stack_free)
 {
     Stack stack;
     Stack_Init(&stack);
@@ -79,7 +79,7 @@ static void test_stack_free(void)
     assert(stack.size == 0);
 }
 
-static void test_action_group_lifecycle(void)
+TEST(history, action_group_lifecycle)
 {
     ActionGroup* group = ActionGroup_New();
     assert(group != NULL);
@@ -103,7 +103,7 @@ static void test_action_group_lifecycle(void)
     ActionGroup_Free(group);
 }
 
-static void test_history_init_free(void)
+TEST(history, history_init_free)
 {
     History history;
     History_Init(&history);

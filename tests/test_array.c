@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 
-static void test_array_basic(void)
+TEST(array, array_basic)
 {
     Array arr;
     Array_InitChar(&arr, 10);
@@ -27,7 +27,7 @@ static void test_array_basic(void)
     Array_Free(&arr);
 }
 
-static void test_array_growth(void)
+TEST(array, array_growth)
 {
     Array arr;
     Array_InitChar(&arr, 2);
@@ -43,7 +43,7 @@ static void test_array_growth(void)
     Array_Free(&arr);
 }
 
-static void test_array_replace_range_shrink(void)
+TEST(array, array_replace_range_shrink)
 {
     Array arr;
     Array_InitChar(&arr, 16);
@@ -64,7 +64,7 @@ static void test_array_replace_range_shrink(void)
     Array_Free(&arr);
 }
 
-static void test_array_replace_range_grow(void)
+TEST(array, array_replace_range_grow)
 {
     Array arr;
     Array_InitChar(&arr, 4);
@@ -85,7 +85,7 @@ static void test_array_replace_range_grow(void)
     Array_Free(&arr);
 }
 
-static void test_array_replace_range_ends(void)
+TEST(array, array_replace_range_ends)
 {
     Array arr;
     Array_InitChar(&arr, 4);
@@ -110,7 +110,7 @@ static void test_array_replace_range_ends(void)
     Array_Free(&arr);
 }
 
-static void test_array_replace_range_grow_with_tail(void)
+TEST(array, array_replace_range_grow_with_tail)
 {
     Array arr;
     Array_InitChar(&arr, 3);
@@ -127,7 +127,7 @@ static void test_array_replace_range_grow_with_tail(void)
     Array_Free(&arr);
 }
 
-static void test_array_replace_range_exact_capacity_fit(void)
+TEST(array, array_replace_range_exact_capacity_fit)
 {
     Array arr;
     Array_InitChar(&arr, 4);
@@ -144,7 +144,7 @@ static void test_array_replace_range_exact_capacity_fit(void)
     Array_Free(&arr);
 }
 
-static void test_array_pop_empty(void)
+TEST(array, array_pop_empty)
 {
     Array arr;
     Array_InitChar(&arr, 4);
@@ -154,7 +154,7 @@ static void test_array_pop_empty(void)
     Array_Free(&arr);
 }
 
-static void test_array_at_and_raw_at(void)
+TEST(array, array_at_and_raw_at)
 {
     Array arr;
     Array_InitChar(&arr, 8);
@@ -172,7 +172,7 @@ static void test_array_at_and_raw_at(void)
     Array_Free(&arr);
 }
 
-static void test_array_free_resets_state(void)
+TEST(array, array_free_resets_state)
 {
     Array arr;
     Array_InitChar(&arr, 4);
@@ -184,7 +184,7 @@ static void test_array_free_resets_state(void)
     assert(arr.capacity == 0);
 }
 
-static void test_array_init_natural_alignment(void)
+TEST(array, array_init_natural_alignment)
 {
     Array arr;
     // alignment=0 falls back to natural (max_align_t) alignment instead of a caller-specified one.

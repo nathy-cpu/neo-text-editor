@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-static void test_args_basic(void)
+TEST(args, args_basic)
 {
     char* argv[] = { "neo", "-n", "-w", "-s", "-r", "-t", "8", "-c", "custom_config.lua" };
     int argc = sizeof(argv) / sizeof(argv[0]);
@@ -22,7 +22,7 @@ static void test_args_basic(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_enablers(void)
+TEST(args, args_enablers)
 {
     char* argv[] = { "neo", "--line-numbers", "--wrap", "--syntax" };
     int argc = sizeof(argv) / sizeof(argv[0]);
@@ -38,7 +38,7 @@ static void test_args_enablers(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_jumps_forward(void)
+TEST(args, args_jumps_forward)
 {
     char* argv[] = { "neo", "+25", "src/main.c", "+100:15", "Makefile" };
     int argc = sizeof(argv) / sizeof(argv[0]);
@@ -58,7 +58,7 @@ static void test_args_jumps_forward(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_jumps_backward(void)
+TEST(args, args_jumps_backward)
 {
     char* argv[] = { "neo", "src/main.c", "+25:8" };
     int argc = sizeof(argv) / sizeof(argv[0]);
@@ -74,7 +74,7 @@ static void test_args_jumps_backward(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_help_version(void)
+TEST(args, args_help_version)
 {
     char* argv1[] = { "neo", "-h" };
     CliOptions options1;
@@ -89,7 +89,7 @@ static void test_args_help_version(void)
     CliOptions_Free(&options2);
 }
 
-static void test_args_missing_value_errors(void)
+TEST(args, args_missing_value_errors)
 {
     struct {
         char* argv[3];
@@ -111,7 +111,7 @@ static void test_args_missing_value_errors(void)
     }
 }
 
-static void test_args_invalid_value_errors(void)
+TEST(args, args_invalid_value_errors)
 {
     char* tabSizeZero[] = { "neo", "--tab-size", "0" };
     CliOptions options1;
@@ -139,7 +139,7 @@ static void test_args_invalid_value_errors(void)
     CliOptions_Free(&options5);
 }
 
-static void test_args_unknown_option(void)
+TEST(args, args_unknown_option)
 {
     char* argv[] = { "neo", "--not-a-real-option" };
     CliOptions options;
@@ -147,7 +147,7 @@ static void test_args_unknown_option(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_log_overrides(void)
+TEST(args, args_log_overrides)
 {
     char* argv[] = { "neo", "--log-file", "custom.log", "--log-level", "DEBUG", "--log-to-file", "--log-to-ui",
         "--log-max-messages", "500" };
@@ -170,7 +170,7 @@ static void test_args_log_overrides(void)
     CliOptions_Free(&optionsOff);
 }
 
-static void test_args_no_args(void)
+TEST(args, args_no_args)
 {
     char* argv[] = { "neo" };
     CliOptions options;
@@ -182,7 +182,7 @@ static void test_args_no_args(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_bare_plus_is_a_filename(void)
+TEST(args, args_bare_plus_is_a_filename)
 {
     // A lone "+" has no digit after it, so it falls through to the positional
     // filename branch instead of being parsed as a +line jump.
@@ -194,7 +194,7 @@ static void test_args_bare_plus_is_a_filename(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_trailing_jump_with_no_file_is_dropped(void)
+TEST(args, args_trailing_jump_with_no_file_is_dropped)
 {
     // A +line jump with no file at all (before or after) has nothing to attach
     // to, so it's silently dropped rather than crashing or fabricating a file.
@@ -205,7 +205,7 @@ static void test_args_trailing_jump_with_no_file_is_dropped(void)
     CliOptions_Free(&options);
 }
 
-static void test_args_free_resets_state(void)
+TEST(args, args_free_resets_state)
 {
     char* argv[] = { "neo", "a.c", "b.c" };
     CliOptions options;

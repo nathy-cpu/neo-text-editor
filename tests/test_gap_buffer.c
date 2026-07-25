@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <string.h>
 
-static void test_gap_buffer_basic(void)
+TEST(gap_buffer, gap_buffer_basic)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 10, 64);
@@ -43,7 +43,7 @@ static void test_gap_buffer_basic(void)
     GapBuffer_Free(&gb);
 }
 
-static void test_gap_buffer_capacity_growth(void)
+TEST(gap_buffer, gap_buffer_capacity_growth)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 4, 64); // Small initial gap so it's forced to grow.
@@ -66,7 +66,7 @@ static void test_gap_buffer_capacity_growth(void)
     GapBuffer_Free(&gb);
 }
 
-static void test_gap_buffer_move_gap_edges(void)
+TEST(gap_buffer, gap_buffer_move_gap_edges)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 10, 64);
@@ -97,7 +97,7 @@ static void test_gap_buffer_move_gap_edges(void)
     GapBuffer_Free(&gb);
 }
 
-static void test_gap_buffer_zero_size_noops(void)
+TEST(gap_buffer, gap_buffer_zero_size_noops)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 10, 64);
@@ -117,7 +117,7 @@ static void test_gap_buffer_zero_size_noops(void)
     GapBuffer_Free(&gb);
 }
 
-static void test_gap_buffer_clear(void)
+TEST(gap_buffer, gap_buffer_clear)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 10, 64);
@@ -145,7 +145,7 @@ static void test_gap_buffer_clear(void)
 // them (which orphans it outside where GapBuffer_At/MoveGap expect to find
 // it). This only manifests when growth is triggered by an insert that isn't
 // at the very end, so it's easy to miss with append-only test patterns.
-static void test_gap_buffer_capacity_growth_mid_gap(void)
+TEST(gap_buffer, gap_buffer_capacity_growth_mid_gap)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 4, 64); // capacity = 4 + MIN_GAP_SIZE = 68
@@ -175,7 +175,7 @@ static void test_gap_buffer_capacity_growth_mid_gap(void)
     GapBuffer_Free(&gb);
 }
 
-static void test_gap_buffer_to_slice_after_delete_mid_buffer(void)
+TEST(gap_buffer, gap_buffer_to_slice_after_delete_mid_buffer)
 {
     GapBuffer gb;
     GapBuffer_Init(&gb, sizeof(char), 10, 64);

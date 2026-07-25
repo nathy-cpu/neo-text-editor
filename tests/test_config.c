@@ -19,7 +19,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static void test_config_defaults(void)
+TEST(config, config_defaults)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -48,7 +48,7 @@ static void test_config_defaults(void)
     Editor_Free(&editor);
 }
 
-static void test_config_defaults_full(void)
+TEST(config, config_defaults_full)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -98,7 +98,7 @@ static void test_config_defaults_full(void)
     Editor_Free(&editor);
 }
 
-static void test_config_lua_load(void)
+TEST(config, config_lua_load)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -135,7 +135,7 @@ static void test_config_lua_load(void)
     Editor_Free(&editor);
 }
 
-static void test_config_lua_load_full(void)
+TEST(config, config_lua_load_full)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -187,7 +187,7 @@ static void test_config_lua_load_full(void)
     Editor_Free(&editor);
 }
 
-static void test_config_load_missing_file_fails(void)
+TEST(config, config_load_missing_file_fails)
 {
     char* originalHome = getenv("HOME");
     char* homeCopy = originalHome ? strdup(originalHome) : NULL;
@@ -218,7 +218,7 @@ static void test_config_load_missing_file_fails(void)
     rmdir("fake_home_for_config_test");
 }
 
-static void test_config_load_malformed_lua_fails(void)
+TEST(config, config_load_malformed_lua_fails)
 {
     const char* path = "malformed_test_config.lua";
     FILE* f = fopen(path, "w");
@@ -234,7 +234,7 @@ static void test_config_load_malformed_lua_fails(void)
     remove(path);
 }
 
-static void test_config_load_language_replace_and_discard(void)
+TEST(config, config_load_language_replace_and_discard)
 {
     const char* path = "language_replace_test_config.lua";
     FILE* f = fopen(path, "w");
@@ -272,7 +272,7 @@ static void test_config_load_language_replace_and_discard(void)
 
 extern int ParseKeybinding(const char* keybindingString, int defaultKeyValue);
 
-static void test_config_ParseKeybinding(void)
+TEST(config, config_ParseKeybinding)
 {
     // Basic modifiers
     assert(ParseKeybinding("ctrl-s", 0) == CTRL_KEY('s'));

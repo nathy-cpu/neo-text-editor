@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 
-static void test_slice_basic(void)
+TEST(slice, slice_basic)
 {
     Slice s1 = Slice_From("hello world");
     assert(s1.size == 11 && "Slice_From should calculate length correctly");
@@ -21,7 +21,7 @@ static void test_slice_basic(void)
     assert(Slice_Equals(sub, hello));
 }
 
-static void test_slice_make_and_zero_size(void)
+TEST(slice, slice_make_and_zero_size)
 {
     Slice s = Slice_Make(NULL, 0);
     assert(s.data == NULL && s.size == 0);
@@ -35,7 +35,7 @@ static void test_slice_make_and_zero_size(void)
     assert(!Slice_Equals(nonEmpty, empty1));
 }
 
-static void test_slice_subslice_bounds(void)
+TEST(slice, slice_subslice_bounds)
 {
     Slice s = Slice_From("hello");
 

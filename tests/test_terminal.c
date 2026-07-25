@@ -12,7 +12,7 @@
 // while still asserting the correct (opposite) behavior if ever run with a
 // real terminal attached to stdin.
 
-void test_Terminal_EnableRawMode(void) {
+TEST(terminal, Terminal_EnableRawMode) {
     Terminal term = {0};
     bool result = Terminal_EnableRawMode(&term);
 
@@ -27,7 +27,7 @@ void test_Terminal_EnableRawMode(void) {
     Terminal_Restore(&term);
 }
 
-void test_Terminal_EnableRawMode_idempotent(void) {
+TEST(terminal, Terminal_EnableRawMode_idempotent) {
     // Enabling raw mode twice in a row must short-circuit on the second call
     // (rawModeEnabled already true) rather than re-doing the tcsetattr dance.
     if (!isatty(STDIN_FILENO))
@@ -41,7 +41,7 @@ void test_Terminal_EnableRawMode_idempotent(void) {
     Terminal_Restore(&term);
 }
 
-void test_Terminal_DisableRawMode(void) {
+TEST(terminal, Terminal_DisableRawMode) {
     Terminal term = {0};
     Terminal_EnableRawMode(&term);
     bool result = Terminal_DisableRawMode(&term);
@@ -49,7 +49,7 @@ void test_Terminal_DisableRawMode(void) {
     assert(term.rawModeEnabled == false);
 }
 
-void test_Terminal_DisableRawMode_never_enabled(void) {
+TEST(terminal, Terminal_DisableRawMode_never_enabled) {
     // Disabling raw mode that was never enabled must be a safe no-op, not a
     // crash from touching an unset originalTermios.
     Terminal term = {0};
@@ -58,7 +58,7 @@ void test_Terminal_DisableRawMode_never_enabled(void) {
     assert(term.rawModeEnabled == false);
 }
 
-void test_Terminal_Restore(void) {
+TEST(terminal, Terminal_Restore) {
     Terminal term = {0};
     Terminal_EnableRawMode(&term);
     bool result = Terminal_Restore(&term);
@@ -66,7 +66,7 @@ void test_Terminal_Restore(void) {
     assert(term.rawModeEnabled == false);
 }
 
-void test_Terminal_Restore_never_enabled(void) {
+TEST(terminal, Terminal_Restore_never_enabled) {
     // Restoring a terminal that was never put into raw mode must also be safe.
     Terminal term = {0};
     bool result = Terminal_Restore(&term);
@@ -74,49 +74,28 @@ void test_Terminal_Restore_never_enabled(void) {
     assert(term.rawModeEnabled == false);
 }
 
-void test_Terminal_ClearScreen(void) {
+TEST(terminal, Terminal_ClearScreen) {
     // No way to assert screen contents from here; this only confirms the call
     // completes without crashing.
     Terminal term = {0};
     Terminal_ClearScreen(&term);
 }
 
-// Redirects STDIN_FILENO to a pipe pre-loaded with `bytes`, calls ReadKey(),
-// then restores the original stdin. `bytes` must represent one complete key
-// sequence understood by ReadKey -- once it's fully resolved, ReadKey returns
-// without attempting to read further, so closing the pipe's write end (giving
-// EOF for anything beyond what we supplied) cannot cause it to block.
-static int ReadKeyFromBytes(const char* bytes, size_t len) {
-    int pipefd[2];
-    assert(pipe(pipefd) == 0);
-    ssize_t written = write(pipefd[1], bytes, len);
-    assert(written == (ssize_t)len);
-    close(pipefd[1]);
+// ReadKeyFromBytes lives in tests/helpers/test_io.h (shared across test files).
+#include "helpers/test_io.h"
 
-    int savedStdin = dup(STDIN_FILENO);
-    assert(savedStdin != -1);
-    assert(dup2(pipefd[0], STDIN_FILENO) != -1);
-    close(pipefd[0]);
-
-    int key = ReadKey();
-
-    assert(dup2(savedStdin, STDIN_FILENO) != -1);
-    close(savedStdin);
-    return key;
-}
-
-void test_ReadKey_plain_char(void) {
+TEST(terminal, ReadKey_plain_char) {
     assert(ReadKeyFromBytes("a", 1) == 'a');
 }
 
-void test_ReadKey_arrows(void) {
+TEST(terminal, ReadKey_arrows) {
     assert(ReadKeyFromBytes("\x1b[A", 3) == ARROW_UP);
     assert(ReadKeyFromBytes("\x1b[B", 3) == ARROW_DOWN);
     assert(ReadKeyFromBytes("\x1b[C", 3) == ARROW_RIGHT);
     assert(ReadKeyFromBytes("\x1b[D", 3) == ARROW_LEFT);
 }
 
-void test_ReadKey_home_end_variants(void) {
+TEST(terminal, ReadKey_home_end_variants) {
     assert(ReadKeyFromBytes("\x1b[H", 3) == HOME_KEY);
     assert(ReadKeyFromBytes("\x1b[F", 3) == END_KEY);
     assert(ReadKeyFromBytes("\x1bOH", 3) == HOME_KEY);
@@ -127,13 +106,13 @@ void test_ReadKey_home_end_variants(void) {
     assert(ReadKeyFromBytes("\x1b[8~", 4) == END_KEY);
 }
 
-void test_ReadKey_delete_and_page_keys(void) {
+TEST(terminal, ReadKey_delete_and_page_keys) {
     assert(ReadKeyFromBytes("\x1b[3~", 4) == DELETE_KEY);
     assert(ReadKeyFromBytes("\x1b[5~", 4) == PAGE_UP);
     assert(ReadKeyFromBytes("\x1b[6~", 4) == PAGE_DOWN);
 }
 
-void test_ReadKey_ctrl_and_shift_arrows(void) {
+TEST(terminal, ReadKey_ctrl_and_shift_arrows) {
     assert(ReadKeyFromBytes("\x1b[1;5C", 6) == CTRL_ARROW_RIGHT);
     assert(ReadKeyFromBytes("\x1b[1;5D", 6) == CTRL_ARROW_LEFT);
     assert(ReadKeyFromBytes("\x1b[1;2A", 6) == SHIFT_ARROW_UP);
@@ -142,20 +121,20 @@ void test_ReadKey_ctrl_and_shift_arrows(void) {
     assert(ReadKeyFromBytes("\x1b[1;2D", 6) == SHIFT_ARROW_LEFT);
 }
 
-void test_ReadKey_alt_s_and_alt_f(void) {
+TEST(terminal, ReadKey_alt_s_and_alt_f) {
     assert(ReadKeyFromBytes("\x1b" "s", 2) == ALT_S);
     assert(ReadKeyFromBytes("\x1b" "S", 2) == ALT_S);
     assert(ReadKeyFromBytes("\x1b" "f", 2) == ALT_F);
     assert(ReadKeyFromBytes("\x1b" "F", 2) == ALT_F);
 }
 
-void test_ReadKey_lone_escape_returns_escape(void) {
+TEST(terminal, ReadKey_lone_escape_returns_escape) {
     // No bytes follow the escape (immediate EOF) -- must return '\x1b' rather
     // than blocking or crashing.
     assert(ReadKeyFromBytes("\x1b", 1) == '\x1b');
 }
 
-void test_Terminal_GetCursorPosition(void) {
+TEST(terminal, Terminal_GetCursorPosition) {
     int pipefd[2];
     assert(pipe(pipefd) == 0);
     const char* response = "\x1b[24;80R";
@@ -178,7 +157,7 @@ void test_Terminal_GetCursorPosition(void) {
     assert(columns == 80);
 }
 
-void test_Terminal_GetWindowSize(void) {
+TEST(terminal, Terminal_GetWindowSize) {
     // If stdout is a real TTY, TIOCGWINSZ succeeds and the real window size is
     // used instead of falling back to the cursor-position query below, so only
     // assert the environment-independent invariant: success with sane values.
@@ -204,7 +183,7 @@ void test_Terminal_GetWindowSize(void) {
     assert(columns > 0);
 }
 
-void test_ReadKey_new_keys_and_modifiers(void) {
+TEST(terminal, ReadKey_new_keys_and_modifiers) {
     // F-keys (F1 - F4: SS3 and CSI sequences)
     assert(ReadKeyFromBytes("\x1bOP", 3) == KEY_F1);
     assert(ReadKeyFromBytes("\x1bOQ", 3) == KEY_F2);

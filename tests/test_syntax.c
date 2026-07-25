@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void test_get_syntax_color_defaults(void)
+TEST(syntax, get_syntax_color_defaults)
 {
     assert(GetSyntaxColor(NULL, HIGHLIGHT_NORMAL) == NULL);
     assert(strcmp(GetSyntaxColor(NULL, HIGHLIGHT_NUMBER), "35") == 0);
@@ -20,7 +20,7 @@ static void test_get_syntax_color_defaults(void)
     assert(strcmp(GetSyntaxColor(NULL, HIGHLIGHT_SYMBOL), "36") == 0);
 }
 
-static void test_get_syntax_color_config_override(void)
+TEST(syntax, get_syntax_color_config_override)
 {
     Config config;
     memset(&config, 0, sizeof(config));
@@ -32,7 +32,7 @@ static void test_get_syntax_color_config_override(void)
     assert(strcmp(GetSyntaxColor(&config, HIGHLIGHT_NUMBER), "35") == 0);
 }
 
-static void test_syntax_highlight_c_file(void)
+TEST(syntax, syntax_highlight_c_file)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -64,7 +64,7 @@ static void test_syntax_highlight_c_file(void)
     Editor_Free(&editor);
 }
 
-static void test_syntax_highlight_strings_and_chars(void)
+TEST(syntax, syntax_highlight_strings_and_chars)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -110,7 +110,7 @@ static void test_syntax_highlight_strings_and_chars(void)
     Tab_Free(&tab);
 }
 
-static void test_syntax_highlight_multiline_comment(void)
+TEST(syntax, syntax_highlight_multiline_comment)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -161,7 +161,7 @@ static void test_syntax_highlight_multiline_comment(void)
 // synchronously on load: Tab_UpdateSyntax(tab, maxLine) must only highlight
 // up to maxLine when there's no pending edit, extend monotonically on
 // subsequent calls with a larger bound, and never redo lines already covered.
-static void test_tab_update_syntax_lazy_high_water_mark(void)
+TEST(syntax, tab_update_syntax_lazy_high_water_mark)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -221,7 +221,7 @@ static void test_tab_update_syntax_lazy_high_water_mark(void)
 // unallocated (the renderer already treats that as all-normal) rather than
 // paying for an O(length) scan plus a full-length styles array, and adjacent
 // normal-sized lines must still be highlighted correctly around it.
-static void test_tab_update_syntax_skips_huge_line(void)
+TEST(syntax, tab_update_syntax_skips_huge_line)
 {
     Tab tab;
     Tab_Init(&tab);
@@ -264,7 +264,7 @@ static void test_tab_update_syntax_skips_huge_line(void)
     Tab_Free(&tab);
 }
 
-static void test_syntax_no_match_leaves_syntax_null(void)
+TEST(syntax, syntax_no_match_leaves_syntax_null)
 {
     Editor editor;
     Editor_Init(&editor);
@@ -279,7 +279,7 @@ static void test_syntax_no_match_leaves_syntax_null(void)
     Editor_Free(&editor);
 }
 
-static void test_syntax_dirty_preserved_on_cache_rebuild(void)
+TEST(syntax, syntax_dirty_preserved_on_cache_rebuild)
 {
     Tab tab;
     Tab_Init(&tab);
