@@ -43,7 +43,8 @@ void GapBuffer_InsertChar(GapBuffer* gapBuffer, size_t position, char content);
 void GapBuffer_Delete(GapBuffer* gapBuffer, size_t position, size_t size);
 
 /**
- * @brief Flattens a char gap buffer into a dynamically allocated contiguous slice.
+ * @brief Moves the gap to the end and returns a contiguous view of the items
+ * (borrowed internal storage, not a new allocation).
  */
 Slice GapBuffer_ToSlice(GapBuffer* gapBuffer);
 

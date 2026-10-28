@@ -12,7 +12,7 @@
 //     TestPlatform_Free(&testPlatform);
 //
 // readKey aborts when the scripted key list is exhausted -- under the fork
-// harness that is a clean per-test FAIL rather than a hang, so every scripted
+// harness that is a clean per-test CRASH (SIGABRT) rather than a hang, so every scripted
 // interaction (especially Editor_Prompt loops) MUST end in a key that
 // terminates the flow ('\r', ESC, a quit key, ...).
 #ifndef TEST_HELPERS_TEST_PLATFORM_H

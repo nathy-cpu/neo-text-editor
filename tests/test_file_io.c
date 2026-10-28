@@ -17,7 +17,7 @@ static void CreateTestFile(const char *path, const char *content) {
     fclose(file);
 }
 
-// Test FileIORead and FileIOWrite
+// Test FileIoRead and FileIoWrite
 TEST(file_io, read_write) {
     const char *path = "testfile.txt";
     const char *content = "Hello, world!";
@@ -45,7 +45,7 @@ TEST(file_io, read_write) {
     unlink(path); // Delete the test file
 }
 
-// Test FileIOMMap
+// Test FileIoMmap
 TEST(file_io, mmap) {
     const char *path = "mmap_test.txt";
     const char *content = "Memory-mapped file test";
@@ -179,7 +179,7 @@ TEST(file_io, large_file) {
     const char *path = "largefile.bin";
     const size_t size = 1024 * 1024 * 1024; // 1GB
 
-    // Create a 1GB file (manual test)
+    // Create a sparse 1GB file (seek to the end, write one byte); runs in every suite pass
     printf("Creating 1GB test file...\n\r");
     FILE *file = fopen(path, "wb");
     assert(file && "Failed to create large file");

@@ -3,9 +3,11 @@
 struct Editor;
 
 /**
- * Installs the process signal handlers (SIGINT, SIGTERM, SIGWINCH) and
- * remembers the editor they act on. SIGWINCH is installed without SA_RESTART
- * so a blocked read() is interrupted promptly.
+ * Installs the process signal handlers and remembers the editor that
+ * SignalsCleanup acts on. SIGINT, SIGTERM and SIGWINCH only set flags (read
+ * by ReadKey) and are installed without SA_RESTART so a blocked read() is
+ * interrupted promptly. SIGSEGV, SIGBUS, SIGFPE and SIGABRT restore the
+ * terminal and re-raise; SIGPIPE is ignored.
  */
 void SignalsInstall(struct Editor* editor);
 

@@ -88,7 +88,7 @@ void Tab_SaveFile(Tab* tab);
 bool Tab_ShouldWrapLines(const Tab* tab);
 
 /**
- * @brief Triggers a syntax highlight update for the entire tab.
+ * @brief Selects the tab's syntax rules by filename; highlighting itself is deferred to Tab_UpdateSyntax.
  */
 void Tab_SetSyntaxHighlight(Tab* tab);
 
@@ -128,7 +128,7 @@ size_t Tab_GetCursorVisualCol(const Tab* tab, size_t vrowIdx);
 void Tab_SetCursorFromVRow(Tab* tab, size_t targetVRowIdx, size_t targetVisualCol);
 
 /**
- * @brief Re-evaluates visual wrapping segments for the entire buffer.
+ * @brief Brings the cached visual wrapping segments up to date (reused, spliced incrementally, or fully rebuilt).
  */
 void Tab_UpdateVisualRows(const struct Editor* editor, Tab* tab, size_t usableColumns);
 
@@ -148,16 +148,16 @@ char* Tab_GetSelectedText(Tab* tab);
 void Tab_CopySelection(Tab* tab);
 
 /**
- * @brief Checks if a logical line index is currently visible on screen.
+ * @brief Checks if a logical line index exists and is not hidden inside a folded block.
  */
 bool Tab_IsLineVisible(const Tab* tab, size_t lineIndex);
 
 /**
- * @brief Finds the next visible line index starting from the given line.
+ * @brief Finds the next visible line index after the given line (returns the given line if none).
  */
 size_t Tab_NextVisibleLine(const Tab* tab, size_t lineIndex);
 
 /**
- * @brief Finds the previous visible line index starting from the given line.
+ * @brief Finds the previous visible line index before the given line (returns the given line if none).
  */
 size_t Tab_PrevVisibleLine(const Tab* tab, size_t lineIndex);

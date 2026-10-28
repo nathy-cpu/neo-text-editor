@@ -70,7 +70,7 @@ TEST(array, array_replace_range_grow)
     Array_InitChar(&arr, 4);
     Array_Append(&arr, "ac", 2);
 
-    // Insert "b" between 'a' and 'c' -- grows the array, no capacity available yet.
+    // Insert "b" between 'a' and 'c' -- grows the size in place (capacity 4 still fits, no reallocation).
     Array_ReplaceRange(&arr, 1, 0, "b", 1);
     assert(Array_Size(&arr) == 3);
     Slice s = Array_ToSlice(&arr);

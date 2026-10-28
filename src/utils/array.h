@@ -76,7 +76,7 @@ bool Array_ReplaceRange(Array* array, size_t start, size_t count, const void* ne
  * @brief Gets a pointer to the item at the specified index.
  * @param array Pointer to the array.
  * @param index Index of the item.
- * @return Pointer to the item, or NULL if out of bounds (based on logical size).
+ * @return Pointer to the item. Asserts index < logical size (no NULL return).
  */
 void* Array_At(const Array* array, size_t index);
 
@@ -84,7 +84,7 @@ void* Array_At(const Array* array, size_t index);
  * @brief Gets a raw pointer to an item at an index up to the capacity.
  * @param array Pointer to the array.
  * @param index Index of the item.
- * @return Pointer to the item, or NULL if out of bounds (based on capacity).
+ * @return Pointer to the item. Asserts index < capacity (no NULL return).
  */
 void* Array_RawAt(const Array* array, size_t index);
 

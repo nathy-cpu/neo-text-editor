@@ -23,7 +23,8 @@ size_t Utf8PreviousBoundary(const char* text, size_t length, size_t index);
 
 /**
  * @brief Start index of the codepoint strictly after the one at `index`.
- * Clamped to `length`. Falls back to index+1 on malformed input.
+ * Clamped to `length`. On a malformed/truncated sequence, stops at the first
+ * non-continuation byte after `index`.
  */
 size_t Utf8NextBoundary(const char* text, size_t length, size_t index);
 

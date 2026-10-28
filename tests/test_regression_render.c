@@ -3,7 +3,7 @@
 // terminal geometry, byte-oriented UTF-8 truncation, and off-by-one
 // selection indices.
 //
-// Single-TU: #included into tests/main.c after the other suites.
+// Single-TU: #included into tests/main.c (no main() here).
 
 #include "../src/core/buffer.h"
 #include "../src/core/line.h"

@@ -227,6 +227,269 @@ static int ReadByteRetry(char* out)
     }
 }
 
+// Parses a complete CSI sequence body: the bytes AFTER "ESC [", including
+// the final byte. Pure (no I/O). Returns the decoded key, '\x1b' for
+// unrecognized sequences, or TERMINAL_KEY_NONE for key-release events that
+// must be swallowed (never surfaced as a keypress).
+int TerminalParseCsi(const char* seq, int seq_len)
+{
+    char final_char = (seq_len > 0) ? seq[seq_len - 1] : 0;
+    if (final_char < 0x40 || final_char > 0x7E) {
+        return '\x1b';
+    }
+
+    // Parameters are ';'-separated groups; kitty appends ':'-separated
+    // sub-parameters within a group (e.g. CSI unicode:shifted:base ; mod:event u).
+    // Only sub-params 0 and 1 are ever consumed; further ones are discarded.
+    int params[8][2] = { { 0 } };
+    int num_params = 0;
+    int sub_index = 0;
+    bool has_param = false;
+
+    for (int i = 0; i < seq_len - 1; i++) {
+        if (seq[i] >= '0' && seq[i] <= '9') {
+            // Clamp: unbounded accumulation is signed-overflow UB on
+            // long digit runs (e.g. pasted garbage). 65535 exceeds
+            // every assigned keycode/modifier, so clamped values just
+            // fail to match anything.
+            if (sub_index < 2) {
+                if (params[num_params][sub_index] <= 6553) {
+                    params[num_params][sub_index] = params[num_params][sub_index] * 10 + (seq[i] - '0');
+                } else {
+                    params[num_params][sub_index] = 65535;
+                }
+            }
+            has_param = true;
+        } else if (seq[i] == ';') {
+            if (num_params < 7) {
+                num_params++;
+            }
+            sub_index = 0;
+        } else if (seq[i] == ':') {
+            sub_index++;
+        }
+    }
+    if (has_param) {
+        num_params++;
+    }
+
+    // Kitty event type rides as sub-param 1 of the modifier group on every
+    // final byte: 0/1 = press, 2 = repeat (treated as press), 3 = release.
+    // Releases must be swallowed or they double-trigger the action. Safe for
+    // modifyOtherKeys CSI 27;mod;code~ too: xterm never sends sub-params.
+    if (num_params >= 2 && params[1][1] == 3) {
+        return TERMINAL_KEY_NONE;
+    }
+
+    if (final_char == '~') {
+        if (num_params >= 1) {
+            if (params[0][0] == 27) {
+                // modifyOtherKeys format: CSI 27 ; <modifier> ; <char_code> ~
+                int mod_flags = 0;
+                if (num_params >= 2) {
+                    mod_flags = TerminalGetModifierFlags(params[1][0]);
+                }
+                int char_code = (num_params >= 3) ? params[2][0] : 0;
+
+                return TerminalMapModifiedKeyCode(char_code, mod_flags);
+            } else {
+                int base_key = 0;
+                switch (params[0][0]) {
+                case 1:
+                case 7:
+                    base_key = HOME_KEY;
+                    break;
+                case 2:
+                    base_key = INSERT_KEY;
+                    break;
+                case 3:
+                    base_key = DELETE_KEY;
+                    break;
+                case 4:
+                case 8:
+                    base_key = END_KEY;
+                    break;
+                case 5:
+                    base_key = PAGE_UP;
+                    break;
+                case 6:
+                    base_key = PAGE_DOWN;
+                    break;
+                case 15:
+                    base_key = KEY_F5;
+                    break;
+                case 17:
+                    base_key = KEY_F6;
+                    break;
+                case 18:
+                    base_key = KEY_F7;
+                    break;
+                case 19:
+                    base_key = KEY_F8;
+                    break;
+                case 20:
+                    base_key = KEY_F9;
+                    break;
+                case 21:
+                    base_key = KEY_F10;
+                    break;
+                case 23:
+                    base_key = KEY_F11;
+                    break;
+                case 24:
+                    base_key = KEY_F12;
+                    break;
+                }
+                int mod_flags = 0;
+                if (num_params >= 2) {
+                    mod_flags = TerminalGetModifierFlags(params[1][0]);
+                }
+                return base_key | mod_flags;
+            }
+        }
+    } else if (final_char == 'u') {
+        // CSI u format (Kitty protocol): CSI <char_code> [; <modifier>] u
+        // Modifier uses Kitty's 1+bitmask encoding: 2=Shift, 3=Alt, 5=Ctrl.
+        // The key code is sub-param 0 of group 0; kitty's alternate-keys
+        // form (unicode:shifted:base) rides in sub-params we ignore.
+        if (num_params >= 1) {
+            int char_code = params[0][0];
+            int mod_flags = 0;
+            if (num_params >= 2) {
+                mod_flags = TerminalGetModifierFlags(params[1][0]);
+            }
+            LOG_DEBUG("CSI u: char_code=%d(0x%x) raw_mod=%d mod_flags=%d", char_code, char_code,
+                num_params >= 2 ? params[1][0] : 0, mod_flags);
+            int result = TerminalMapModifiedKeyCode(char_code, mod_flags);
+            LOG_DEBUG("CSI u result: %d", result);
+            return result;
+        }
+    } else if (final_char == 'A' || final_char == 'B' || final_char == 'C' || final_char == 'D') {
+        int base_key = 0;
+        switch (final_char) {
+        case 'A':
+            base_key = ARROW_UP;
+            break;
+        case 'B':
+            base_key = ARROW_DOWN;
+            break;
+        case 'C':
+            base_key = ARROW_RIGHT;
+            break;
+        case 'D':
+            base_key = ARROW_LEFT;
+            break;
+        }
+        int mod_flags = 0;
+        if (num_params >= 2 && params[0][0] == 1) {
+            mod_flags = TerminalGetModifierFlags(params[1][0]);
+        }
+        return base_key | mod_flags;
+    } else if (final_char == 'H' || final_char == 'F') {
+        int base_key = (final_char == 'H') ? HOME_KEY : END_KEY;
+        int mod_flags = 0;
+        if (num_params >= 2 && params[0][0] == 1) {
+            mod_flags = TerminalGetModifierFlags(params[1][0]);
+        }
+        int result = base_key | mod_flags;
+        LOG_DEBUG("CSI %c: raw_seq=\"%.*s\" num_params=%d params[0]=%d params[1]=%d mod_flags=%d result=%d", final_char,
+            seq_len, seq, num_params, num_params >= 1 ? params[0][0] : -1, num_params >= 2 ? params[1][0] : -1,
+            mod_flags, result);
+        return result;
+    } else if (final_char == 'Z') {
+        // Shift+Tab
+        return '\t' | KEY_MOD_SHIFT;
+    } else if (final_char == 'P' || final_char == 'Q' || final_char == 'R' || final_char == 'S') {
+        // F1 - F4 with modifiers: ESC[1;<modifier>P etc.
+        int base_key = 0;
+        switch (final_char) {
+        case 'P':
+            base_key = KEY_F1;
+            break;
+        case 'Q':
+            base_key = KEY_F2;
+            break;
+        case 'R':
+            base_key = KEY_F3;
+            break;
+        case 'S':
+            base_key = KEY_F4;
+            break;
+        }
+        int mod_flags = 0;
+        if (num_params >= 2 && params[0][0] == 1) {
+            mod_flags = TerminalGetModifierFlags(params[1][0]);
+        }
+        return base_key | mod_flags;
+    }
+
+    return '\x1b';
+}
+
+// Reads and decodes one escape sequence after the initial ESC byte has been
+// consumed. Returns the decoded key, '\x1b' for a lone/unrecognized escape,
+// or TERMINAL_KEY_NONE for swallowed key-release events.
+static int TerminalDecodeEscape(void)
+{
+    char seq0;
+    if (ReadByteRetry(&seq0) != 1) {
+        return '\x1b';
+    }
+
+    if (seq0 == 'O') {
+        char seq1;
+        if (ReadByteRetry(&seq1) != 1) {
+            return '\x1b';
+        }
+        switch (seq1) {
+        case 'P':
+            return KEY_F1;
+        case 'Q':
+            return KEY_F2;
+        case 'R':
+            return KEY_F3;
+        case 'S':
+            return KEY_F4;
+        case 'H':
+            return HOME_KEY;
+        case 'F':
+            return END_KEY;
+        }
+        return '\x1b';
+    }
+
+    if (seq0 == '[') {
+        char seq[32];
+        int seq_len = 0;
+        bool complete = false;
+
+        while (seq_len < (int)sizeof(seq) - 1) {
+            char c;
+            if (ReadByteRetry(&c) != 1) {
+                return '\x1b';
+            }
+            seq[seq_len++] = c;
+            if (c >= 0x40 && c <= 0x7E) {
+                complete = true;
+                break;
+            }
+        }
+        seq[seq_len] = '\0';
+
+        if (!complete) {
+            return '\x1b';
+        }
+        return TerminalParseCsi(seq, seq_len);
+    }
+
+    // It is Alt + seq0
+    int base = seq0;
+    if (base >= 'A' && base <= 'Z') {
+        base = tolower((unsigned char)base);
+    }
+    return base | KEY_MOD_ALT;
+}
+
 int ReadKey(void)
 {
     int readSize;
@@ -245,246 +508,30 @@ int ReadKey(void)
             return RESIZE_EVENT;
         }
         readSize = read(STDIN_FILENO, &input, 1);
-        if (readSize == 1)
-            break;
         if (readSize == -1 && errno != EINTR && errno != EAGAIN) {
             WriteTerminalSequence("\x1b[2J", 4);
             WriteTerminalSequence("\x1b[H", 3);
             perror("read");
             exit(1);
         }
-        // readSize == 0 (VTIME timeout) or EINTR/EAGAIN: loop re-checks flags.
-    }
-
-    if (input == '\x1b') {
-        char seq0;
-        if (ReadByteRetry(&seq0) != 1) {
-            return '\x1b';
+        if (readSize != 1) {
+            // VTIME timeout or EINTR/EAGAIN: loop re-checks flags.
+            continue;
         }
 
-        if (seq0 == 'O') {
-            char seq1;
-            if (ReadByteRetry(&seq1) != 1) {
-                return '\x1b';
-            }
-            switch (seq1) {
-            case 'P':
-                return KEY_F1;
-            case 'Q':
-                return KEY_F2;
-            case 'R':
-                return KEY_F3;
-            case 'S':
-                return KEY_F4;
-            case 'H':
-                return HOME_KEY;
-            case 'F':
-                return END_KEY;
-            }
-            return '\x1b';
+        if (input != '\x1b') {
+            // Bytes >= 0x80 (UTF-8 leads/continuations) must come back as
+            // positive values, not sign-extended negatives.
+            return (unsigned char)input;
         }
 
-        if (seq0 == '[') {
-            char seq[32];
-            int seq_len = 0;
-            char final_char = 0;
-
-            while (seq_len < (int)sizeof(seq) - 1) {
-                char c;
-                if (ReadByteRetry(&c) != 1) {
-                    return '\x1b';
-                }
-                seq[seq_len++] = c;
-                if (c >= 0x40 && c <= 0x7E) {
-                    final_char = c;
-                    break;
-                }
-            }
-            seq[seq_len] = '\0';
-
-            if (final_char == 0) {
-                return '\x1b';
-            }
-
-            int params[8] = { 0 };
-            int num_params = 0;
-            bool has_param = false;
-
-            for (int i = 0; i < seq_len - 1; i++) {
-                if (seq[i] >= '0' && seq[i] <= '9') {
-                    // Clamp: unbounded accumulation is signed-overflow UB on
-                    // long digit runs (e.g. pasted garbage). 65535 exceeds
-                    // every assigned keycode/modifier, so clamped values just
-                    // fail to match anything.
-                    if (params[num_params] <= 6553) {
-                        params[num_params] = params[num_params] * 10 + (seq[i] - '0');
-                    } else {
-                        params[num_params] = 65535;
-                    }
-                    has_param = true;
-                } else if (seq[i] == ';' || seq[i] == ':') {
-                    if (num_params < 7) {
-                        num_params++;
-                    }
-                }
-            }
-            if (has_param) {
-                num_params++;
-            }
-
-            if (final_char == '~') {
-                if (num_params >= 1) {
-                    if (params[0] == 27) {
-                        // modifyOtherKeys format: CSI 27 ; <modifier> ; <char_code> ~
-                        int mod_flags = 0;
-                        if (num_params >= 2) {
-                            mod_flags = TerminalGetModifierFlags(params[1]);
-                        }
-                        int char_code = (num_params >= 3) ? params[2] : 0;
-
-                        return TerminalMapModifiedKeyCode(char_code, mod_flags);
-                    } else {
-                        int base_key = 0;
-                        switch (params[0]) {
-                        case 1:
-                        case 7:
-                            base_key = HOME_KEY;
-                            break;
-                        case 2:
-                            base_key = INSERT_KEY;
-                            break;
-                        case 3:
-                            base_key = DELETE_KEY;
-                            break;
-                        case 4:
-                        case 8:
-                            base_key = END_KEY;
-                            break;
-                        case 5:
-                            base_key = PAGE_UP;
-                            break;
-                        case 6:
-                            base_key = PAGE_DOWN;
-                            break;
-                        case 15:
-                            base_key = KEY_F5;
-                            break;
-                        case 17:
-                            base_key = KEY_F6;
-                            break;
-                        case 18:
-                            base_key = KEY_F7;
-                            break;
-                        case 19:
-                            base_key = KEY_F8;
-                            break;
-                        case 20:
-                            base_key = KEY_F9;
-                            break;
-                        case 21:
-                            base_key = KEY_F10;
-                            break;
-                        case 23:
-                            base_key = KEY_F11;
-                            break;
-                        case 24:
-                            base_key = KEY_F12;
-                            break;
-                        }
-                        int mod_flags = 0;
-                        if (num_params >= 2) {
-                            mod_flags = TerminalGetModifierFlags(params[1]);
-                        }
-                        return base_key | mod_flags;
-                    }
-                }
-            } else if (final_char == 'u') {
-                // CSI u format (Kitty protocol): CSI <char_code> [; <modifier>] u
-                // Modifier uses Kitty's 1+bitmask encoding: 2=Shift, 3=Alt, 5=Ctrl.
-                if (num_params >= 1) {
-                    int char_code = params[0];
-                    int mod_flags = 0;
-                    if (num_params >= 2) {
-                        mod_flags = TerminalGetModifierFlags(params[1]);
-                    }
-                    LOG_DEBUG("CSI u: char_code=%d(0x%x) raw_mod=%d mod_flags=%d", char_code, char_code,
-                        num_params >= 2 ? params[1] : 0, mod_flags);
-                    int result = TerminalMapModifiedKeyCode(char_code, mod_flags);
-                    LOG_DEBUG("CSI u result: %d", result);
-                    return result;
-                }
-            } else if (final_char == 'A' || final_char == 'B' || final_char == 'C' || final_char == 'D') {
-                int base_key = 0;
-                switch (final_char) {
-                case 'A':
-                    base_key = ARROW_UP;
-                    break;
-                case 'B':
-                    base_key = ARROW_DOWN;
-                    break;
-                case 'C':
-                    base_key = ARROW_RIGHT;
-                    break;
-                case 'D':
-                    base_key = ARROW_LEFT;
-                    break;
-                }
-                int mod_flags = 0;
-                if (num_params >= 2 && params[0] == 1) {
-                    mod_flags = TerminalGetModifierFlags(params[1]);
-                }
-                return base_key | mod_flags;
-            } else if (final_char == 'H' || final_char == 'F') {
-                int base_key = (final_char == 'H') ? HOME_KEY : END_KEY;
-                int mod_flags = 0;
-                if (num_params >= 2 && params[0] == 1) {
-                    mod_flags = TerminalGetModifierFlags(params[1]);
-                }
-                int result = base_key | mod_flags;
-                LOG_DEBUG("CSI %c: raw_seq=\"%.*s\" num_params=%d params[0]=%d params[1]=%d mod_flags=%d result=%d",
-                    final_char, seq_len, seq, num_params, num_params >= 1 ? params[0] : -1,
-                    num_params >= 2 ? params[1] : -1, mod_flags, result);
-                return result;
-            } else if (final_char == 'Z') {
-                // Shift+Tab
-                return '\t' | KEY_MOD_SHIFT;
-            } else if (final_char == 'P' || final_char == 'Q' || final_char == 'R' || final_char == 'S') {
-                // F1 - F4 with modifiers: ESC[1;<modifier>P etc.
-                int base_key = 0;
-                switch (final_char) {
-                case 'P':
-                    base_key = KEY_F1;
-                    break;
-                case 'Q':
-                    base_key = KEY_F2;
-                    break;
-                case 'R':
-                    base_key = KEY_F3;
-                    break;
-                case 'S':
-                    base_key = KEY_F4;
-                    break;
-                }
-                int mod_flags = 0;
-                if (num_params >= 2 && params[0] == 1) {
-                    mod_flags = TerminalGetModifierFlags(params[1]);
-                }
-                return base_key | mod_flags;
-            }
-
-            return '\x1b';
+        int key = TerminalDecodeEscape();
+        if (key != TERMINAL_KEY_NONE) {
+            return key;
         }
-
-        // It is Alt + seq0
-        int base = seq0;
-        if (base >= 'A' && base <= 'Z') {
-            base = tolower((unsigned char)base);
-        }
-        return base | KEY_MOD_ALT;
-    } else {
-        // Bytes >= 0x80 (UTF-8 leads/continuations) must come back as
-        // positive values, not sign-extended negatives.
-        return (unsigned char)input;
+        // Key-release event swallowed: keep reading. The flag checks at the
+        // top of the loop still run, so a resize/terminate that lands during
+        // a burst of release events is not delayed.
     }
 }
 

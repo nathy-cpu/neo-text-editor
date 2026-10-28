@@ -5,8 +5,9 @@
 #include <unistd.h>
 #include "../src/terminal/terminal.h"
 
-// This test binary's stdin is not attached to a real TTY (make test pipes/
-// redirects it), so Terminal_EnableRawMode is expected to fail via its isatty
+// This test binary's stdin is not attached to a real TTY (the harness points
+// each forked child's stdin at /dev/null), so Terminal_EnableRawMode is
+// expected to fail via its isatty
 // guard here. These tests assert the behavior that actually matches the
 // current environment instead of only printing PASS/FAIL without checking it,
 // while still asserting the correct (opposite) behavior if ever run with a
@@ -244,4 +245,29 @@ TEST(terminal, ReadKey_new_keys_and_modifiers) {
 
     // Shift+Tab (Z)
     assert(ReadKeyFromBytes("\x1b[Z", 3) == ('\t' | KEY_MOD_SHIFT));
+}
+
+TEST(terminal, ReadKey_ghostty_alternate_bindings) {
+    // Alternate chords for the combos ghostty's default terminal keybinds
+    // consume (shift+arrows/home/end/page, ctrl+shift+left/right, ctrl+enter).
+    // Modifier params: 4 = 1+shift+alt, 8 = 1+shift+alt+ctrl.
+    assert(ReadKeyFromBytes("\x1b[1;4A", 6) == SHIFT_ALT_ARROW_UP);
+    assert(ReadKeyFromBytes("\x1b[1;4B", 6) == SHIFT_ALT_ARROW_DOWN);
+    assert(ReadKeyFromBytes("\x1b[1;4C", 6) == SHIFT_ALT_ARROW_RIGHT);
+    assert(ReadKeyFromBytes("\x1b[1;4D", 6) == SHIFT_ALT_ARROW_LEFT);
+    assert(ReadKeyFromBytes("\x1b[1;4H", 6) == SHIFT_ALT_HOME);
+    assert(ReadKeyFromBytes("\x1b[1;4F", 6) == SHIFT_ALT_END);
+    assert(ReadKeyFromBytes("\x1b[5;4~", 6) == SHIFT_ALT_PAGE_UP);
+    assert(ReadKeyFromBytes("\x1b[6;4~", 6) == SHIFT_ALT_PAGE_DOWN);
+    assert(ReadKeyFromBytes("\x1b[1;8D", 6) == SHIFT_CTRL_ALT_LEFT);
+    assert(ReadKeyFromBytes("\x1b[1;8C", 6) == SHIFT_CTRL_ALT_RIGHT);
+
+    // Alt+Enter / Alt+Shift+Enter: kitty CSI u (ghostty) ...
+    assert(ReadKeyFromBytes("\x1b[13;3u", 7) == ALT_ENTER);
+    assert(ReadKeyFromBytes("\x1b[13;4u", 7) == ALT_SHIFT_ENTER);
+    // ... modifyOtherKeys (VTE/xterm) ...
+    assert(ReadKeyFromBytes("\x1b[27;3;13~", 10) == ALT_ENTER);
+    assert(ReadKeyFromBytes("\x1b[27;4;13~", 10) == ALT_SHIFT_ENTER);
+    // ... and the legacy ESC-prefix fallback.
+    assert(ReadKeyFromBytes("\x1b\r", 2) == ALT_ENTER);
 }

@@ -25,12 +25,15 @@
 #      ready gate, applied per step) -- burst-level latency, not
 #      per-keystroke, since tmux/awk polling resolution can't meaningfully
 #      resolve single-keystroke timing.
-#   4. Repeats the whole session with syntax highlighting forced off, so the
-#      report can show highlighting's cost as its own delta table.
+#   4. Optionally repeats the whole session with syntax highlighting forced
+#      off, so the report can show highlighting's cost as its own delta
+#      table. NOTE: NO_SYNTAX_ONLY=1 is currently the default (see Defaults
+#      below), so out of the box ONLY the syntax-off session runs and no
+#      delta table is printed; set NO_SYNTAX_ONLY=0 to get both modes.
 #
 # neo has no search feature and no modes (always insert-like, like nano) --
 # the workload excludes search entirely and needs no insert/normal mode
-# dance for neo. vim is modal and launched with extra -c flags so it's a fair
+# dance for neo. vim/nvim are modal and launched with extra -c flags so it's a fair
 # comparison: `foldmethod=indent foldlevel=99` (indentation-based folds that
 # start open, mirroring neo's default view) and `ruler laststatus=2` (so pure
 # cursor movement changes the captured pane text -- without a ruler, moving
@@ -45,11 +48,12 @@
 #
 # Examples:
 #   ./scripts/bench_editors_input.sh
-#   ./scripts/bench_editors_input.sh --editors neo,vim --sizes 10000,200000
+#   ./scripts/bench_editors_input.sh --editors neo,nvim --sizes 10000,200000
 #   ./scripts/bench_editors_input.sh --no-syntax-compare --iterations 1
 #   ./scripts/bench_editors_input.sh --list
 #
-# Requires: tmux, awk, mktemp. bash >= 4.3 (associative arrays, namerefs).
+# Requires: tmux, awk, column, GNU date/mktemp (date +%s%N, mktemp
+# --tmpdir/--suffix). bash >= 4.3 (associative arrays, namerefs).
 
 set -uo pipefail
 
@@ -73,7 +77,7 @@ set -uo pipefail
 # (:echo foldlevel(N) showed 0 on 4-space lines, 1 only on 8-space/doubly-
 # nested lines, under the default shiftwidth).
 #
-# helix has no --clean equivalent; HELIX_CONFIG (generated once in Main,
+# helix has no --clean equivalent; HELIX_CONFIG (generated once at startup,
 # after --scratch-dir is resolved) is passed via -c at launch time instead --
 # see run_session().
 # ============================================================================
@@ -294,8 +298,10 @@ Options:
   --height ROWS          tmux pane height (default: $PANE_HEIGHT)
   --add "name=command"   Register an extra editor for this run (repeatable) -- also needs KEYMAP
                          entries hardcoded in this script to be exercised beyond N/A
-  --no-syntax-compare    Skip the syntax-highlighting-off run (roughly halves total run time)
-  --no-syntax-only       Skip the syntax-highlighting-on run (only test with syntax off)
+  --no-syntax-compare    Skip the syntax-highlighting-off run (roughly halves total run time).
+                         Only has an effect when NO_SYNTAX_ONLY=0 in this script.
+  --no-syntax-only       Skip the syntax-highlighting-on run (only test with syntax off).
+                         Currently the DEFAULT (NO_SYNTAX_ONLY=$NO_SYNTAX_ONLY); no flag turns it back off.
   --list                 List registered editors and whether they're found on this machine, then exit
   --keep-files           Don't delete generated/edited test files afterward
   --scratch-dir PATH     Real-disk directory for test files (default: $SCRATCH_DIR)
@@ -303,7 +309,7 @@ Options:
 
 Examples:
   $SCRIPT_NAME
-  $SCRIPT_NAME --editors neo,vim --sizes 10000,200000
+  $SCRIPT_NAME --editors neo,nvim --sizes 10000,200000
   $SCRIPT_NAME --no-syntax-compare --iterations 1
 EOF
 }

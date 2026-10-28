@@ -33,12 +33,13 @@
 #
 # Examples:
 #   ./scripts/bench_editors_memory.sh
-#   ./scripts/bench_editors_memory.sh --editors neo,vim,nano --sizes 100000,1000000
+#   ./scripts/bench_editors_memory.sh --editors neo,vim --sizes 100000,1000000
 #   ./scripts/bench_editors_memory.sh --file /path/to/real/file.log
 #   ./scripts/bench_editors_memory.sh --mem-limit 8G --sizes 20000000 --force
 #   ./scripts/bench_editors_memory.sh --list
 #
-# Requires: tmux, awk, mktemp. bash >= 4 (associative arrays). systemd-run
+# Requires: tmux, awk, column, GNU date/mktemp (date +%s%N, mktemp
+# --tmpdir/--suffix). bash >= 4.3 (associative arrays, namerefs). systemd-run
 # --user is optional but strongly recommended -- see the safety note above.
 
 set -uo pipefail
@@ -120,7 +121,7 @@ Options:
 
 Examples:
   $SCRIPT_NAME
-  $SCRIPT_NAME --editors neo,vim,nano --sizes 100000,1000000
+  $SCRIPT_NAME --editors neo,vim --sizes 100000,1000000
   $SCRIPT_NAME --file /var/log/syslog
   $SCRIPT_NAME --mem-limit 8G --sizes 20000000 --force
 EOF
@@ -343,10 +344,11 @@ first_line_marker() {
     awk 'NF { print; exit }' "$1" | cut -c1-40
 }
 
-# Estimates the byte size generate_file() would produce for $1 lines, matching
-# its actual output shape (fixed 33-byte marker line, then per-line width
-# that grows slightly with the digit count of the line number). Deliberately
-# conservative (rounds up) since this feeds a safety gate, not a report.
+# Estimates the byte size generate_file() would produce for $1 lines: a
+# 33-byte allowance for the marker line (actually 31 bytes), then 60 + D
+# bytes per line, where D is the digit count of $1. NOT conservative: a real
+# line is 57 + 2*(digits of its line number) bytes, so for 100000+ lines this
+# UNDERestimates (~1-3%) even though it feeds a safety gate.
 estimate_generated_bytes() {
     local lines="$1"
     awk -v n="$lines" 'BEGIN {

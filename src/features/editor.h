@@ -76,7 +76,7 @@ void Editor_AddTab(Editor* editor, const char* filename);
 void Editor_CloseTab(Editor* editor);
 
 /**
- * @brief Recalculates screen dimensions and distributes them across tabs.
+ * @brief Recalculates screen dimensions, reserving rows for the status, message, and (with >1 tab) tabs bars.
  */
 void Editor_UpdateGeometry(Editor* editor);
 

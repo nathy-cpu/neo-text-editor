@@ -18,13 +18,14 @@
 #
 # Examples:
 #   ./scripts/bench_editors.sh                              # default sizes, all available editors
-#   ./scripts/bench_editors.sh --editors neo,vim,nano        # only these
+#   ./scripts/bench_editors.sh --editors neo,helix           # only these (must be registered below)
 #   ./scripts/bench_editors.sh --sizes 1000,500000           # custom line counts
 #   ./scripts/bench_editors.sh --file /path/to/real/file.log # benchmark one specific file
 #   ./scripts/bench_editors.sh --add "hx=hx" --editors hx    # add helix ad hoc and test it
 #   ./scripts/bench_editors.sh --list                        # show registered editors + availability
 #
-# Requires: tmux, awk, mktemp. bash >= 4 (associative arrays).
+# Requires: tmux, awk, column, GNU date/mktemp (date +%s%N, mktemp --suffix).
+# bash >= 4 (associative arrays).
 
 set -uo pipefail
 
@@ -89,7 +90,7 @@ Options:
 
 Examples:
   $SCRIPT_NAME
-  $SCRIPT_NAME --editors neo,vim,nano
+  $SCRIPT_NAME --editors neo,helix
   $SCRIPT_NAME --sizes 1000,500000
   $SCRIPT_NAME --file /var/log/syslog
   $SCRIPT_NAME --add "hx=hx" --editors hx,neo

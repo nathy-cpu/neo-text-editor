@@ -37,12 +37,13 @@ typedef struct {
 struct Buffer; // Forward declaration
 
 /**
- * @brief Frees the Line object and its internal gap buffers.
+ * @brief Frees the Line's owned styles and render-checkpoint arrays (not the
+ * Line struct itself).
  */
 void Line_Free(Line* line);
 
 /**
- * @brief Gets the logical character length of the line.
+ * @brief Gets the byte length of the line (excluding the trailing newline).
  */
 size_t Line_Length(Line* line);
 

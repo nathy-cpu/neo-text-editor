@@ -12,3 +12,14 @@ int TerminalMapCharCodeToKey(int charCode);
 
 /** Applies modifier flags to a character code (Ctrl-letter folding etc.). */
 int TerminalMapModifiedKeyCode(int charCode, int modifierFlags);
+
+// Internal sentinel: escape sequence decoded to a key-release event that must
+// be swallowed by ReadKey (never returned to callers as a keypress).
+#define TERMINAL_KEY_NONE (-2)
+
+/**
+ * Parses a complete CSI sequence body (the bytes after "ESC [", including the
+ * final byte). Pure, no I/O. Returns the decoded key, '\x1b' for unrecognized
+ * sequences, or TERMINAL_KEY_NONE for key-release events.
+ */
+int TerminalParseCsi(const char* seq, int seq_len);

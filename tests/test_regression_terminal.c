@@ -24,9 +24,9 @@
 
 // ---------------------------------------------------------------------------
 // Shift-only printables decode to the plain shifted/uppercased character with
-// NO shift flag. A value carrying `code | KEY_MOD_SHIFT` (>= 128) would be
-// dropped by input.c's `!iscntrl && < 128` printable filter, making capitals
-// untypeable on xterm/VTE (modifyOtherKeys) and kitty.
+// NO shift flag. A value carrying `code | KEY_MOD_SHIFT` (>= 0x10000) would be
+// dropped by input.c's printable filter (32..255, excluding 127), making
+// capitals untypeable on xterm/VTE (modifyOtherKeys) and kitty.
 // ---------------------------------------------------------------------------
 
 TEST(regression_terminal, shifted_printable_xterm_modify_other_keys) {
@@ -48,7 +48,7 @@ TEST(regression_terminal, shifted_punctuation_kitty_csi_u_plain) {
 
 TEST(regression_terminal, map_modified_key_code_shift_only_folds) {
     // Direct unit seam: shift folds into the character instead of surviving
-    // as a flag that pushes the value past input.c's < 128 filter.
+    // as a flag that pushes the value past input.c's < 256 printable filter.
     assert(TerminalMapModifiedKeyCode('h', KEY_MOD_SHIFT) == 'H');
     assert(TerminalMapModifiedKeyCode('A', KEY_MOD_SHIFT) == 'A');
 }
@@ -128,7 +128,7 @@ TEST(regression_terminal, csi_u_zero_modifier_parameter_plain_key) {
 }
 
 // ---------------------------------------------------------------------------
-// CSI parameter accumulation (`params[n] * 10 + digit`) is clamped at 65535,
+// CSI parameter accumulation (`params[n][sub] * 10 + digit`) is clamped at 65535,
 // so an absurdly long numeric parameter such as "99999999999999999999" cannot
 // overflow int (signed-overflow UB). Clamped input decodes deterministically:
 // a huge modifier parameter becomes some combination of modifier flags on the
@@ -237,4 +237,61 @@ TEST(regression_terminal, eintr_mid_escape_completes_sequence) {
 
 TEST(regression_terminal, high_byte_returned_unsigned) {
     assert(ReadKeyFromBytes("\xC3", 1) == 0xC3);
+}
+
+// ---------------------------------------------------------------------------
+// Kitty ':' sub-parameters are NOT extra ';' parameters. The old parser
+// flattened them into one list, so the alternate-keys form
+// CSI 97:65:97 ; 2 u read the shifted-key code 65 as the modifier parameter
+// (-> flags 0 -> returned 'a', silently dropping shift).
+// ---------------------------------------------------------------------------
+
+TEST(regression_terminal, kitty_alternate_keys_subparams_not_modifier) {
+    // unicode:shifted:base + shift modifier -> 'A'
+    assert(ReadKeyFromBytes("\x1b[97:65:97;2u", 13) == 'A');
+    // unicode:shifted (no base) + shift modifier -> 'A'
+    assert(ReadKeyFromBytes("\x1b[97:65;2u", 10) == 'A');
+    // alternate keys + ctrl with explicit press event type
+    assert(ReadKeyFromBytes("\x1b[97:65:97;5:1u", 15) == CTRL_KEY('a'));
+    // sub-params beyond the ones we consume are discarded, not misparsed
+    assert(ReadKeyFromBytes("\x1b[97:65:97:1:2;2u", 17) == 'A');
+}
+
+TEST(regression_terminal, kitty_subparam_digit_run_clamped) {
+    // A huge digit run inside a sub-parameter must hit the 65535 clamp (no
+    // signed-overflow UB) and, being an ignored sub-param, not affect decoding.
+    assert(ReadKeyFromBytes("\x1b[97:99999999999999999999;2u", 28) == 'A');
+}
+
+// ---------------------------------------------------------------------------
+// Kitty event types ride as sub-param 1 of the modifier group: 1=press,
+// 2=repeat, 3=release. Releases must be swallowed (the old parser decoded
+// them as a second keypress, double-triggering every action); repeats act as
+// presses. Applies to every CSI final byte, not just 'u'.
+// Each release payload is followed by a plain byte: ReadKey keeps reading
+// after a swallowed event, and on a closed pipe it would spin on EOF forever
+// (EOF is indistinguishable from a VTIME timeout in raw mode).
+// ---------------------------------------------------------------------------
+
+TEST(regression_terminal, kitty_event_type_press_and_repeat) {
+    assert(ReadKeyFromBytes("\x1b[99;5:1u", 9) == CTRL_KEY('c'));
+    assert(ReadKeyFromBytes("\x1b[99;5:2u", 9) == CTRL_KEY('c'));
+}
+
+TEST(regression_terminal, kitty_release_events_swallowed) {
+    assert(ReadKeyFromBytes("\x1b[99;5:3ux", 10) == 'x'); // CSI u
+    assert(ReadKeyFromBytes("\x1b[1;4:3Ax", 9) == 'x'); // arrows
+    assert(ReadKeyFromBytes("\x1b[5;4:3~x", 9) == 'x'); // tilde functionals
+    assert(ReadKeyFromBytes("\x1b[1;2:3Hx", 9) == 'x'); // H/F home-end
+    assert(ReadKeyFromBytes("\x1b[1;2:3Px", 9) == 'x'); // P-S F1-F4
+}
+
+TEST(regression_terminal, parse_csi_seam_direct) {
+    // Direct unit seam on the pure parser: release sentinel and decode paths
+    // without any stdin plumbing.
+    assert(TerminalParseCsi("1;4:3A", 6) == TERMINAL_KEY_NONE);
+    assert(TerminalParseCsi("99;5:3u", 7) == TERMINAL_KEY_NONE);
+    assert(TerminalParseCsi("13;3u", 5) == ALT_ENTER);
+    assert(TerminalParseCsi("97:65:97;2u", 11) == 'A');
+    assert(TerminalParseCsi("1;4A", 4) == SHIFT_ALT_ARROW_UP);
 }

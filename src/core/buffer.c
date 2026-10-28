@@ -108,7 +108,7 @@ static size_t FindOldLineIndexByOffset(const Buffer* buffer, size_t rangeStart, 
 // Rebuilds the line cache from the dirty point forward. Scans (via memchr)
 // only until it can realign with the existing cache's untouched tail -- at
 // that point the tail is left exactly where it is (not copied out and
-// reinserted), and only its offset/lineNumber fields are patched in place,
+// reinserted), and only its offset fields are patched in place,
 // since re-materializing every remaining line on every edit made editing cost
 // O(lines after the edit) instead of O(lines actually touched).
 static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
@@ -144,7 +144,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     // how much of it we get to keep. When there's no old tail at all to
     // realign with (oldRangeCount == 0 -- true on the very first build, or
     // when appending past the end of everything cached so far), the scan is
-    // guaranteed to run to EOF with no early exit, so size this generously
+    // guaranteed to run to EOF with no early exit, so size this exactly
     // up front: growing it one line at a time via geometric doubling means
     // O(log n) full-array reallocate-and-copy passes, which alone can
     // dominate a large initial file load. The normal small-edit path (a
@@ -154,7 +154,7 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
     if (oldRangeCount == 0) {
         // Pre-count newlines to exactly size the newLines array.
         // Previously, we guessed 8 bytes per line, which wildly over-allocated
-        // memory for large files (allocating gigabytes of RAM for the 152-byte Line structs).
+        // memory for large files (allocating gigabytes of RAM for the Line structs).
         // It also avoided geometric array growth (O(log N) copies) which slowed down file loading.
         // The memchr pass is SIMD-optimized and extremely fast, making this upfront cost negligible.
         size_t exactLineCount = 0;
@@ -281,10 +281,11 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
             // renderCheckpoints are deliberately NOT transferred: lines inside
             // the replaced range are exactly those whose content changed, so
             // their checkpoints are unverifiable and would yield stale render
-            // columns (Line_EnsureRenderCheckpoints never rebuilds a non-NULL
-            // set). The old array is freed with the old line below; the new
-            // line rebuilds lazily on its next render. Reused tail lines
-            // outside this range keep theirs (content untouched).
+            // columns (Line_EnsureRenderCheckpoints only rebuilds a non-NULL
+            // set when the tab size changes). The old array is freed with the
+            // old line below; the new line rebuilds lazily on its next render.
+            // Reused tail lines outside this range keep theirs (content
+            // untouched).
         }
     }
 
@@ -324,8 +325,8 @@ static void Buffer_RebuildLineCache(Buffer* buffer, size_t upToLineIndex)
         Array_Free(&newLines);
     }
 
-    // Patch the reused tail's absolute offsets (and line numbers, if the
-    // total line count changed) in place -- no move, no per-line reinsert.
+    // Patch the reused tail's absolute offsets in place -- no move, no
+    // per-line reinsert.
     size_t newTotal = GapBuffer_Size(&buffer->lineCache.lines);
     for (size_t i = dirtyStart + numNew; i < newTotal; i++) {
         Line* line = (Line*)GapBuffer_At(&buffer->lineCache.lines, i);

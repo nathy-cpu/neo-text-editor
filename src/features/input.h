@@ -73,6 +73,6 @@ void Editor_IndentLines(Editor* editor);
 void Editor_UnindentLines(Editor* editor);
 
 /**
- * @brief Processes the next keypress for the active tab or explorer.
+ * @brief Processes the next keypress for the active tab, explorer, or log viewer.
  */
 void Editor_ProcessKeypress(Editor* editor);

@@ -72,6 +72,23 @@ enum Key {
 #define ALT_BACKSPACE (BACKSPACE | KEY_MOD_ALT)
 #define ALT_DELETE (DELETE_KEY | KEY_MOD_ALT)
 
+// Alternate chords for combos that ghostty's default terminal keybinds
+// consume before the editor sees them (shift+arrows/home/end/page for its
+// native selection and scrollback, ctrl+shift+left/right for tab switching,
+// ctrl+enter for fullscreen). Verified unbound in ghostty 1.3 defaults.
+#define SHIFT_ALT_ARROW_UP (ARROW_UP | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_ARROW_DOWN (ARROW_DOWN | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_ARROW_LEFT (ARROW_LEFT | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_ARROW_RIGHT (ARROW_RIGHT | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_HOME (HOME_KEY | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_END (END_KEY | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_PAGE_UP (PAGE_UP | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_ALT_PAGE_DOWN (PAGE_DOWN | KEY_MOD_SHIFT | KEY_MOD_ALT)
+#define SHIFT_CTRL_ALT_LEFT (ARROW_LEFT | KEY_MOD_SHIFT | KEY_MOD_CTRL | KEY_MOD_ALT)
+#define SHIFT_CTRL_ALT_RIGHT (ARROW_RIGHT | KEY_MOD_SHIFT | KEY_MOD_CTRL | KEY_MOD_ALT)
+#define ALT_ENTER ('\r' | KEY_MOD_ALT)
+#define ALT_SHIFT_ENTER ('\r' | KEY_MOD_ALT | KEY_MOD_SHIFT)
+
 extern volatile sig_atomic_t windowResized;
 extern volatile sig_atomic_t terminationRequested;
 

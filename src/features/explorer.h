@@ -16,7 +16,7 @@ typedef struct {
 struct Editor; // Forward declaration
 
 /**
- * @brief Reads a directory and populates the ExplorerItems list.
+ * @brief Reads a directory and populates editor->explorerItems.
  */
 void Editor_ReadDir(struct Editor* editor, const char* path);
 

@@ -608,3 +608,156 @@ TEST(regression_input, typing_high_bytes_inserts_sequence)
 
     Editor_Free(&editor);
 }
+
+// ============================================================================
+// Alternate chords for keys ghostty's default terminal keybinds consume
+// (shift+arrows/home/end/page, ctrl+shift+left/right, ctrl+enter) must behave
+// exactly like their canonical counterparts. These are translated once at the
+// top of Editor_ProcessInput; a chord missing from the translation table is
+// >= 0x10000 and would be silently dropped by the printable-input filter.
+// ============================================================================
+
+TEST(regression_input, shift_alt_arrow_right_extends_selection)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = RegressionInputActiveTab(&editor);
+
+    RegressionInputSetLineText(tab, 0, "one two");
+    tab->cursorY = 0;
+    tab->cursorX = 0;
+
+    Editor_ProcessInput(&editor, SHIFT_ALT_ARROW_RIGHT);
+
+    assert(tab->hasSelection);
+    assert(tab->selectStartX == 0);
+    assert(tab->cursorX == 1);
+
+    Editor_Free(&editor);
+}
+
+TEST(regression_input, shift_ctrl_alt_right_selects_word)
+{
+    // The alternate chord must land exactly where canonical SHIFT_CTRL_RIGHT
+    // lands, whatever the word-motion rule is. Run both on identical
+    // fixtures and compare.
+    Editor canonical;
+    Editor_Init(&canonical);
+    Editor_AddTab(&canonical, NULL);
+    Tab* canonicalTab = RegressionInputActiveTab(&canonical);
+    RegressionInputSetLineText(canonicalTab, 0, "one two");
+    canonicalTab->cursorY = 0;
+    canonicalTab->cursorX = 0;
+    Editor_ProcessInput(&canonical, SHIFT_CTRL_RIGHT);
+
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = RegressionInputActiveTab(&editor);
+    RegressionInputSetLineText(tab, 0, "one two");
+    tab->cursorY = 0;
+    tab->cursorX = 0;
+    Editor_ProcessInput(&editor, SHIFT_CTRL_ALT_RIGHT);
+
+    assert(canonicalTab->hasSelection);
+    assert(tab->hasSelection);
+    assert(tab->selectStartX == canonicalTab->selectStartX);
+    assert(tab->cursorX == canonicalTab->cursorX);
+    assert(canonicalTab->cursorX > 0); // sanity: word motion actually moved
+
+    Editor_Free(&canonical);
+    Editor_Free(&editor);
+}
+
+TEST(regression_input, shift_alt_home_and_end_select_line_extents)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = RegressionInputActiveTab(&editor);
+
+    RegressionInputSetLineText(tab, 0, "hello");
+    tab->cursorY = 0;
+    tab->cursorX = 2;
+
+    Editor_ProcessInput(&editor, SHIFT_ALT_END);
+    assert(tab->hasSelection);
+    assert(tab->selectStartX == 2);
+    assert(tab->cursorX == 5);
+
+    tab->hasSelection = false;
+    tab->cursorX = 2;
+
+    Editor_ProcessInput(&editor, SHIFT_ALT_HOME);
+    assert(tab->hasSelection);
+    assert(tab->selectStartX == 2);
+    assert(tab->cursorX == 0);
+
+    Editor_Free(&editor);
+}
+
+TEST(regression_input, alt_enter_inserts_line_below)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = RegressionInputActiveTab(&editor);
+
+    RegressionInputBuildThreeLineBuffer(tab);
+    tab->cursorY = 0;
+    tab->cursorX = 1;
+
+    Editor_ProcessInput(&editor, ALT_ENTER); // Editor_InsertLineBelow
+
+    assert(Buffer_GetLineCount(tab->buffer) == 4);
+    RegressionInputAssertLineEquals(tab, 0, "one");
+    RegressionInputAssertLineEquals(tab, 1, "");
+    assert(tab->cursorY == 1);
+
+    Editor_Free(&editor);
+}
+
+TEST(regression_input, alt_shift_enter_inserts_line_above)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = RegressionInputActiveTab(&editor);
+
+    RegressionInputBuildThreeLineBuffer(tab);
+    tab->cursorY = 1;
+    tab->cursorX = 1;
+
+    Editor_ProcessInput(&editor, ALT_SHIFT_ENTER); // Editor_InsertLineAbove
+
+    assert(Buffer_GetLineCount(tab->buffer) == 4);
+    RegressionInputAssertLineEquals(tab, 0, "one");
+    RegressionInputAssertLineEquals(tab, 1, "");
+    RegressionInputAssertLineEquals(tab, 2, "two");
+    assert(tab->cursorY == 1);
+
+    Editor_Free(&editor);
+}
+
+TEST(regression_input, shift_alt_page_down_pages_with_selection)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    Editor_AddTab(&editor, NULL);
+    Tab* tab = RegressionInputActiveTab(&editor);
+
+    RegressionInputBuildWrappedBuffer(&editor, tab);
+    tab->cursorY = 0;
+    tab->cursorX = 0;
+
+    Editor_ProcessInput(&editor, SHIFT_ALT_PAGE_DOWN);
+
+    // Mirrors SHIFT_PAGE_DOWN: cursor moved and the selection survives paging.
+    assert(tab->hasSelection);
+    assert(tab->selectStartY == 0);
+    assert(tab->selectStartX == 0);
+    assert(tab->cursorY > 0 || tab->cursorX > 0);
+
+    Editor_Free(&editor);
+}

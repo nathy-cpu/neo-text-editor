@@ -420,12 +420,54 @@ static void Editor_PageMove(Editor* editor, Tab* tab, int direction)
     Tab_SetCursorFromVRow(tab, newVisualRow, targetColumn);
 }
 
+// Alternate chords for combos that ghostty's default terminal keybinds
+// consume (its native selection/scrollback take shift+arrows/home/end/page,
+// tab switching takes ctrl+shift+left/right, fullscreen takes ctrl+enter).
+// Translated to the canonical key once, at the top of Editor_ProcessInput,
+// so all of its dispatch and logging see only canonical keys. Hardcoded by
+// design: a config.lua binding to one of these exact chord values would be
+// shadowed for the bindings checked here (the ones Editor_ProcessKeypress
+// checks first -- quit, tabs, save-as, explorer, logs -- see the raw chord).
+static int Input_TranslateAlternateChord(int input)
+{
+    switch (input) {
+    case SHIFT_ALT_ARROW_UP:
+        return SHIFT_ARROW_UP;
+    case SHIFT_ALT_ARROW_DOWN:
+        return SHIFT_ARROW_DOWN;
+    case SHIFT_ALT_ARROW_LEFT:
+        return SHIFT_ARROW_LEFT;
+    case SHIFT_ALT_ARROW_RIGHT:
+        return SHIFT_ARROW_RIGHT;
+    case SHIFT_ALT_HOME:
+        return SHIFT_HOME_KEY;
+    case SHIFT_ALT_END:
+        return SHIFT_END_KEY;
+    case SHIFT_ALT_PAGE_UP:
+        return SHIFT_PAGE_UP;
+    case SHIFT_ALT_PAGE_DOWN:
+        return SHIFT_PAGE_DOWN;
+    case SHIFT_CTRL_ALT_LEFT:
+        return SHIFT_CTRL_LEFT;
+    case SHIFT_CTRL_ALT_RIGHT:
+        return SHIFT_CTRL_RIGHT;
+    case ALT_ENTER:
+        return CTRL_ENTER;
+    case ALT_SHIFT_ENTER:
+        return CTRL_SHIFT_ENTER;
+    default:
+        return input;
+    }
+}
+
 void Editor_ProcessInput(Editor* editor, int input)
 {
     if (Array_Size(&editor->tabs) == 0)
         return;
     Tab* tab = Array_Get(&editor->tabs, Tab*, editor->activeTabIndex);
     bool modified = false;
+
+    input = Input_TranslateAlternateChord(input);
 
     LOG_DEBUG(
         "Editor_ProcessInput: processing keypress %d on tab '%s'", input, tab->filename ? tab->filename : "<scratch>");

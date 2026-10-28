@@ -64,7 +64,8 @@ typedef struct Buffer {
 Buffer* Buffer_New(void);
 
 /**
- * @brief Frees a Buffer and all of its Lines.
+ * @brief Drops one reference to a Buffer; frees it and all of its Lines once
+ * refCount reaches zero.
  */
 void Buffer_Free(Buffer* buffer);
 
@@ -169,12 +170,15 @@ Buffer* Buffer_NewFromMmap(MappedFile mappedFile, const char* filename);
 void Buffer_InvalidateLineCache(Buffer* buffer, size_t offset, size_t newEndOffset, size_t oldTotalBytes);
 
 /**
- * @brief Helper to ensure that folds are updated when a line is edited.
+ * @brief Unfolds any folded line whose fold block hides lineIndex, so that
+ * line becomes visible.
  */
 void Buffer_EnsureLineVisible(Buffer* buffer, size_t lineIndex, size_t tabSize);
 
 /**
- * @brief Callback for when a buffer is successfully saved to disk.
+ * @brief Saves the buffer to `path` (atomic streaming write), then re-mmaps
+ * the saved file as the new original source via Buffer_AdoptSavedFile.
+ * @return False if the write failed; true otherwise (even if re-mmap failed).
  */
 bool Buffer_OnSave(Buffer* buffer, const char* path, bool useFsync);
 

@@ -27,9 +27,6 @@ bool FileIoWrite(const char* path, Slice content);
 bool FileIoWriteChunk(int fileDescriptor, const void* data, size_t len);
 
 /**
- * @brief Opens a new temp file in the same directory as `path` for atomic writes.
- */
-/**
  * @brief Resolves the final target of a save: follows symlink chains on the
  * last path component (including dangling ones, bounded at 32 hops) and
  * canonicalizes the parent directory. Works when the target does not exist
@@ -38,6 +35,9 @@ bool FileIoWriteChunk(int fileDescriptor, const void* data, size_t len);
  */
 bool FileIoResolveSavePath(const char* path, char* resolvedOut, size_t resolvedOutSize);
 
+/**
+ * @brief Opens a new temp file in the same directory as `path` for atomic writes.
+ */
 int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tempPathOutSize);
 
 /**
@@ -46,7 +46,8 @@ int FileIoOpenTempForAtomicWrite(const char* path, char* tempPathOut, size_t tem
 void FileIoAbortAtomicWrite(int fileDescriptor, const char* tempPath);
 
 /**
- * @brief Durably commits a completed atomic write.
+ * @brief Commits a completed atomic write: fdatasync (only when useFsync),
+ * close, then rename over finalPath. Removes the temp file on failure.
  */
 bool FileIoCommitAtomicWrite(int fileDescriptor, const char* tempPath, const char* finalPath, bool useFsync);
 
