@@ -13,9 +13,11 @@
 #include "editor.h"
 #include "syntax.h"
 #include <ctype.h>
+#include <limits.h>
 #include <lua5.4/lauxlib.h>
 #include <lua5.4/lua.h>
 #include <lua5.4/lualib.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -284,6 +286,84 @@ int ParseKeybinding(const char* keybindingString, int defaultKeyValue)
     return base_key | modifiers;
 }
 
+void Config_FormatKey(int key, char* out, size_t outSize)
+{
+    if (!out || outSize == 0)
+        return;
+
+    int modifiers = key & (KEY_MOD_CTRL | KEY_MOD_ALT | KEY_MOD_SHIFT);
+    int baseKey = key & ~(KEY_MOD_CTRL | KEY_MOD_ALT | KEY_MOD_SHIFT);
+
+    // Legacy control codes (CTRL_KEY('a')..CTRL_KEY('z')), except the ones
+    // that are really Tab and Enter.
+    if (baseKey >= 1 && baseKey <= 26 && baseKey != '\t' && baseKey != '\r') {
+        modifiers |= KEY_MOD_CTRL;
+        baseKey = 'a' + baseKey - 1;
+    }
+
+    char baseName[16];
+    const char* name = baseName;
+    switch (baseKey) {
+    case BACKSPACE:
+        name = "Backspace";
+        break;
+    case DELETE_KEY:
+        name = "Delete";
+        break;
+    case INSERT_KEY:
+        name = "Insert";
+        break;
+    case HOME_KEY:
+        name = "Home";
+        break;
+    case END_KEY:
+        name = "End";
+        break;
+    case PAGE_UP:
+        name = "PgUp";
+        break;
+    case PAGE_DOWN:
+        name = "PgDn";
+        break;
+    case ARROW_LEFT:
+        name = "Left";
+        break;
+    case ARROW_RIGHT:
+        name = "Right";
+        break;
+    case ARROW_UP:
+        name = "Up";
+        break;
+    case ARROW_DOWN:
+        name = "Down";
+        break;
+    case '\t':
+        name = "Tab";
+        break;
+    case '\r':
+        name = "Enter";
+        break;
+    case '\x1b':
+        name = "Esc";
+        break;
+    case ' ':
+        name = "Space";
+        break;
+    default:
+        if (baseKey >= KEY_F1 && baseKey <= KEY_F12) {
+            snprintf(baseName, sizeof(baseName), "F%d", baseKey - KEY_F1 + 1);
+        } else if (baseKey > ' ' && baseKey < 127) {
+            snprintf(baseName, sizeof(baseName), "%c", toupper(baseKey));
+        } else {
+            snprintf(baseName, sizeof(baseName), "0x%X", (unsigned)baseKey);
+        }
+        break;
+    }
+
+    snprintf(out, outSize, "%s%s%s%s", (modifiers & KEY_MOD_CTRL) ? "Ctrl-" : "",
+        (modifiers & KEY_MOD_ALT) ? "Alt-" : "", (modifiers & KEY_MOD_SHIFT) ? "Shift-" : "", name);
+}
+
 /**
  * @brief Retrieves a string array from a Lua table.
  * @param luaState Pointer to the Lua state.
@@ -344,10 +424,17 @@ static int GetLuaInt(lua_State* luaState, const char* variableName, int defaultI
 {
     lua_getglobal(luaState, variableName);
     int integerValue = defaultIntegerValue;
+    // Clamp before narrowing so huge values saturate (and are then rejected by
+    // GetValidatedInt) instead of wrapping; an out-of-range or NaN double to
+    // int cast is undefined behavior.
     if (lua_isinteger(luaState, -1)) {
-        integerValue = (int)lua_tointeger(luaState, -1);
+        lua_Integer rawValue = lua_tointeger(luaState, -1);
+        integerValue = rawValue < INT_MIN ? INT_MIN : rawValue > INT_MAX ? INT_MAX : (int)rawValue;
     } else if (lua_isnumber(luaState, -1)) {
-        integerValue = (int)lua_tonumber(luaState, -1);
+        lua_Number rawValue = lua_tonumber(luaState, -1);
+        if (!isnan(rawValue)) {
+            integerValue = rawValue <= INT_MIN ? INT_MIN : rawValue >= INT_MAX ? INT_MAX : (int)rawValue;
+        }
     }
     lua_pop(luaState, 1);
     return integerValue;
@@ -520,8 +607,8 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->tabSize = GetValidatedInt(luaState, editor, "tab_size", config->tabSize, 1, 16);
     config->showLineNumbers = GetLuaBool(luaState, "show_line_numbers", config->showLineNumbers);
     config->wrapLines = GetLuaBool(luaState, "wrap_lines", config->wrapLines);
-    config->wrapDisableLineThreshold
-        = (size_t)GetLuaInt(luaState, "wrap_disable_line_threshold", (int)config->wrapDisableLineThreshold);
+    config->wrapDisableLineThreshold = (size_t)GetValidatedInt(
+        luaState, editor, "wrap_disable_line_threshold", (int)config->wrapDisableLineThreshold, 0, INT_MAX);
     config->syntaxEnabled = GetLuaBool(luaState, "syntax_enabled", config->syntaxEnabled);
     config->statusTimeout = GetLuaInt(luaState, "status_timeout", config->statusTimeout);
 
@@ -538,7 +625,7 @@ bool Editor_LoadConfig(Editor* editor, const char* configFilePath)
     config->logToFile = GetLuaBool(luaState, "log_to_file", config->logToFile);
     config->logToUi = GetLuaBool(luaState, "log_to_ui", config->logToUi);
     config->logMaxMessages = GetLuaInt(luaState, "log_max_messages", config->logMaxMessages);
-    config->undoLimit = (size_t)GetLuaInt(luaState, "undo_limit", (int)config->undoLimit);
+    config->undoLimit = (size_t)GetValidatedInt(luaState, editor, "undo_limit", (int)config->undoLimit, 0, INT_MAX);
     config->fsyncEnabled = GetLuaBool(luaState, "fsync_enabled", config->fsyncEnabled);
 
     // Parse syntax colors

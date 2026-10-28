@@ -296,3 +296,30 @@ TEST(config, config_ParseKeybinding)
     // Invalid/fallback
     assert(ParseKeybinding("invalid-key-name", 42) == 42);
 }
+
+TEST(config, config_FormatKey)
+{
+    char name[64];
+
+    Config_FormatKey(CTRL_KEY('q'), name, sizeof(name));
+    assert(strcmp(name, "Ctrl-Q") == 0);
+    Config_FormatKey(ALT_S, name, sizeof(name));
+    assert(strcmp(name, "Alt-S") == 0);
+    Config_FormatKey(ALT_ARROW_UP, name, sizeof(name));
+    assert(strcmp(name, "Alt-Up") == 0);
+    Config_FormatKey(KEY_F5 | KEY_MOD_CTRL | KEY_MOD_ALT | KEY_MOD_SHIFT, name, sizeof(name));
+    assert(strcmp(name, "Ctrl-Alt-Shift-F5") == 0);
+    Config_FormatKey(SHIFT_TAB, name, sizeof(name));
+    assert(strcmp(name, "Shift-Tab") == 0);
+    Config_FormatKey(CTRL_ENTER, name, sizeof(name));
+    assert(strcmp(name, "Ctrl-Enter") == 0);
+
+    // Round-trips with the parser for a configured chord.
+    Config_FormatKey(ParseKeybinding("ctrl-shift-pagedown", 0), name, sizeof(name));
+    assert(strcmp(name, "Ctrl-Shift-PgDn") == 0);
+
+    // Truncates safely into a small buffer.
+    char small[4];
+    Config_FormatKey(CTRL_KEY('q'), small, sizeof(small));
+    assert(strcmp(small, "Ctr") == 0);
+}

@@ -233,8 +233,6 @@ void Editor_ProcessExplorerInput(Editor* editor, int input)
         }
         break;
     case '\x1b': // ESC
-    case CTRL_KEY('e'):
-    case CTRL_KEY('q'):
         editor->isExplorerActive = false;
         break;
     case '\r': {
@@ -282,5 +280,10 @@ void Editor_ProcessExplorerInput(Editor* editor, int input)
         }
         break;
     }
+    default:
+        if (input == editor->config.keyExplorer || input == editor->config.keyQuit) {
+            editor->isExplorerActive = false;
+        }
+        break;
     }
 }

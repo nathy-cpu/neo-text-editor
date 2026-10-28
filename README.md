@@ -101,7 +101,7 @@ These can be rebound in the `keybindings` table of `config.lua` (see [Configurat
 
 Some terminals (notably Ghostty, with its default keybinds) consume `Shift+Arrows`, `Ctrl+Shift+Left/Right`, and `Ctrl+Enter`. Neo accepts alternates for these: add `Alt` to the selection chords (e.g. `Shift+Alt+Arrows`, `Shift+Ctrl+Alt+Left/Right`), and use `Alt+Enter` / `Alt+Shift+Enter` for inserting lines.
 
-In the **file explorer**, use `Up/Down` to move and `Enter` to open a file or directory; `Esc`, `Ctrl+E`, or `Ctrl+Q` closes it. In the **log viewer**, `Up/Down` and `PgUp/PgDn` scroll; `Esc`, `Ctrl+Q`, or the `show_logs` key closes it. In the **Save As** prompt, `Enter` accepts and `Esc` cancels.
+In the **file explorer**, use `Up/Down` to move and `Enter` to open a file or directory; `Esc`, the `explorer` key, or the `quit` key closes it. In the **log viewer**, `Up/Down` and `PgUp/PgDn` scroll; `Esc`, the `show_logs` key, or the `quit` key closes it. In the **Save As** prompt, `Enter` accepts and `Esc` cancels.
 
 Neo has no mouse support.
 
@@ -113,13 +113,13 @@ Neo is configured with a Lua file. It loads the path given with `-c`/`--config`,
 
 | Key | Type | Default | Notes |
 | :--- | :--- | :--- | :--- |
-| `tab_size` | int | `4` | Must be 1–16. |
+| `tab_size` | int | `4` | Must be 1–16. Out-of-range values are rejected with an error and the default is kept. |
 | `show_line_numbers` | bool | `true` | |
 | `wrap_lines` | bool | `true` | |
-| `wrap_disable_line_threshold` | int | `50000` | Wrapping is turned off for files with more lines than this; `0` never turns it off. |
+| `wrap_disable_line_threshold` | int | `50000` | Must be ≥ 0. Wrapping is turned off for files with more lines than this; `0` never turns it off. |
 | `syntax_enabled` | bool | `true` | |
 | `status_timeout` | int | `5` | Seconds a status message stays visible. |
-| `undo_limit` | int | `1000` | |
+| `undo_limit` | int | `1000` | Must be ≥ 0; `0` means unlimited. |
 | `fsync_enabled` | bool | `true` | `fdatasync` before the atomic rename on save. |
 | `log_file` | string | `"neo.log"` | |
 | `log_level` | string | `"INFO"` | `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` (case-insensitive). |

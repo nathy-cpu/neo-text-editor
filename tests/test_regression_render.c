@@ -406,6 +406,51 @@ TEST(regression_render, logs_open_selects_last_message)
     Logger_Free();
 }
 
+// ---------------------------------------------------------------------------
+// The explorer and log viewer receive every key before the configured
+// bindings are checked, but closed only on hardcoded Ctrl-E / Ctrl-Q, so a
+// rebound `explorer` or `quit` key did nothing inside them. They must close
+// on the CONFIGURED keys (plus ESC), and the old defaults must no longer be
+// special once rebound.
+// ---------------------------------------------------------------------------
+TEST(regression_render, explorer_closes_on_rebound_keys)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    editor.config.keyExplorer = CTRL_KEY('o');
+    editor.config.keyQuit = CTRL_KEY('x');
+
+    editor.isExplorerActive = true;
+    Editor_ProcessExplorerInput(&editor, CTRL_KEY('e'));
+    assert(editor.isExplorerActive == true); // old default no longer closes
+    Editor_ProcessExplorerInput(&editor, CTRL_KEY('q'));
+    assert(editor.isExplorerActive == true);
+
+    Editor_ProcessExplorerInput(&editor, CTRL_KEY('o'));
+    assert(editor.isExplorerActive == false);
+
+    editor.isExplorerActive = true;
+    Editor_ProcessExplorerInput(&editor, CTRL_KEY('x'));
+    assert(editor.isExplorerActive == false);
+
+    Editor_Free(&editor);
+}
+
+TEST(regression_render, logs_close_on_rebound_quit_key)
+{
+    Editor editor;
+    Editor_Init(&editor);
+    editor.config.keyQuit = CTRL_KEY('x');
+
+    editor.isLogsActive = true;
+    Editor_ProcessLogsInput(&editor, CTRL_KEY('q'));
+    assert(editor.isLogsActive == true); // old default no longer closes
+    Editor_ProcessLogsInput(&editor, CTRL_KEY('x'));
+    assert(editor.isLogsActive == false);
+
+    Editor_Free(&editor);
+}
+
 // Tab_Init returning early when Buffer_New() fails (leaving the Tab
 // uninitialized) is intentionally NOT covered here: it is unreachable
 // without malloc failure injection.

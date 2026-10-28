@@ -9,6 +9,7 @@
 #include "../src/utils/clipboard.h"
 #include "../src/utils/args.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +77,62 @@ TEST(regression_config, tab_size_sixteen_accepted)
     Editor editor;
     assert(RegressionConfigLoad(&editor, "regression_config_tab_size_sixteen.lua", "tab_size = 16\n") == true);
     assert(editor.config.tabSize == 16);
+    Editor_Free(&editor);
+}
+
+// ---------------------------------------------------------------------------
+// undo_limit and wrap_disable_line_threshold are size_t: a negative value
+// cast straight from int wraps to ~SIZE_MAX (unlimited undo history, wrapping
+// never disabled). Negative values must be REJECTED, keeping the default;
+// 0 is valid for both. Values beyond int range must saturate rather than
+// wrap or hit the undefined double->int cast.
+// ---------------------------------------------------------------------------
+
+TEST(regression_config, undo_limit_negative_rejected)
+{
+    Editor editor;
+    RegressionConfigLoad(&editor, "regression_config_undo_limit_negative.lua", "undo_limit = -1\n");
+    assert(editor.config.undoLimit == 1000); // out of range: default kept
+    Editor_Free(&editor);
+}
+
+TEST(regression_config, undo_limit_zero_accepted)
+{
+    Editor editor;
+    assert(RegressionConfigLoad(&editor, "regression_config_undo_limit_zero.lua", "undo_limit = 0\n") == true);
+    assert(editor.config.undoLimit == 0);
+    Editor_Free(&editor);
+}
+
+TEST(regression_config, undo_limit_huge_saturates)
+{
+    Editor floatEditor;
+    RegressionConfigLoad(&floatEditor, "regression_config_undo_limit_huge.lua", "undo_limit = 1e20\n");
+    assert(floatEditor.config.undoLimit == (size_t)INT_MAX);
+    Editor_Free(&floatEditor);
+
+    Editor integerEditor;
+    RegressionConfigLoad(&integerEditor, "regression_config_undo_limit_huge_int.lua", "undo_limit = 1 << 40\n");
+    assert(integerEditor.config.undoLimit == (size_t)INT_MAX);
+    Editor_Free(&integerEditor);
+}
+
+TEST(regression_config, wrap_threshold_negative_rejected)
+{
+    Editor editor;
+    RegressionConfigLoad(
+        &editor, "regression_config_wrap_threshold_negative.lua", "wrap_disable_line_threshold = -5\n");
+    assert(editor.config.wrapDisableLineThreshold == 50000); // out of range: default kept
+    Editor_Free(&editor);
+}
+
+TEST(regression_config, wrap_threshold_zero_accepted)
+{
+    Editor editor;
+    assert(RegressionConfigLoad(
+               &editor, "regression_config_wrap_threshold_zero.lua", "wrap_disable_line_threshold = 0\n")
+        == true);
+    assert(editor.config.wrapDisableLineThreshold == 0);
     Editor_Free(&editor);
 }
 

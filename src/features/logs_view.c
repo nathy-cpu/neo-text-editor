@@ -144,8 +144,10 @@ void Editor_DrawLogs(Editor* editor, Array* screenBuffer)
     // Draw header
     Array_Append(screenBuffer, "\x1b[7m", 4);
     char header[256];
-    int headerLen
-        = snprintf(header, sizeof(header), " LOG VIEWER: (Press ESC or Ctrl-L to exit, Up/Down/PgUp/PgDn to scroll) ");
+    char logsKeyName[64];
+    Config_FormatKey(editor->config.keyLogs, logsKeyName, sizeof(logsKeyName));
+    int headerLen = snprintf(
+        header, sizeof(header), " LOG VIEWER: (Press ESC or %s to exit, Up/Down/PgUp/PgDn to scroll) ", logsKeyName);
     if (headerLen > (int)cols)
         headerLen = cols;
     Array_Append(screenBuffer, header, headerLen);
@@ -226,11 +228,10 @@ void Editor_ProcessLogsInput(Editor* editor, int input)
         break;
     }
     case '\x1b': // ESC
-    case CTRL_KEY('q'):
         editor->isLogsActive = false;
         break;
     default:
-        if (input == editor->config.keyLogs) {
+        if (input == editor->config.keyLogs || input == editor->config.keyQuit) {
             editor->isLogsActive = false;
         }
         break;

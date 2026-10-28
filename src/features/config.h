@@ -79,3 +79,12 @@ void Config_InitDefaults(Config* config);
  * @brief Frees all dynamic memory associated with a Config object.
  */
 void Config_Free(Config* config);
+
+/**
+ * @brief Formats a key code as a human-readable chord (e.g. "Ctrl-Q", "Alt-Up")
+ * so UI hints follow the user's configured keybindings.
+ * @param key Key code as produced by ReadKey / the keybinding parser.
+ * @param out Destination buffer; always null-terminated when outSize > 0.
+ * @param outSize Size of out in bytes.
+ */
+void Config_FormatKey(int key, char* out, size_t outSize);

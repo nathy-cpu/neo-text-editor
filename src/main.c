@@ -155,7 +155,9 @@ int main(int argc, char* argv[])
     CliOptions_Free(&options);
 
     if (Array_Size(&editor.tabs) > 0 && editor.statusMessage[0] == '\0') {
-        Editor_SetStatusMessage(&editor, "HELP: Configurable keybindings active. Press Ctrl-Q to quit.");
+        char quitKeyName[64];
+        Config_FormatKey(editor.config.keyQuit, quitKeyName, sizeof(quitKeyName));
+        Editor_SetStatusMessage(&editor, "HELP: Configurable keybindings active. Press %s to quit.", quitKeyName);
     }
 
     // Main event loop
